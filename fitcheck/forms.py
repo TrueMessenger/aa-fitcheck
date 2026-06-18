@@ -9,6 +9,7 @@ from .constants import (
     FEB_CAPABLE_HULL_GROUP_IDS,
     FEB_ELIGIBLE_EXCEPTION_NAMES,
     FEB_ELIGIBLE_GROUP_IDS,
+    FEB_ELIGIBLE_GROUP_LABELS,
 )
 from django.contrib.auth.models import Group
 
@@ -196,6 +197,39 @@ def feb_eligible_frigate_choices():
     return [(str(type_id), name) for type_id, name in rows]
 
 
+def feb_eligible_group_choices():
+    """(group_id_str, class_name) options for the FEB ship-class quick-add picker.
+    Only the eligible classes that actually have at least one published ship in the
+    local SDE mirror are offered, so the dropdown never lists an empty class. Sorted
+    by class name. Strings to match a MultipleChoiceField's stringified values."""
+    present = set(
+        SdeType.objects.filter(
+            category_id=EveCategoryId.SHIP,
+            published=True,
+            group_id__in=FEB_ELIGIBLE_GROUP_IDS,
+        )
+        .values_list("group_id", flat=True)
+        .distinct()
+    )
+    rows = [(gid, FEB_ELIGIBLE_GROUP_LABELS.get(gid, str(gid))) for gid in present]
+    rows.sort(key=lambda r: r[1])
+    return [(str(gid), label) for gid, label in rows]
+
+
+def feb_frigate_type_ids_for_groups(group_ids) -> set[int]:
+    """Member frigate type_ids for the given eligible ship-class group ids, drawn
+    from the same FEB-eligible ship set as feb_eligible_frigate_choices(). Used to
+    expand a chosen class into its individual hulls before save."""
+    wanted = {int(g) for g in group_ids} & set(FEB_ELIGIBLE_GROUP_IDS)
+    if not wanted:
+        return set()
+    return set(
+        SdeType.objects.filter(
+            category_id=EveCategoryId.SHIP, published=True, group_id__in=wanted
+        ).values_list("type_id", flat=True)
+    )
+
+
 def hull_allows_feb(ship_type_id: int | None) -> bool:
     """True if the hull's ship group carries a Frigate Escape Bay (battleship-class).
     The local SDE mirror has no ship dogma attributes, so we key on the ship group
@@ -222,6 +256,22 @@ class FitSettingsForm(forms.ModelForm):
             "Frigates this doctrine accepts in the hull's Frigate Escape Bay. The "
             "pilot's bay passes if it holds any one of these. Leave empty for no FEB "
             "requirement. Enforced per the site FEB mode."
+        ),
+    )
+    # Quick-add by whole ship class. NOT a model field - on save() its selection is
+    # expanded into the individual frigate type_ids and unioned into
+    # feb_frigate_type_ids (see clean()), so storage stays a flat type-id list and
+    # the engine is unchanged. It does not round-trip (re-opening shows the expanded
+    # frigates selected, this box empty).
+    feb_frigate_group_ids = forms.MultipleChoiceField(
+        required=False,
+        widget=forms.SelectMultiple(
+            attrs={"class": "form-select", "data-feb-group-picker": "1"}
+        ),
+        label=_("Add a whole ship class"),
+        help_text=_(
+            "Add every frigate of a class to the Allowed list at once (e.g. all "
+            "Assault Frigates). Expanded into individual frigates when you save."
         ),
     )
 
@@ -251,8 +301,10 @@ class FitSettingsForm(forms.ModelForm):
         # hulls) is left untouched because the field is absent from save().
         if fit and not hull_allows_feb(fit.ship_type_id):
             self.fields.pop("feb_frigate_type_ids", None)
+            self.fields.pop("feb_frigate_group_ids", None)
             return
         self.fields["feb_frigate_type_ids"].choices = feb_eligible_frigate_choices()
+        self.fields["feb_frigate_group_ids"].choices = feb_eligible_group_choices()
         if fit:
             self.initial["feb_frigate_type_ids"] = [
                 str(t) for t in (fit.feb_frigate_type_ids or [])
@@ -262,6 +314,17 @@ class FitSettingsForm(forms.ModelForm):
         # MultipleChoiceField already validated each value is an eligible frigate;
         # store as ints to match the JSON list the engine reads.
         return [int(x) for x in self.cleaned_data.get("feb_frigate_type_ids") or []]
+
+    def clean(self):
+        cleaned = super().clean()
+        # Expand any chosen ship classes into their member frigate type_ids and union
+        # them with the individually-picked frigates, so a flat de-duplicated type-id
+        # list is persisted. Only runs when both fields survived __init__ (FEB hull).
+        if "feb_frigate_type_ids" in self.fields and "feb_frigate_group_ids" in self.fields:
+            ids = set(cleaned.get("feb_frigate_type_ids") or [])
+            ids |= feb_frigate_type_ids_for_groups(cleaned.get("feb_frigate_group_ids") or [])
+            cleaned["feb_frigate_type_ids"] = sorted(ids)
+        return cleaned
 
 
 class FitItemPolicyForm(forms.ModelForm):

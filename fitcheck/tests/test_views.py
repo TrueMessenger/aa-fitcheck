@@ -729,3 +729,89 @@ class FebFieldVisibilityTests(ViewTestCase):
         )
         self.fit.refresh_from_db()
         self.assertEqual(self.fit.feb_frigate_type_ids or [], [])
+
+
+class FebGroupSelectorTests(ViewTestCase):
+    """The FEB 'Add a whole ship class' quick-add picker expands a chosen ship
+    class into its member frigate type ids and unions them into the flat Allowed
+    list at save time (no engine change, no stored class markers)."""
+
+    def setUp(self):
+        # Battleship-class hull (group 27) carries a FEB, so both pickers render.
+        self.bs_fit = create_fit(self.doctrine, T.NIGHTMARE, name="Nightmare DPS")
+
+    def _post(self, fit, **extra):
+        data = {
+            "name": fit.name,
+            "description": "",
+            "is_active": "on",
+            "default_policy": fit.default_policy,
+        }
+        data.update(extra)
+        return self.client.post(
+            reverse("fitcheck:manage_fit_settings", args=[fit.pk]), data, follow=True
+        )
+
+    def test_group_choices_only_present_classes_sorted_by_label(self):
+        from ..forms import feb_eligible_group_choices
+        # Fixtures cover Frigate (25: Rifter, Astero) and Assault Frigate (324: Wolf);
+        # EAS (893) and Logistics Frigate (1527) have no ships -> excluded. Sorted by
+        # label, so "Assault Frigate" precedes "Frigate".
+        self.assertEqual(
+            feb_eligible_group_choices(),
+            [("324", "Assault Frigate"), ("25", "Frigate")],
+        )
+
+    def test_group_field_shown_for_battleship(self):
+        from ..forms import FitSettingsForm
+        form = FitSettingsForm(instance=self.bs_fit)
+        self.assertIn("feb_frigate_group_ids", form.fields)
+        self.assertEqual(
+            str(form.fields["feb_frigate_group_ids"].label), "Add a whole ship class"
+        )
+
+    def test_group_field_hidden_for_non_feb_hull(self):
+        from ..forms import FitSettingsForm
+        form = FitSettingsForm(instance=self.fit)  # Harbinger - no FEB
+        self.assertNotIn("feb_frigate_group_ids", form.fields)
+
+    def test_settings_page_shows_group_picker_for_battleship(self):
+        self.client.force_login(self.manager)
+        resp = self.client.get(
+            reverse("fitcheck:manage_fit_settings", args=[self.bs_fit.pk])
+        )
+        self.assertContains(resp, 'name="feb_frigate_group_ids"')
+        self.assertContains(resp, "Add a whole ship class")
+        self.assertContains(resp, 'id="feb-group-members"')
+
+    def test_settings_page_omits_group_picker_for_non_feb_hull(self):
+        self.client.force_login(self.manager)
+        resp = self.client.get(
+            reverse("fitcheck:manage_fit_settings", args=[self.fit.pk])
+        )
+        self.assertNotContains(resp, 'name="feb_frigate_group_ids"')
+        self.assertNotContains(resp, 'id="feb-group-members"')
+
+    def test_post_group_expands_to_member_frigates(self):
+        self.client.force_login(self.manager)
+        self._post(self.bs_fit, feb_frigate_group_ids=[str(324)])
+        self.bs_fit.refresh_from_db()
+        # Group 324 has exactly the Wolf; group-25 hulls must not be pulled in.
+        self.assertEqual(self.bs_fit.feb_frigate_type_ids, [T.WOLF])
+
+    def test_post_group_plus_individual_unions_and_dedupes(self):
+        self.client.force_login(self.manager)
+        # Rifter picked individually + the Wolf both individually and via its class.
+        self._post(
+            self.bs_fit,
+            feb_frigate_type_ids=[str(T.RIFTER), str(T.WOLF)],
+            feb_frigate_group_ids=[str(324)],
+        )
+        self.bs_fit.refresh_from_db()
+        self.assertEqual(self.bs_fit.feb_frigate_type_ids, sorted([T.RIFTER, T.WOLF]))
+
+    def test_invalid_group_id_rejected(self):
+        self.client.force_login(self.manager)
+        self._post(self.bs_fit, feb_frigate_group_ids=["99999"])
+        self.bs_fit.refresh_from_db()
+        self.assertEqual(self.bs_fit.feb_frigate_type_ids or [], [])

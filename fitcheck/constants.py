@@ -53,6 +53,16 @@ FEB_ELIGIBLE_GROUP_IDS = frozenset(
 # explicitly so the rule survives any future CCP regroup.
 FEB_ELIGIBLE_EXCEPTION_NAMES = frozenset({"Astero", "Metamorphosis", "Venture"})
 
+# Human-readable class names for the FEB ship-class quick-add picker (one per
+# eligible group). The local SDE mirror stores only group_id (no group name), so
+# we label the classes here rather than looking them up via eveuniverse/ESI.
+FEB_ELIGIBLE_GROUP_LABELS = {
+    EveGroupId.FRIGATE: "Frigate",
+    EveGroupId.ASSAULT_FRIGATE: "Assault Frigate",
+    EveGroupId.ELECTRONIC_ATTACK_SHIP: "Electronic Attack Ship",
+    EveGroupId.LOGISTICS_FRIGATE: "Logistics Frigate",
+}
+
 
 # Ship groups whose HULLS carry a Frigate Escape Bay (battleship-class only:
 # T1 / Navy / Pirate battleships = group 27, Black Ops = 898, Marauders = 900).

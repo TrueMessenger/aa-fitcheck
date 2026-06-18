@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_POST
 
 from ..constants import (
+    FEB_ELIGIBLE_GROUP_IDS,
     LEEWAY_SECTIONS,
     SECTION_ORDER,
     SECTION_TO_SLOT_KINDS,
@@ -28,6 +29,7 @@ from ..forms import (
     FitSettingsForm,
     OverrideAddForm,
     PolicySlotRuleForm,
+    hull_allows_feb,
 )
 from ..models import (
     CompliancePolicy,
@@ -111,6 +113,26 @@ def standard_import(request, doctrine_pk: int | None = None):
     )
 
 
+def _feb_group_members(fit) -> dict:
+    """group_id (str) -> [{id, name}] of every eligible frigate in each FEB ship
+    class, for the settings page's class-quick-add JS. Empty for non-FEB hulls."""
+    if not hull_allows_feb(fit.ship_type_id):
+        return {}
+    members: dict[str, list] = {}
+    rows = (
+        SdeType.objects.filter(
+            category_id=EveCategoryId.SHIP,
+            published=True,
+            group_id__in=FEB_ELIGIBLE_GROUP_IDS,
+        )
+        .order_by("name")
+        .values_list("group_id", "type_id", "name")
+    )
+    for group_id, type_id, name in rows:
+        members.setdefault(str(group_id), []).append({"id": type_id, "name": name})
+    return members
+
+
 @login_required
 @permission_required("fitcheck.manage_doctrines")
 def fit_settings(request, fit_pk: int):
@@ -138,6 +160,7 @@ def fit_settings(request, fit_pk: int):
             "apply_policy_form": ApplyPolicyForm(),
             "has_policies": CompliancePolicy.objects.exists(),
             "stale_pending_count": _stale_pending_count(fit),
+            "feb_group_members": _feb_group_members(fit),
             "page_title": _("Fitting Settings"),
         },
     )

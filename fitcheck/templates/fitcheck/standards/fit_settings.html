@@ -69,6 +69,9 @@
                             <i class="fa-solid fa-floppy-disk"></i> {% translate "Save" %}
                         </button>
                     </form>
+                    {% if feb_group_members %}
+                        {{ feb_group_members|json_script:"feb-group-members" }}
+                    {% endif %}
                 </div>
             </div>
 
@@ -131,8 +134,9 @@
         // Tokenized chip picker for the FEB frigates: each accepted frigate becomes
         // a removable pill showing its name, with an inline search over the eligible
         // frigate list.
+        var febPicker = null;
         document.querySelectorAll("select[data-feb-picker]").forEach(function (el) {
-            new TomSelect(el, {
+            febPicker = new TomSelect(el, {
                 plugins: ["remove_button"],
                 maxOptions: 1000,
                 hideSelected: true,
@@ -140,5 +144,37 @@
                 placeholder: "{% translate 'Search frigates by name...' %}",
             });
         });
+
+        // Ship-class quick-add: picking a class folds every frigate of that class
+        // into the Allowed picker (visual feedback only; the server re-expands on
+        // save, so this works even without JS). The class pill clears itself.
+        (function () {
+            var membersEl = document.getElementById("feb-group-members");
+            var groupMembers = membersEl ? JSON.parse(membersEl.textContent) : {};
+            document.querySelectorAll("select[data-feb-group-picker]").forEach(function (el) {
+                new TomSelect(el, {
+                    plugins: ["remove_button"],
+                    maxOptions: 1000,
+                    hideSelected: true,
+                    closeAfterSelect: false,
+                    placeholder: "{% translate 'Add a whole ship class...' %}",
+                    onItemAdd: function (value) {
+                        var self = this;
+                        (groupMembers[value] || []).forEach(function (frig) {
+                            var id = String(frig.id);
+                            if (febPicker) {
+                                febPicker.addOption({ value: id, text: frig.name });
+                                febPicker.addItem(id, true);
+                            }
+                        });
+                        if (febPicker) febPicker.refreshItems();
+                        // The class is an expander, not a stored selection - drop the
+                        // chip so it reads as a one-shot action.
+                        self.removeItem(value, true);
+                        self.refreshOptions(false);
+                    },
+                });
+            });
+        })();
     </script>
 {% endblock %}
