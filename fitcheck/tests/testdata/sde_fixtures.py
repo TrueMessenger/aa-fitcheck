@@ -39,6 +39,10 @@ class T:
     ORACLE = 4302
     HEL = 22852
     NIGHTMARE = 17736  # pirate battleship (group 27) - has a Frigate Escape Bay
+    # FEB-eligible frigates (fit inside a Frigate Escape Bay).
+    RIFTER = 587  # Frigate (group 25)
+    WOLF = 11371  # Assault Frigate (group 324)
+    ASTERO = 33468  # Frigate (group 25), also a named FEB exception hull
 
     HEAT_SINK_I = 2363
     HEAT_SINK_BASIC = 1893
@@ -124,6 +128,11 @@ def create_sde_testdata():
     # Battleship-class hull (group 27) - carries a Frigate Escape Bay, so the
     # FEB picker shows for it (Harbinger's fixture group 60 does not).
     _sde_type(T.NIGHTMARE, "Nightmare", ships, SlotKind.SHIP, group=27)
+    # FEB-eligible frigates the picker/quick-add expand over: a Frigate (25), an
+    # Assault Frigate (324), and an exception-named Frigate (Astero, group 25).
+    _sde_type(T.RIFTER, "Rifter", ships, SlotKind.SHIP, group=25)
+    _sde_type(T.WOLF, "Wolf", ships, SlotKind.SHIP, group=324)
+    _sde_type(T.ASTERO, "Astero", ships, SlotKind.SHIP, group=25)
 
     hs = dict(category=module, slot_kind=SlotKind.LOW, parent=T.HEAT_SINK_I)
     _sde_type(

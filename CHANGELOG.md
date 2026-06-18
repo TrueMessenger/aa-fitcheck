@@ -30,6 +30,12 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 ## [Unreleased]
 
 ### Added
+- **FEB ship-class quick-add.** The Frigate Escape Bay "Allowed" picker on the
+  fit settings page now has a companion **"Add a whole ship class"** selector:
+  pick e.g. *Assault Frigate* and every frigate of that class is folded into the
+  Allowed list, instead of ticking ~75 hulls one at a time. The classes expand
+  into individual frigate type ids on save, so storage and the compliance engine
+  are unchanged. No schema change.
 - **Policy template drift detection + re-sync.** A fit's per-module policy is a
   *template*; each doctrine the fit belongs to keeps an independent copy that
   audits actually grade against, cloned when the fit is attached. Editing the
