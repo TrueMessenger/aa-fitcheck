@@ -117,12 +117,15 @@ from CCP's official JSONL bundle (including `dynamicItemAttributes`). Daily auto
 
 ---
 
-## What's Coming in v1.1
+## After v1.0
 
-- **Secure Groups smart filter** — auto-assign Auth groups based on fit compliance.
-- **Python API** — `get_user_compliance`, `iter_user_compliance` for cross-plugin use.
-- **Compliance reports + CSV export** for the `view_compliance_reports` permission.
-- **CI** — GitHub Actions matrix across Python 3.10 – 3.12.
+These are the **v1.0.0** notes — a frozen snapshot of the first public release. Every release
+since is recorded in **[CHANGELOG.md](CHANGELOG.md)**, which is the living changelog.
+
+**v1.1.0** delivered the Secure Groups smart filter, the cross-plugin compliance Python API, the
+optional corptools asset read-through, authoritative colcrunch category sync, the multi-select
+Frigate Escape Bay picker, and GitHub Actions CI. Still on the roadmap: org-wide compliance
+reports + CSV export, and an i18n pass — see the README roadmap.
 
 ---
 

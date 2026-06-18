@@ -49,6 +49,11 @@ A fit can belong to several doctrines, each with its own independent policy rule
 - Editing one doctrine's policy never affects another's or the source fit's defaults.
 - A full override + abyssal-attribute editor is available per (doctrine, fit) assignment, directly
   from the fit page.
+- **Template drift detection** — because each doctrine keeps its own copy, editing the fit's
+  *template* policy doesn't propagate automatically. The per-(doctrine, fit) editor flags a copy
+  that has **drifted from the template** (with per-row badges) and offers one-click **Re-sync from
+  template**; the fit's policy page shows "Used in N doctrines" with each copy's in-sync / differs
+  status, and a submission links managers straight to the exact copy that graded it.
 
 ### ESI Integration
 
@@ -98,7 +103,24 @@ If your alliance already uses [colcrunch `fittings`](https://gitlab.com/colcrunc
 - **One-click import** of existing doctrine and fit libraries (doctrines, fits, BOMs).
 - **On-demand "Pull updates"** re-syncs BOMs when the fittings team publishes changes, while
   preserving every compliance policy and override.
+- **Category sync** — import and re-sync also mirror the plugin's *Categories* (colour, Auth-group
+  visibility, and doctrine/fit membership) into `DoctrineCategory`. The fittings plugin stays the
+  source of truth (a re-sync overwrites those fields each run); your purely-local categories are
+  never touched.
 - `fittings` is a soft dependency: all code paths no-op cleanly when it is not installed.
+
+### corptools Integration (optional asset read-through)
+
+If [aa-corptools](https://github.com/Solar-Helix-Independent-Transport/allianceauth-corptools) is
+installed and has already synced a character's assets, Fit Check reads the pilot's ship inventory
+from corptools' local cache instead of a live ESI asset-tree call — the heaviest, least
+time-sensitive ESI request:
+
+- An alliance-wide member scan then needs **no Fit Check token at all** — it reuses the access the
+  player already granted corptools.
+- Falls back to live ESI automatically when corptools is absent or hasn't synced the character.
+- Controlled by the `FITCHECK_ASSET_SOURCE` setting (`auto` default / `esi` / `corptools`).
+- corptools is a soft dependency: nothing changes when it isn't installed.
 
 ### Review Workflow
 
@@ -135,7 +157,7 @@ matters); bay and cargo sections require "at least N":
 | Implants | ESI-verified from pilot clone; required implants carried in cargo or the fleet hangar pass as a refit; unverifiable submissions warn but never auto-fail |
 | Boosters | Warn-only — never a hard fail regardless of mode; boosters carried in cargo or the fleet hangar pass as a refit |
 | Fuel Bay | Isotope quantity check for capitals, warn-only |
-| Frigate Escape Bay | ESI-verified content; configurable enforcement mode |
+| Frigate Escape Bay | A doctrine names which frigates the bay may hold (multi-select by name); the pilot's bay passes if it holds any one. ESI-verified; configurable enforcement mode. The picker appears only for hulls that have a bay (battleship-class) |
 
 Loaded charges are pooled into cargo on both sides: a doctrine specifying "4 Artillery Cannons
 needing 4 crystals" passes whether the crystals are loaded or in the hold.
@@ -249,6 +271,7 @@ works normally without it — the filter simply isn't offered.
 | `FITCHECK_NOTIFY_REVIEWERS` | `True` | Notify reviewers on new submissions |
 | `FITCHECK_REVIEWER_DIGEST` | `False` | Periodic digest instead of per-submission pings (schedule `fitcheck.tasks.send_review_digest`) |
 | `FITCHECK_ESI_CONTACT` | `ESI_USER_CONTACT_EMAIL` | Contact email in the ESI User-Agent header |
+| `FITCHECK_ASSET_SOURCE` | `auto` | Where pilot/member ship inventory comes from: `auto` (corptools cache when available, else live ESI), `esi`, or `corptools` |
 
 Section-level enforcement modes (Implants, Boosters, Fuel Bay, Frigate Escape Bay) are managed
 through the in-app **Enforcement Settings** page — no `local.py` changes required.
@@ -300,8 +323,8 @@ priority, not pinned to specific version numbers (those are assigned at release)
 
 | Milestone | Scope |
 |-----------|-------|
-| **Shipped** | Full substitution engine with bipartite matching; abyssal/mutated modules; per-doctrine policy snapshots; pre-built and custom named compliance policies (with disable/enable); ESI inventory validation; ESI saved-fittings intake (check fits saved in EVE's Fittings panel without an EFT paste); implant, booster, fuel bay, and Frigate Escape Bay verification (implants/boosters carried as cargo or fleet-hangar refit pass); category-driven visibility with group gating; proactive alliance/corp member checks; colcrunch `fittings` import and re-sync; pilot QoL tools (Save-to-EVE, Copy Buy All, Copy as EFT); submission-detail review with a per-section captured-loadout panel; review workflow with audit log and notifications; cross-plugin compliance Python API; optional Secure Groups smart filter |
-| **Next** | Compliance reports + CSV export (`view_compliance_reports`); CI (GitHub Actions, tox py310–312); i18n pass |
+| **Shipped** | Full substitution engine with bipartite matching; abyssal/mutated modules; per-doctrine policy snapshots; pre-built and custom named compliance policies (with disable/enable); ESI inventory validation; ESI saved-fittings intake (check fits saved in EVE's Fittings panel without an EFT paste); implant, booster, fuel bay, and Frigate Escape Bay verification (implants/boosters carried as cargo or fleet-hangar refit pass); category-driven visibility with group gating; proactive alliance/corp member checks; colcrunch `fittings` import and re-sync; pilot QoL tools (Save-to-EVE, Copy Buy All, Copy as EFT); submission-detail review with a per-section captured-loadout panel; review workflow with audit log and notifications; cross-plugin compliance Python API; optional Secure Groups smart filter; optional corptools asset read-through; colcrunch category sync; GitHub Actions CI (py3.10–3.12) |
+| **Next** | Compliance reports + CSV export (`view_compliance_reports`); i18n pass |
 | **Later** | Corporation-role internal audits (corp members with the right EVE roles audit ships in corp hangars against doctrines, no approval flow); [aa-srp](https://apps.allianceauth.org/apps/detail/aa-srp) integration (compare a loss's killmail fit to doctrines/fits/substitutions during SRP review); bulk "audit all my fits" for pilots; per-doctrine reviewer scoping; override-chip allow/forbid toggle |
 
 See [CHANGELOG.md](CHANGELOG.md) for released and in-progress changes.
