@@ -1,0 +1,37 @@
+__pycache__/
+*.pyc
+.venv/
+*.sqlite3
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+.tox/
+log/
+*.log
+runserver.log
+
+# Local secrets / environment
+.env
+.env.*
+
+# Python tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings (machine-specific; do not commit)
+.claude/settings.local.json
+
+# Local-only dev/test helper scripts (machine-specific; do not commit)
+*.local.ps1

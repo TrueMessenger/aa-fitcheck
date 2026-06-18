@@ -1,0 +1,86 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-9 col-xxl-7">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fa-solid fa-file-import me-2"></i>{% translate "Import from the Fittings Plugin" %}
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        {% translate "Select the doctrines to import. Every fitting inside them is converted into a fitcheck fitting standard with the default substitution policy - tune slot policies afterwards. Already-imported items are skipped, never duplicated." %}
+                    </p>
+                    <p class="small text-muted">
+                        <i class="fa-solid fa-circle-info me-1"></i>{% translate "Plugin categories (and their group visibility) are synced too - the fittings plugin is the source of truth, so importing or pulling updates overwrites local edits to those categories." %}
+                    </p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th style="width: 2.5rem">
+                                        <input class="form-check-input" type="checkbox" id="check-all">
+                                    </th>
+                                    <th>{% translate "Doctrine" %}</th>
+                                    <th>{% translate "Fittings" %}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for doctrine in plugin_doctrines %}
+                                    <tr>
+                                        <td>
+                                            <input class="form-check-input doctrine-check" type="checkbox"
+                                                   name="doctrines" value="{{ doctrine.id }}"
+                                                   {% if not doctrine.already_imported %}checked{% endif %}>
+                                        </td>
+                                        <td>
+                                            <strong>{{ doctrine.name }}</strong>
+                                            {% if doctrine.already_imported %}
+                                                <span class="badge bg-secondary ms-1">{% translate "already imported" %}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="d-flex flex-wrap gap-1">
+                                                {% for fit in doctrine.fits|slice:":10" %}
+                                                    {% if fit.ship_type_id %}
+                                                        <img class="rounded" width="24" height="24" alt="" title="{{ fit.name }}"
+                                                             src="https://images.evetech.net/types/{{ fit.ship_type_id }}/icon?size=32">
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
+                                        </td>
+                                        <td class="text-muted small">{{ doctrine.fit_count }} {% translate "fits" %}</td>
+                                    </tr>
+                                {% empty %}
+                                    <tr><td colspan="4" class="text-center text-muted p-4">{% translate "The Fittings plugin has no doctrines yet." %}</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="include_baseline" id="include-baseline" checked>
+                            <label class="form-check-label" for="include-baseline">
+                                {% translate "Also import baseline fittings that belong to no doctrine (as standalone standards)" %}
+                            </label>
+                        </div>
+                        <button class="btn btn-success" type="submit">
+                            <i class="fa-solid fa-file-import"></i> {% translate "Import Selection" %}
+                        </button>
+                        <a class="btn btn-secondary" href="{% url 'fitcheck:index' %}">{% translate "Cancel" %}</a>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    <script>
+        document.getElementById("check-all").addEventListener("change", function () {
+            document.querySelectorAll(".doctrine-check").forEach(c => c.checked = this.checked);
+        });
+    </script>
+{% endblock %}

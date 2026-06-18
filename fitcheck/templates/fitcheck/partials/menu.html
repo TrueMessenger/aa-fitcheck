@@ -1,0 +1,48 @@
+{% load i18n %}
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'index' or 'doctrine' in request.resolver_match.url_name %}active{% endif %}"
+           href="{% url 'fitcheck:index' %}">
+            <i class="fa-solid fa-book-skull me-1"></i>{% translate "Doctrines" %}
+        </a>
+    </li>
+    {% if perms.fitcheck.manage_doctrines %}
+        <li class="nav-item">
+            <a class="nav-link {% if 'standard' in request.resolver_match.url_name or 'fit_' in request.resolver_match.url_name or 'manage' in request.resolver_match.url_name %}active{% endif %}"
+               href="{% url 'fitcheck:standards_list' %}">
+                <i class="fa-solid fa-screwdriver-wrench me-1"></i>{% translate "Fittings & Standards" %}
+            </a>
+        </li>
+    {% endif %}
+    <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'pilot_fittings' or request.resolver_match.url_name == 'ship_inventory' %}active{% endif %}"
+           href="{% url 'fitcheck:pilot_fittings' %}">
+            <i class="fa-solid fa-user-astronaut me-1"></i>{% translate "Pilot Fittings" %}
+        </a>
+    </li>
+    {% if perms.fitcheck.review_submissions or perms.fitcheck.secure_group_management %}
+        <li class="nav-item">
+            <a class="nav-link {% if 'review' in request.resolver_match.url_name %}active{% endif %}"
+               href="{% url 'fitcheck:review_queue' %}">
+                <i class="fa-solid fa-clipboard-check me-1"></i>{% translate "Submissions" %}
+            </a>
+        </li>
+    {% endif %}
+    {% if perms.fitcheck.manage_doctrines %}
+        <li class="nav-item">
+            <a class="nav-link {% if 'categor' in request.resolver_match.url_name %}active{% endif %}"
+               href="{% url 'fitcheck:category_list' %}">
+                <i class="fa-solid fa-tags me-1"></i>{% translate "Categories" %}
+            </a>
+        </li>
+    {% endif %}
+    {% if perms.fitcheck.manage_policies %}
+        <li class="nav-item">
+            <a class="nav-link {% if 'policy' in request.resolver_match.url_name %}active{% endif %}"
+               href="{% url 'fitcheck:policy_list' %}">
+                <i class="fa-solid fa-scale-balanced me-1"></i>{% translate "Policies" %}
+            </a>
+        </li>
+    {% endif %}
+</ul>

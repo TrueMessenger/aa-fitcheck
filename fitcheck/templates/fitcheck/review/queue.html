@@ -1,0 +1,167 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <form method="get" class="card mb-3">
+        <div class="card-body d-flex flex-wrap gap-2 align-items-end">
+            <div>
+                <label class="form-label small mb-1">{% translate "Status" %}</label>
+                <select class="form-select form-select-sm" name="status" onchange="this.form.submit()">
+                    <option value="">{% translate "All statuses" %}</option>
+                    {% for value, label in statuses.choices %}
+                        <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="form-label small mb-1">{% translate "Verdict" %}</label>
+                <select class="form-select form-select-sm" name="verdict" onchange="this.form.submit()">
+                    <option value="">{% translate "All verdicts" %}</option>
+                    {% for value, label in verdicts.choices %}
+                        <option value="{{ value }}" {% if verdict_filter == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="form-label small mb-1">{% translate "Doctrine" %}</label>
+                <select class="form-select form-select-sm" name="doctrine" onchange="this.form.submit()">
+                    <option value="">{% translate "All doctrines" %}</option>
+                    {% for doctrine in doctrines %}
+                        <option value="{{ doctrine.pk }}" {% if doctrine_filter == doctrine.pk|stringformat:'s' %}selected{% endif %}>{{ doctrine.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="max-width: 11rem">
+                <label class="form-label small mb-1">{% translate "Pilot" %}</label>
+                <input class="form-control form-control-sm" type="search" name="pilot"
+                       value="{{ pilot_filter }}" placeholder="{% translate 'Name...' %}">
+            </div>
+            <div style="max-width: 11rem">
+                <label class="form-label small mb-1">{% translate "Ship Type" %}</label>
+                <input class="form-control form-control-sm" type="search" name="ship"
+                       value="{{ ship_filter }}" placeholder="{% translate 'e.g. Hel' %}">
+            </div>
+            <div style="max-width: 11rem">
+                <label class="form-label small mb-1">{% translate "Ship Group" %}</label>
+                <input class="form-control form-control-sm" type="search" name="group"
+                       value="{{ group_filter }}" placeholder="{% translate 'e.g. Carrier' %}">
+            </div>
+            <button class="btn btn-sm btn-primary" type="submit">
+                <i class="fa-solid fa-filter"></i> {% translate "Filter" %}
+            </button>
+            <a class="btn btn-sm btn-secondary" href="{% url 'fitcheck:review_queue' %}">{% translate "Clear" %}</a>
+        </div>
+    </form>
+
+    <form method="post" action="{% url 'fitcheck:review_submissions_delete_bulk' %}"
+          onsubmit="return confirm('{% translate "Delete the selected submissions?" %}')">
+        {% csrf_token %}
+        <div class="d-flex mb-2">
+            <button type="submit" class="btn btn-sm btn-danger ms-auto" id="bulk-delete-btn" disabled>
+                <i class="fa-solid fa-trash"></i>
+                <span id="bulk-delete-count">{% translate "Delete Selected" %}</span>
+            </button>
+        </div>
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 2.5rem">
+                            <input class="form-check-input" type="checkbox" id="check-all"
+                                   title="{% translate 'Select/deselect all' %}">
+                        </th>
+                        <th>#</th>
+                        <th>{% translate "Pilot" %}</th>
+                        <th>{% translate "Ship" %}</th>
+                        <th>{% translate "Fitting Standard" %}</th>
+                        <th>{% translate "Graded Against" %}</th>
+                        <th>{% translate "Verdict" %}</th>
+                        <th>{% translate "Source" %}</th>
+                        <th>{% translate "Submitted" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for submission in submissions %}
+                        <tr>
+                            <td>
+                                <input class="form-check-input bulk-check" type="checkbox"
+                                       name="submission_pks" value="{{ submission.pk }}">
+                            </td>
+                            <td>{{ submission.pk }}</td>
+                            <td>{{ submission.character|default:submission.user }}</td>
+                            <td>
+                                {% if submission.ship_type_id %}
+                                    <img class="fc-module-icon" width="24" height="24" alt=""
+                                         src="https://images.evetech.net/types/{{ submission.ship_type_id }}/icon?size=32">
+                                {% endif %}
+                                {{ submission.ship_type.name|default:"?" }}
+                                {% if submission.ship_type.eve_group %}
+                                    <small class="text-muted">({{ submission.ship_type.eve_group.name }})</small>
+                                {% endif %}
+                                {% if submission.ship_name %}
+                                    <div class="small text-muted fst-italic">&ldquo;{{ submission.ship_name }}&rdquo;</div>
+                                {% endif %}
+                            </td>
+                            <td>{{ submission.doctrine_fit.name }}</td>
+                            <td>
+                                {% if submission.doctrine %}
+                                    <span class="fc-chip me-1">{{ submission.doctrine.name }}</span>
+                                {% else %}
+                                    <span class="text-muted small">{% translate "source defaults" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% include "fitcheck/partials/verdict_badge.html" %}
+                                {% if submission.is_stale %}
+                                    <span class="badge bg-secondary"
+                                          title="{% translate 'The fitting standard changed after this check' %}">
+                                        {% translate "stale" %}
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="text-muted small">{{ submission.get_source_display }}</td>
+                            <td class="small">{{ submission.created_at|date:"SHORT_DATETIME_FORMAT" }}</td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-primary"
+                                   href="{% url 'fitcheck:submission_detail' submission.pk %}">
+                                    {% translate "Review" %}
+                                </a>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="10" class="p-4 text-center text-muted">{% translate "Nothing to review." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </form>
+{% endblock %}
+
+{% block extra_javascript %}
+    <script>
+        (function () {
+            const all = document.getElementById("check-all");
+            const boxes = document.querySelectorAll(".bulk-check");
+            const btn = document.getElementById("bulk-delete-btn");
+            const counter = document.getElementById("bulk-delete-count");
+            if (!btn) return;
+            const defaultLabel = counter.textContent;
+            function refresh() {
+                const n = Array.from(boxes).filter(b => b.checked).length;
+                btn.disabled = n === 0;
+                counter.textContent = n === 0 ? defaultLabel : "{% translate 'Delete' %} " + n;
+            }
+            if (all) {
+                all.addEventListener("change", () => {
+                    boxes.forEach(b => b.checked = all.checked);
+                    refresh();
+                });
+            }
+            boxes.forEach(b => b.addEventListener("change", refresh));
+        })();
+    </script>
+{% endblock %}

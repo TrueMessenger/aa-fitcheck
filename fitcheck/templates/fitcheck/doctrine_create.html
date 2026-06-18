@@ -1,0 +1,255 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+{% load static %}
+
+{% block fitcheck_css %}
+    <link rel="stylesheet" href="{% static 'fitcheck/vendor/coloris.min.css' %}">
+{% endblock %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-xxl-6">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <div class="fc-eyebrow">
+                    {% if mode == "direct" %}{% translate "Direct Creation" %}{% else %}{% translate "Guided Creation" %}{% endif %}
+                </div>
+                <div class="btn-group btn-group-sm">
+                    <a class="btn btn-secondary {% if mode != 'direct' %}active{% endif %}"
+                       href="{% url 'fitcheck:doctrine_create' %}?mode=guided">{% translate "Guided" %}</a>
+                    <a class="btn btn-secondary {% if mode == 'direct' %}active{% endif %}"
+                       href="{% url 'fitcheck:doctrine_create' %}?mode=direct">{% translate "Direct" %}</a>
+                </div>
+            </div>
+
+            {% if form.errors %}
+                <div class="alert alert-danger">
+                    {% for field in form %}{% for error in field.errors %}
+                        <div>{{ field.label }}: {{ error }}</div>
+                    {% endfor %}{% endfor %}
+                    {% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+                </div>
+            {% endif %}
+
+            <form method="post" id="doctrine-form">
+                {% csrf_token %}
+
+                {% if mode != "direct" %}
+                    <div class="progress mb-3" style="height: 4px">
+                        <div class="progress-bar" id="wizard-progress" style="width: 25%"></div>
+                    </div>
+                {% endif %}
+
+                <div class="fc-wizard-step {% if mode != 'direct' %}active{% endif %}" data-step="1" {% if mode == "direct" %}style="display:block"{% endif %}>
+                    <div class="card mb-3">
+                        <div class="card-header"><i class="fa-solid fa-signature me-2"></i>{% translate "Name the Doctrine" %}</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label" for="{{ form.name.id_for_label }}">{% translate "Doctrine Name" %}</label>
+                                {{ form.name }}
+                            </div>
+                            <div class="mb-0">
+                                <label class="form-label" for="{{ form.description.id_for_label }}">{% translate "Description" %}</label>
+                                {{ form.description }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fc-wizard-step" data-step="2" {% if mode == "direct" %}style="display:block"{% endif %}>
+                    <div class="card mb-3">
+                        <div class="card-header"><i class="fa-solid fa-image me-2"></i>{% translate "Pick a Doctrine Image" %}</div>
+                        <div class="card-body">
+                            <p class="small text-muted">{% translate "Search any EVE ship - its render becomes the doctrine's card image." %}</p>
+                            {{ form.image_type_id }}
+                            <div class="position-relative mb-3">
+                                <input type="text" class="form-control" id="ship-search-input"
+                                       placeholder="{% translate 'Search ships (e.g. Hel, Muninn, Apocalypse)...' %}"
+                                       autocomplete="off">
+                                <div class="list-group fc-ship-suggest d-none" id="ship-suggest"></div>
+                            </div>
+                            <div class="fc-card-art rounded" id="image-preview-wrap"
+                                 {% if not form.image_type_id.value %}style="display:none"{% endif %}>
+                                <img id="image-preview" alt=""
+                                     {% if form.image_type_id.value %}src="https://images.evetech.net/types/{{ form.image_type_id.value }}/render?size=512"{% endif %}>
+                            </div>
+                            <div class="small text-muted mt-2" id="image-name"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fc-wizard-step" data-step="3" {% if mode == "direct" %}style="display:block"{% endif %}>
+                    <div class="card mb-3">
+                        <div class="card-header"><i class="fa-solid fa-tags me-2"></i>{% translate "Categories and Visibility" %}</div>
+                        <div class="card-body">
+                            <label class="form-label">{% translate "Categories" %}</label>
+                            <div class="small text-muted mb-1">{% translate "Categories show on the doctrine and its fittings, drive who can see them (by Auth group), and members can filter by them." %}</div>
+                            <div id="categories-box" class="mb-2">{{ form.categories }}</div>
+                            <div class="input-group input-group-sm mb-3" style="max-width: 26rem">
+                                <input type="text" class="form-control" id="new-category-name" placeholder="{% translate 'New category' %}">
+                                <input type="text" class="form-control coloris" id="new-category-color"
+                                       data-coloris value="#0d6efd" style="max-width: 9rem"
+                                       aria-label="{% translate 'Category colour' %}">
+                                <button class="btn btn-primary" type="button" id="new-category-btn">
+                                    <i class="fa-solid fa-plus"></i> {% translate "Add category" %}
+                                </button>
+                            </div>
+                            <div class="form-text mb-3">
+                                {% translate "Set each category's visibility groups on the" %}
+                                <a href="{% url 'fitcheck:category_list' %}">{% translate "Manage categories" %}</a>
+                                {% translate "page." %}
+                            </div>
+                            <div class="form-check">
+                                {{ form.is_active }}
+                                <label class="form-check-label" for="{{ form.is_active.id_for_label }}">{% translate "Active" %}</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {% if mode != "direct" %}
+                    <div class="fc-wizard-step" data-step="4">
+                        <div class="card mb-3">
+                            <div class="card-header"><i class="fa-solid fa-circle-check me-2"></i>{% translate "Review" %}</div>
+                            <div class="card-body">
+                                <p class="mb-1"><strong id="review-name"></strong></p>
+                                <p class="small text-muted" id="review-desc"></p>
+                                <p class="small mb-0">{% translate "After creating the doctrine you can assign existing fittings or import new ones right from its page." %}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary" id="wizard-prev" disabled>
+                            <i class="fa-solid fa-arrow-left"></i> {% translate "Back" %}
+                        </button>
+                        <button type="button" class="btn btn-primary" id="wizard-next">
+                            {% translate "Next" %} <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                        <button type="submit" class="btn btn-success d-none" id="wizard-submit">
+                            <i class="fa-solid fa-check"></i> {% translate "Create Doctrine" %}
+                        </button>
+                        <a class="btn btn-secondary ms-auto" href="{% url 'fitcheck:index' %}">{% translate "Cancel" %}</a>
+                    </div>
+                {% else %}
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fa-solid fa-check"></i> {% translate "Create Doctrine" %}
+                        </button>
+                        <a class="btn btn-secondary" href="{% url 'fitcheck:index' %}">{% translate "Cancel" %}</a>
+                    </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    <script src="{% static 'fitcheck/vendor/coloris.min.js' %}"></script>
+    <script>
+        Coloris({ el: ".coloris", format: "hex", alpha: false, themeMode: "auto", swatches: [
+            "#0d6efd", "#0dcaf0", "#198754", "#ffc107", "#dc3545", "#6c757d", "#212529",
+            "#e083b0", "#43c6ac", "#b58fd6"
+        ]});
+        (function () {
+            const isDirect = {% if mode == "direct" %}true{% else %}false{% endif %};
+            // Contrast helper mirrors DoctrineTag.text_color (YIQ brightness).
+            function textColor(hex) {
+                const v = (hex || "").replace("#", "");
+                if (v.length !== 6) return "#ffffff";
+                const r = parseInt(v.substr(0, 2), 16), g = parseInt(v.substr(2, 2), 16),
+                      b = parseInt(v.substr(4, 2), 16);
+                return (r * 299 + g * 587 + b * 114) / 1000 >= 128 ? "#000000" : "#ffffff";
+            }
+            // --- ship image autocomplete ---
+            const searchInput = document.getElementById("ship-search-input");
+            const suggestBox = document.getElementById("ship-suggest");
+            const hiddenId = document.getElementById("{{ form.image_type_id.id_for_label }}");
+            const previewWrap = document.getElementById("image-preview-wrap");
+            const preview = document.getElementById("image-preview");
+            const imageName = document.getElementById("image-name");
+            let timer = null;
+            searchInput.addEventListener("input", function () {
+                clearTimeout(timer);
+                const q = this.value.trim();
+                if (q.length < 2) { suggestBox.classList.add("d-none"); return; }
+                timer = setTimeout(async () => {
+                    const resp = await fetch("{% url 'fitcheck:ship_search' %}?q=" + encodeURIComponent(q));
+                    const data = await resp.json();
+                    suggestBox.innerHTML = "";
+                    data.results.forEach(ship => {
+                        const a = document.createElement("button");
+                        a.type = "button";
+                        a.className = "list-group-item list-group-item-action d-flex align-items-center gap-2";
+                        a.innerHTML = `<img src="https://images.evetech.net/types/${ship.type_id}/icon?size=32" width="24" height="24" class="rounded"> ${ship.name}`;
+                        a.addEventListener("click", () => {
+                            hiddenId.value = ship.type_id;
+                            preview.src = `https://images.evetech.net/types/${ship.type_id}/render?size=512`;
+                            previewWrap.style.display = "block";
+                            imageName.textContent = ship.name;
+                            searchInput.value = ship.name;
+                            suggestBox.classList.add("d-none");
+                        });
+                        suggestBox.appendChild(a);
+                    });
+                    suggestBox.classList.toggle("d-none", !data.results.length);
+                }, 250);
+            });
+            document.addEventListener("click", (e) => {
+                if (!suggestBox.contains(e.target) && e.target !== searchInput) suggestBox.classList.add("d-none");
+            });
+
+            // --- inline category creation ---
+            document.getElementById("new-category-btn").addEventListener("click", async function () {
+                const name = document.getElementById("new-category-name").value.trim();
+                if (!name) return;
+                const body = new FormData();
+                body.append("name", name);
+                body.append("color", document.getElementById("new-category-color").value);
+                body.append("csrfmiddlewaretoken", document.querySelector("[name=csrfmiddlewaretoken]").value);
+                const resp = await fetch("{% url 'fitcheck:category_add' %}", {
+                    method: "POST", body: body, headers: {"X-Requested-With": "XMLHttpRequest"}
+                });
+                if (resp.ok) {
+                    const category = await resp.json();
+                    const div = document.createElement("div");
+                    const fg = category.text_color || textColor(category.color);
+                    div.innerHTML = `<label><input type="checkbox" name="categories" value="${category.pk}" checked> <span class="badge" style="background:${category.color};color:${fg}">${category.name}</span></label>`;
+                    document.getElementById("categories-box").appendChild(div);
+                    document.getElementById("new-category-name").value = "";
+                }
+            });
+
+            if (isDirect) return;
+            // --- wizard ---
+            const steps = Array.from(document.querySelectorAll(".fc-wizard-step"));
+            const prevBtn = document.getElementById("wizard-prev");
+            const nextBtn = document.getElementById("wizard-next");
+            const submitBtn = document.getElementById("wizard-submit");
+            const progress = document.getElementById("wizard-progress");
+            let current = 1;
+            function show(step) {
+                current = step;
+                steps.forEach(s => s.classList.toggle("active", parseInt(s.dataset.step) === step));
+                prevBtn.disabled = step === 1;
+                nextBtn.classList.toggle("d-none", step === steps.length);
+                submitBtn.classList.toggle("d-none", step !== steps.length);
+                progress.style.width = (step / steps.length * 100) + "%";
+                if (step === steps.length) {
+                    document.getElementById("review-name").textContent =
+                        document.getElementById("{{ form.name.id_for_label }}").value || "{% translate 'Unnamed doctrine' %}";
+                    document.getElementById("review-desc").textContent =
+                        document.getElementById("{{ form.description.id_for_label }}").value;
+                }
+            }
+            nextBtn.addEventListener("click", () => {
+                if (current === 1 && !document.getElementById("{{ form.name.id_for_label }}").value.trim()) {
+                    document.getElementById("{{ form.name.id_for_label }}").focus();
+                    return;
+                }
+                show(Math.min(current + 1, steps.length));
+            });
+            prevBtn.addEventListener("click", () => show(Math.max(current - 1, 1)));
+        })();
+    </script>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% if submission.verdict == "C" %}
+    <span class="badge bg-success">{{ submission.get_verdict_display }}</span>
+{% elif submission.verdict == "S" %}
+    <span class="badge bg-info">{{ submission.get_verdict_display }}</span>
+{% elif submission.verdict == "N" %}
+    <span class="badge bg-danger">{{ submission.get_verdict_display }}</span>
+{% else %}
+    <span class="badge bg-secondary">{{ submission.get_verdict_display }}</span>
+{% endif %}

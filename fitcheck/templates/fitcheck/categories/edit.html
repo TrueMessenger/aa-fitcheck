@@ -1,0 +1,101 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+{% load static %}
+{% load django_bootstrap5 %}
+
+{% block fitcheck_css %}
+    <link rel="stylesheet" href="{% static 'fitcheck/vendor/coloris.min.css' %}">
+    <link rel="stylesheet" href="{% static 'fitcheck/vendor/tom-select.bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-10 col-xxl-8">
+            <div class="card">
+                <div class="card-header d-flex align-items-center">
+                    <i class="fa-solid fa-tags me-2"></i>
+                    {% if category %}{% blocktranslate with name=category.name %}Edit category: {{ name }}{% endblocktranslate %}
+                    {% else %}{% translate "New category" %}{% endif %}
+                    <a class="btn btn-secondary btn-sm ms-auto" href="{% url 'fitcheck:category_list' %}">
+                        <i class="fa-solid fa-arrow-left"></i> {% translate "Back" %}
+                    </a>
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        {% translate "Visibility: a pilot can see this category's doctrines and fittings if they have ANY Selected group OR ALL Required groups. Leave both empty for a public category." %}
+                    </p>
+                    <form method="post" id="category-form">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-9">
+                                <label class="form-label">{% translate "Name" %}</label>
+                                {{ form.name }}
+                                {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">{% translate "Color" %}</label>
+                                {{ form.color }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">
+                                    {% translate "Selected Groups" %} <span class="text-muted">({% translate "any" %})</span>
+                                    <i class="fa-solid fa-circle-question text-muted ms-1" tabindex="0"
+                                       data-bs-toggle="tooltip"
+                                       title="{% translate 'A pilot needs ANY ONE of these groups to see this category (OR). Add several to widen who gets access. Leave empty plus Required empty = public.' %}"></i>
+                                </label>
+                                {{ form.selected_groups }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">
+                                    {% translate "Required Groups" %} <span class="text-muted">({% translate "all" %})</span>
+                                    <i class="fa-solid fa-circle-question text-muted ms-1" tabindex="0"
+                                       data-bs-toggle="tooltip"
+                                       title="{% translate 'A pilot must be in ALL of these groups (AND). Add several to narrow access to members who hold every one. Required-AND is combined with Selected-OR using OR.' %}"></i>
+                                </label>
+                                {{ form.required_groups }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">{% translate "Doctrines in This Category" %}</label>
+                                {{ form.doctrines }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">{% translate "Fittings in This Category" %}</label>
+                                {{ form.fits }}
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success mt-3">
+                            <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Category" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    <script src="{% static 'fitcheck/vendor/coloris.min.js' %}"></script>
+    <script src="{% static 'fitcheck/vendor/tom-select.complete.min.js' %}"></script>
+    <script>
+        Coloris({ el: ".coloris", format: "hex", alpha: false, themeMode: "auto" });
+
+        // Tokenized chip pickers for groups / doctrines / fittings: each selection
+        // becomes a removable pill, with an inline search box + scrollable list.
+        document.querySelectorAll("#category-form select[multiple]").forEach(function (el) {
+            new TomSelect(el, {
+                plugins: ["remove_button"],
+                maxOptions: 1000,
+                hideSelected: true,
+                closeAfterSelect: false,
+            });
+        });
+
+        // ? help tooltips on the Selected/Required group rules (native title is the fallback).
+        if (window.bootstrap && window.bootstrap.Tooltip) {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+                new window.bootstrap.Tooltip(el);
+            });
+        }
+    </script>
+{% endblock %}

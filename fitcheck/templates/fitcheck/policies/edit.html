@@ -1,0 +1,88 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-9 col-xxl-7">
+            <form method="post">
+                {% csrf_token %}
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <i class="fa-solid fa-scale-balanced me-2"></i>
+                        {% if policy %}{{ policy.name }}{% else %}{% translate "New Compliance Policy" %}{% endif %}
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label" for="{{ form.name.id_for_label }}">{% translate "Policy Name" %}</label>
+                            {{ form.name }}
+                            {% for error in form.name.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                        </div>
+                        <div class="mb-0">
+                            <label class="form-label" for="{{ form.description.id_for_label }}">{% translate "Description" %}</label>
+                            {{ form.description }}
+                        </div>
+                    </div>
+                    {% if policy %}
+                        <div class="card-footer small text-muted d-flex flex-wrap gap-3">
+                            <span><i class="fa-solid fa-calendar-plus me-1"></i>{% translate "Created" %} {{ policy.created_at|date:"Y-m-d H:i" }}</span>
+                            <span><i class="fa-solid fa-pen me-1"></i>{% translate "Updated" %} {{ policy.updated_at|date:"Y-m-d H:i" }}</span>
+                            {% if policy.is_disabled %}
+                                <span class="text-warning"><i class="fa-solid fa-ban me-1"></i>{% translate "Disabled" %} {{ policy.disabled_at|date:"Y-m-d H:i" }}</span>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-header">{% translate "Slot-Group Overrides" %}</div>
+                    <div class="card-body p-0">
+                        <table class="table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>{% translate "Slot Group" %}</th>
+                                    <th>{% translate "Enforcement" %}</th>
+                                    <th title="{% translate 'Meta enforcement only: substitutes need at least this meta level' %}">{% translate "Min Meta" %}</th>
+                                    <th title="{% translate 'Equal-or-greater only: allow abyssal modules with qualifying rolls' %}">{% translate "Abyssal" %}</th>
+                                    <th title="{% translate 'Consumable bays only: pass at this percent of the listed quantity' %}">{% translate "Qty %" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in rows %}
+                                    <tr>
+                                        <td class="text-nowrap">
+                                            {% include "fitcheck/partials/section_icon.html" with code=row.section %}
+                                            {{ row.label }}
+                                        </td>
+                                        <td>{{ row.form.enforcement }}</td>
+                                        <td>{{ row.form.min_meta_level }}</td>
+                                        <td class="text-center">{{ row.form.allow_mutated }}</td>
+                                        <td>
+                                            {% if row.is_quantity %}
+                                                {{ row.form.min_quantity_pct }}
+                                            {% else %}
+                                                <span class="text-muted small">&mdash;</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer small text-muted">
+                        <strong>{% translate "Exact fit" %}</strong>: {% translate "listed module only." %}
+                        <strong>{% translate "Meta level enforcement / exception" %}</strong>: {% translate "variant-family substitutes at or above the meta floor." %}
+                        <strong>{% translate "Equal to or greater" %}</strong>: {% translate "anything whose attributes meet or beat the listed module." %}
+                        <strong>{% translate "Any" %}</strong>: {% translate "no enforcement for that slot group." %}
+                        {% translate "'Not overridden' leaves the fitting's own per-module settings untouched." %}
+                    </div>
+                </div>
+
+                <button class="btn btn-success" type="submit">
+                    <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Policy" %}
+                </button>
+                <a class="btn btn-secondary" href="{% url 'fitcheck:policy_list' %}">{% translate "Cancel" %}</a>
+            </form>
+        </div>
+    </div>
+{% endblock %}

@@ -1,0 +1,181 @@
+"""Helpers for attaching/detaching DoctrineFits to/from Doctrines via the
+FitAssignment model. Cloning the source policies and overrides into a fresh
+per-(doctrine, fit) snapshot is the whole point of the rework, so every
+write path that links a fit to a doctrine should go through here.
+
+The legacy `DoctrineFit.doctrines` M2M is kept in sync for back-compat
+(read paths still iterate it for UI badges, queries, etc.), but the source
+of truth for per-doctrine policies is the FitAssignment + AssignmentItemPolicy
++ AssignmentItemOverride tree.
+"""
+
+from __future__ import annotations
+
+from django.db import transaction
+
+from ..models import (
+    AssignmentItemOverride,
+    AssignmentItemPolicy,
+    Doctrine,
+    DoctrineFit,
+    FitAssignment,
+)
+
+
+# Per-item policy fields mirrored from a DoctrineFitItem (or another
+# AssignmentItemPolicy) into an AssignmentItemPolicy snapshot. The BOM (section,
+# type, qty, charge) is denormalised separately from the source item.
+_POLICY_FIELDS = (
+    "policy",
+    "min_meta_level",
+    "allowed_meta_groups",
+    "checked_attributes",
+    "attribute_bounds",
+    "allow_mutated",
+    "min_quantity_pct",
+    "notes",
+)
+
+
+def _policy_kwargs_from(obj) -> dict:
+    """Pull the policy fields off a DoctrineFitItem or AssignmentItemPolicy,
+    copying the JSON containers so the snapshot never shares a mutable ref."""
+    return {
+        "policy": obj.policy,
+        "min_meta_level": obj.min_meta_level,
+        "allowed_meta_groups": list(obj.allowed_meta_groups or []),
+        "checked_attributes": list(obj.checked_attributes or []),
+        "attribute_bounds": dict(obj.attribute_bounds or {}),
+        "allow_mutated": obj.allow_mutated,
+        "min_quantity_pct": obj.min_quantity_pct,
+        "notes": obj.notes,
+    }
+
+
+def _create_assignment_policy(assignment, source_item, policy_kwargs, overrides) -> None:
+    """Create one AssignmentItemPolicy (+ its overrides) for `source_item`."""
+    policy = AssignmentItemPolicy.objects.create(
+        assignment=assignment,
+        source_item=source_item,
+        section=source_item.section,
+        module_type_id=source_item.module_type_id,
+        quantity=source_item.quantity,
+        charge_type_id=source_item.charge_type_id,
+        **policy_kwargs,
+    )
+    for override in overrides:
+        AssignmentItemOverride.objects.create(
+            assignment_item=policy,
+            alt_type_id=override["alt_type_id"],
+            mode=override["mode"],
+        )
+
+
+def _clone_source_items_into(assignment: FitAssignment) -> None:
+    """Populate an assignment's snapshot from its fit's current source items
+    (their defaults + overrides). The fresh-attach and repair paths share this."""
+    for item in assignment.fit.items.prefetch_related("overrides").all():
+        overrides = [
+            {"alt_type_id": o.alt_type_id, "mode": o.mode} for o in item.overrides.all()
+        ]
+        _create_assignment_policy(assignment, item, _policy_kwargs_from(item), overrides)
+
+
+@transaction.atomic
+def attach_fit_to_doctrine(
+    fit: DoctrineFit, doctrine: Doctrine, *, user=None
+) -> FitAssignment:
+    """Link a fit to a doctrine. Creates the FitAssignment + clones the fit's
+    current source policies + overrides into a fresh per-doctrine snapshot.
+    Idempotent: a second call returns the existing assignment unchanged."""
+    fit.doctrines.add(doctrine)  # back-compat M2M
+    assignment, created = FitAssignment.objects.get_or_create(
+        doctrine=doctrine, fit=fit, defaults={"created_by": user}
+    )
+    if not created:
+        return assignment
+    _clone_source_items_into(assignment)
+    return assignment
+
+
+def capture_assignment_policies(fit: DoctrineFit) -> dict[int, dict]:
+    """Snapshot every assignment's per-item policy + overrides, keyed by
+    ``assignment_id -> {(section, module_type_id): {policy_kwargs, overrides}}``.
+
+    Call this BEFORE a BOM rebuild deletes the source DoctrineFitItems: the
+    ``AssignmentItemPolicy.source_item`` FK is ``CASCADE``, so that delete wipes
+    every assignment snapshot. `rebuild_assignment_snapshots` replays this map
+    onto the freshly materialised items so per-doctrine exceptions survive."""
+    captures: dict[int, dict] = {}
+    for assignment in fit.assignments.prefetch_related("item_policies__overrides"):
+        by_key: dict[tuple, dict] = {}
+        for policy in assignment.item_policies.all():
+            by_key[(policy.section, policy.module_type_id)] = {
+                "policy_kwargs": _policy_kwargs_from(policy),
+                "overrides": [
+                    {"alt_type_id": o.alt_type_id, "mode": o.mode}
+                    for o in policy.overrides.all()
+                ],
+            }
+        captures[assignment.pk] = by_key
+    return captures
+
+
+@transaction.atomic
+def rebuild_assignment_snapshots(fit: DoctrineFit, captures: dict[int, dict]) -> None:
+    """Recreate each assignment's snapshot from `fit`'s NEW source items after a
+    BOM rebuild, carrying forward the captured per-assignment policy/overrides by
+    ``(section, module_type_id)``. Modules new to the BOM clone the (already
+    carried-forward) source item's defaults; modules dropped from the BOM fall
+    away. Mirrors the source-item carry-forward in `fit_edit.apply_captured_policy`
+    but per assignment, so each doctrine keeps its independent exceptions."""
+    new_items = list(fit.items.prefetch_related("overrides").all())
+    for assignment in fit.assignments.all():
+        cap = captures.get(assignment.pk, {})
+        # The CASCADE from the source-item delete already cleared these; the
+        # explicit delete keeps the rebuild idempotent if called another way.
+        AssignmentItemPolicy.objects.filter(assignment=assignment).delete()
+        for item in new_items:
+            saved = cap.get((item.section, item.module_type_id))
+            if saved is not None:
+                _create_assignment_policy(
+                    assignment, item, saved["policy_kwargs"], saved["overrides"]
+                )
+            else:
+                overrides = [
+                    {"alt_type_id": o.alt_type_id, "mode": o.mode}
+                    for o in item.overrides.all()
+                ]
+                _create_assignment_policy(
+                    assignment, item, _policy_kwargs_from(item), overrides
+                )
+
+
+@transaction.atomic
+def reclone_empty_assignment_snapshots() -> list[int]:
+    """One-shot repair for assignments whose snapshot was wiped by a pre-fix BOM
+    update (the `source_item` CASCADE). Re-clones from the fit's current source
+    items for any assignment that has zero policies but whose fit still has
+    items. Safe + idempotent: there is no UI to deliberately empty a snapshot
+    while keeping source items, so zero-policies-with-source-items reliably means
+    'damaged by the bug'. Returns the repaired assignment pks."""
+    repaired: list[int] = []
+    for assignment in FitAssignment.objects.select_related("fit"):
+        if assignment.item_policies.exists():
+            continue
+        if not assignment.fit.items.exists():
+            continue
+        _clone_source_items_into(assignment)
+        repaired.append(assignment.pk)
+    return repaired
+
+
+@transaction.atomic
+def detach_fit_from_doctrine(fit: DoctrineFit, doctrine: Doctrine) -> bool:
+    """Remove the assignment + back-compat M2M link. Returns True if it was
+    attached. The standalone DoctrineFit survives."""
+    fit.doctrines.remove(doctrine)
+    deleted_count, _ = FitAssignment.objects.filter(
+        doctrine=doctrine, fit=fit
+    ).delete()
+    return deleted_count > 0

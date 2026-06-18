@@ -1,0 +1,41 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # The `tests` extra pulls in coverage + allianceauth-securegroups so the
+          # optional Secure Groups filter is exercised. fakeredis backs the test
+          # cache/broker (see testauth.settings).
+          pip install -e ".[tests]" fakeredis
+
+      - name: Run migrations check
+        # Scope to fitcheck: third-party apps (e.g. eveuniverse) may carry their
+        # own unrelated pending migrations in the test environment.
+        run: python manage.py makemigrations fitcheck --check --dry-run
+
+      - name: Run test suite
+        run: coverage run manage.py test fitcheck
+
+      - name: Coverage report
+        run: coverage report

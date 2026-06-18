@@ -1,0 +1,104 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="alert alert-warning d-flex align-items-start gap-2">
+        <i class="fa-solid fa-triangle-exclamation fa-lg mt-1"></i>
+        <div>
+            <strong>{% translate "Heads up:" %}</strong>
+            {% translate "This re-runs every pending submission against the current doctrine fit. With thousands of submissions across many fits this can take several minutes and will load the Celery queue. Pick only the fittings you actually own when you can." %}
+        </div>
+    </div>
+
+    {% if fits %}
+        <form method="post">
+            {% csrf_token %}
+            <div class="fc-toolbar">
+                <div class="fc-eyebrow">
+                    {% blocktranslate count counter=fits|length %}
+                        {{ counter }} fitting with stale pending submissions
+                    {% plural %}
+                        {{ counter }} fittings with stale pending submissions
+                    {% endblocktranslate %}
+                </div>
+                <div class="ms-auto d-flex gap-2">
+                    <button class="btn btn-primary" type="submit" name="action" value="selected">
+                        <i class="fa-solid fa-rotate"></i> {% translate "Recheck selected" %}
+                    </button>
+                    <button class="btn btn-primary" type="submit" name="action" value="all"
+                            onclick="return confirm('{% translate "Re-check every fitting in the list?" %}')">
+                        <i class="fa-solid fa-rotate-right"></i> {% translate "Recheck all stale" %}
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body p-0">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 2.5rem">
+                                    <input class="form-check-input" type="checkbox" id="check-all">
+                                </th>
+                                <th>{% translate "Fitting" %}</th>
+                                <th>{% translate "Doctrines" %}</th>
+                                <th>{% translate "Hull" %}</th>
+                                <th>{% translate "Current version" %}</th>
+                                <th class="text-end">{% translate "Stale pending" %}</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for fit in fits %}
+                                <tr>
+                                    <td>
+                                        <input class="form-check-input fit-check" type="checkbox"
+                                               name="fits" value="{{ fit.pk }}">
+                                    </td>
+                                    <td>
+                                        <img class="fc-module-icon" width="24" height="24" alt=""
+                                             src="https://images.evetech.net/types/{{ fit.ship_type_id }}/icon?size=32">
+                                        <a href="{% url 'fitcheck:fit_detail' fit.pk %}"><strong>{{ fit.name }}</strong></a>
+                                    </td>
+                                    <td>
+                                        {% for doctrine in fit.doctrines.all %}
+                                            <a class="fc-chip me-1" href="{% url 'fitcheck:doctrine_detail' doctrine.pk %}">{{ doctrine.name }}</a>
+                                        {% empty %}
+                                            <span class="text-muted small">{% translate "standalone" %}</span>
+                                        {% endfor %}
+                                    </td>
+                                    <td class="text-muted">{{ fit.ship_type.name }}</td>
+                                    <td>v{{ fit.version }}</td>
+                                    <td class="text-end"><span class="badge bg-warning text-dark">{{ fit.stale_pending }}</span></td>
+                                    <td class="text-end">
+                                        <a class="btn btn-sm btn-warning" title="{% translate 'Module policies' %}"
+                                           href="{% url 'fitcheck:manage_fit_items' fit.pk %}">
+                                            <i class="fa-solid fa-sliders"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </form>
+    {% else %}
+        <div class="fc-empty">
+            <i class="fa-solid fa-circle-check fa-2x mb-3 d-block text-success"></i>
+            {% translate "Nothing stale. Every pending submission was checked against the current version of its fitting." %}
+        </div>
+    {% endif %}
+{% endblock %}
+
+{% block extra_javascript %}
+    <script>
+        const all = document.getElementById("check-all");
+        if (all) {
+            all.addEventListener("change", function () {
+                document.querySelectorAll(".fit-check").forEach(c => c.checked = this.checked);
+            });
+        }
+    </script>
+{% endblock %}

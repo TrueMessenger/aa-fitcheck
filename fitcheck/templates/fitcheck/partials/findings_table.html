@@ -1,0 +1,140 @@
+{% load i18n %}
+{% load fitcheck_extras %}
+
+{% comment %}
+Status icon is driven by the finding code, NOT by reading the message text.
+Pass codes are explicit so a future addition (e.g. another refit variant)
+won't fall through and accidentally render as a fail.
+
+Findings arrive already section-contiguous (the engine sorts by section order),
+so we regroup by section into per-section panels for visual separation.
+{% endcomment %}
+
+{% regroup findings by section as section_groups %}
+{% for group in section_groups %}
+    <div class="fc-finding-section fc-sec-{{ group.grouper }} mb-3">
+        <div class="fc-finding-section-head">
+            {% include "fitcheck/partials/section_icon.html" with code=group.grouper %}
+            <span class="ms-1">{{ group.list.0.get_section_display }}</span>
+        </div>
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>{% translate "Doctrine Expects" %}</th>
+                    <th>{% translate "Your Fit" %}</th>
+                    <th>{% translate "Status" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for finding in group.list %}
+                    <tr class="{% if finding.allowed_alternatives or finding.attribute_results %}fc-has-detail{% endif %}">
+                        <td>
+                            {% if finding.expected_type %}
+                                <img src="https://images.evetech.net/types/{{ finding.expected_type_id }}/icon?size=32"
+                                     alt="" width="24" height="24" class="me-1">
+                                {{ finding.expected_type.name }}
+                                {% if finding.expected_qty %}&times;{{ finding.expected_qty }}{% endif %}
+                            {% else %}&mdash;{% endif %}
+                        </td>
+                        <td>
+                            {% if finding.actual_type %}
+                                <img src="https://images.evetech.net/types/{{ finding.actual_type_id }}/icon?size=32"
+                                     alt="" width="24" height="24" class="me-1">
+                                {{ finding.actual_type.name }}
+                                {% if finding.actual_qty %}&times;{{ finding.actual_qty }}{% endif %}
+                            {% else %}&mdash;{% endif %}
+                        </td>
+                        {% comment %}Explanatory message rides the Status cell as a hover tooltip so it no longer clutters the table with a detail row.{% endcomment %}
+                        <td{% if finding.message %} title="{{ finding.message }}" style="cursor: help;"{% endif %}>
+                            {% if finding.code == "OK" or finding.code == "SUB" or finding.code == "REF" or finding.code == "FRF" or finding.code == "ANY" %}
+                                <i class="fa-solid fa-circle-check text-success me-1"
+                                   title="{% translate 'Pass' %}"></i>
+                            {% elif finding.code == "EXT" or finding.code == "UNV" %}
+                                <i class="fa-solid fa-triangle-exclamation text-warning me-1"
+                                   title="{% translate 'Warning' %}"></i>
+                            {% else %}
+                                <i class="fa-solid fa-circle-xmark text-danger me-1"
+                                   title="{% translate 'Fail' %}"></i>
+                            {% endif %}
+                            {% if finding.code == "OK" %}
+                                <span class="badge bg-success">{{ finding.get_code_display }}</span>
+                            {% elif finding.code == "SUB" %}
+                                <span class="badge bg-info">{{ finding.get_code_display }}</span>
+                            {% elif finding.code == "REF" %}
+                                <span class="badge bg-info"
+                                      title="{% translate 'Module is in cargo - pilot needs to refit before combat.' %}">
+                                    <i class="fa-solid fa-box-open me-1"></i>{{ finding.get_code_display }}
+                                </span>
+                            {% elif finding.code == "FRF" %}
+                                <span class="badge bg-info"
+                                      title="{% translate 'Pilot fitted this module to the ship instead of carrying it as the doctrine asks. Same module, different storage.' %}">
+                                    <i class="fa-solid fa-rocket me-1"></i>{{ finding.get_code_display }}
+                                </span>
+                            {% elif finding.code == "ANY" %}
+                                <span class="badge bg-secondary"
+                                      title="{% translate 'This slot has no enforcement set - the doctrine accepts anything here.' %}">
+                                    {{ finding.get_code_display }}
+                                </span>
+                            {% elif finding.code == "EXT" or finding.code == "UNV" %}
+                                <span class="badge bg-warning text-dark">{{ finding.get_code_display }}</span>
+                            {% else %}
+                                <span class="badge bg-danger">{{ finding.get_code_display }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if finding.allowed_alternatives or finding.attribute_results %}
+                        <tr>
+                            <td colspan="3" class="small text-muted border-0 pt-0">
+                                {% if finding.allowed_alternatives %}
+                                    <details class="mt-1">
+                                        <summary>{% translate "Allowed Options" %}</summary>
+                                        {% for alt in finding.allowed_alternatives %}
+                                            <span class="badge bg-secondary me-1">{{ alt.name }}</span>
+                                        {% endfor %}
+                                    </details>
+                                {% endif %}
+                                {% if finding.attribute_results %}
+                                    <table class="table table-sm w-auto mt-2">
+                                        <thead>
+                                            <tr>
+                                                <th>{% translate "Attribute" %}</th>
+                                                <th>{% translate "Required" %}</th>
+                                                <th>{% translate "Yours" %}</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for row in finding.attribute_results %}
+                                                <tr>
+                                                    <td>
+                                                        {{ row.attribute }}
+                                                        {% if row.high_is_good %}
+                                                            <span class="text-muted" title="{% translate 'A higher value is better for this attribute.' %}">({% translate "higher is better" %})</span>
+                                                        {% else %}
+                                                            <span class="text-muted" title="{% translate 'A lower value is better for this attribute.' %}">({% translate "lower is better" %})</span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>{{ row.required|sig3 }}</td>
+                                                    <td>{{ row.actual|sig3|default:"?" }}</td>
+                                                    <td>
+                                                        {% if row.passed %}
+                                                            <i class="fa-solid fa-check text-success"></i>
+                                                        {% else %}
+                                                            <i class="fa-solid fa-xmark text-danger"></i>
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% empty %}
+    <p class="text-muted">{% translate "No findings." %}</p>
+{% endfor %}

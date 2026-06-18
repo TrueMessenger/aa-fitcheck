@@ -1,0 +1,109 @@
+"""Local mirror of the slice of the EVE static data export the engine needs.
+
+django-eveuniverse does not expose ``variationParentTypeID`` (the data behind
+Pyfa's "Variations" menu), so we keep our own compact tables, refreshed
+whenever CCP publishes a new static-data build.
+"""
+
+from django.db import models
+from django.db.models.functions import Upper
+
+from ..constants import EveCategoryId, EveMetaGroupId, SlotKind
+
+
+class SdeType(models.Model):
+    type_id = models.PositiveIntegerField(primary_key=True)
+    name = models.CharField(max_length=200, db_index=True)
+    group_id = models.PositiveIntegerField()
+    category_id = models.PositiveIntegerField(db_index=True)
+    # EVE market group; used to separate boosters/clone mappers from implants
+    # (they share category 20 but live under different market subtrees).
+    market_group_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    # Normalized: points to itself when the type IS the family parent.
+    variation_parent_type_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    meta_group_id = models.PositiveIntegerField(null=True, blank=True)
+    meta_level = models.PositiveSmallIntegerField(null=True, blank=True)
+    slot_kind = models.CharField(max_length=8, choices=SlotKind.choices, default=SlotKind.OTHER)
+    published = models.BooleanField(default=True)
+
+    class Meta:
+        indexes = [
+            models.Index(Upper("name"), name="fitcheck_sdetype_name_upper"),
+            models.Index(fields=["category_id", "published"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.type_id})"
+
+    @property
+    def is_abyssal(self) -> bool:
+        return self.meta_group_id == EveMetaGroupId.ABYSSAL
+
+    @property
+    def is_ship(self) -> bool:
+        return self.category_id == EveCategoryId.SHIP
+
+
+class SdeAttribute(models.Model):
+    attribute_id = models.PositiveIntegerField(primary_key=True)
+    name = models.CharField(max_length=100, db_index=True)
+    display_name = models.CharField(max_length=150, blank=True, db_index=True)
+    high_is_good = models.BooleanField(default=True)
+    unit_name = models.CharField(max_length=50, blank=True)
+    published = models.BooleanField(default=True)
+
+    def __str__(self) -> str:
+        return self.display_name or self.name
+
+
+class SdeTypeAttribute(models.Model):
+    eve_type = models.ForeignKey(SdeType, on_delete=models.CASCADE, related_name="attributes")
+    attribute = models.ForeignKey(SdeAttribute, on_delete=models.CASCADE, related_name="+")
+    value = models.FloatField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["eve_type", "attribute"], name="fitcheck_unique_type_attribute"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.eve_type_id}.{self.attribute_id}={self.value}"
+
+
+class SdeMutaplasmidMapping(models.Model):
+    """One row per (abyssal result type, base source type, mutaplasmid)."""
+
+    abyssal_type = models.ForeignKey(
+        SdeType, on_delete=models.CASCADE, related_name="mutation_sources"
+    )
+    source_type = models.ForeignKey(
+        SdeType, on_delete=models.CASCADE, related_name="mutation_results"
+    )
+    mutator_type_id = models.PositiveIntegerField()
+    # [{"attr_id": int, "min": float, "max": float, "high_is_good": bool}, ...]
+    mutable_attributes = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["abyssal_type", "source_type", "mutator_type_id"],
+                name="fitcheck_unique_mutaplasmid_mapping",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source_type_id} -> {self.abyssal_type_id} via {self.mutator_type_id}"
+
+
+class SdeLoadRecord(models.Model):
+    sde_build = models.CharField(max_length=128)
+    loaded_at = models.DateTimeField(auto_now_add=True)
+    type_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        get_latest_by = "loaded_at"
+
+    def __str__(self) -> str:
+        return f"{self.sde_build} @ {self.loaded_at:%Y-%m-%d %H:%M}"

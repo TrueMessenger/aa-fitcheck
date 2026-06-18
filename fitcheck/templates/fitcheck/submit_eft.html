@@ -1,0 +1,54 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="card">
+        <div class="card-header">
+            <i class="fa-solid fa-vial me-2"></i>
+            {% blocktranslate with fit=fit.name ship=fit.ship_type.name %}
+                Test a {{ ship }} fit against "{{ fit }}"
+            {% endblocktranslate %}
+        </div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label class="form-label" for="eft_text">{% translate "Your fit (EFT format)" %}</label>
+                    <textarea class="form-control font-monospace" id="eft_text" name="eft_text"
+                              rows="16" placeholder="[{{ fit.ship_type.name }}, My Fit]&#10;..."></textarea>
+                    <div class="form-text">
+                        {% translate "In game: open the fitting window, click the hamburger menu, choose Copy. For mutated modules, export from Pyfa with mutations included." %}
+                    </div>
+                </div>
+                {% if gradeable_doctrines %}
+                    <div class="mb-3">
+                        <label class="form-label">{% translate "Grade against doctrine(s)" %}</label>
+                        <div class="form-text mb-2">
+                            {% translate "Each doctrine has its own policy snapshot for this fit; pick one or more to check against. Leave all unchecked to grade against the fit's source-level defaults." %}
+                        </div>
+                        {% for doctrine in gradeable_doctrines %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="doctrines"
+                                       value="{{ doctrine.pk }}" id="doctrine-{{ doctrine.pk }}">
+                                <label class="form-check-label" for="doctrine-{{ doctrine.pk }}">
+                                    {{ doctrine.name }}
+                                </label>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="form-text mb-3">
+                        {% translate "This fit is standalone (in no doctrine you can see); it will be graded against its source-level defaults." %}
+                    </div>
+                {% endif %}
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-clipboard-check"></i> {% translate "Check fit" %}
+                </button>
+                <a class="btn btn-secondary" href="{% url 'fitcheck:fit_detail' fit.pk %}">
+                    {% translate "Cancel" %}
+                </a>
+            </form>
+        </div>
+    </div>
+{% endblock %}

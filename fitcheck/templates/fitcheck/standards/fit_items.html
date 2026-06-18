@@ -1,0 +1,725 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+{% load fitcheck_extras %}
+
+{% block fitcheck_css %}
+    <style>
+        /* Each slot section is its own fc-finding-section panel (matching the
+           fitting form). The panel's overflow:hidden clips the rounded corners,
+           which also rules out a sticky header - but sections are short enough
+           per panel that scrolling-freeze is no longer needed. Keep the column
+           header visually distinct with an opaque background + divider. */
+        .fitcheck-items thead th {
+            background: var(--bs-body-bg);
+            box-shadow: inset 0 -1px 0 var(--bs-border-color);
+        }
+        .fitcheck-meta-groups ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0 .75rem; }
+        .fitcheck-meta-groups li { white-space: nowrap; font-size: .85em; }
+        .fc-abyssal-wrap { border-top: 1px dashed var(--bs-border-color); margin-top: .35rem; padding-top: .35rem; font-size: .85em; }
+        .fitcheck-items td { vertical-align: middle; }
+        /* Cells/controls that don't apply under the chosen policy are hidden. */
+        .fc-hidden { display: none !important; }
+        /* Override-picker status: stays readable on dark themes by leaning on
+           Bootstrap semantic colours. text-muted would blend into the panel. */
+        .fc-mod-status { color: var(--bs-body-color); min-height: 1.25em; }
+        .fc-mod-status.is-searching { color: var(--bs-info-text-emphasis, var(--bs-info)); }
+        .fc-mod-status.is-empty { color: var(--bs-warning-text-emphasis, var(--bs-warning)); }
+        .fc-mod-status.is-hit { color: var(--bs-success-text-emphasis, var(--bs-success)); }
+        .fc-mod-status.is-error { color: var(--bs-danger-text-emphasis, var(--bs-danger)); }
+        /* Qty % Pass: show the % suffix INSIDE the field (1-100, max 3 digits). */
+        .fc-qty-pct { position: relative; width: 5rem; }
+        .fc-qty-pct input { padding-right: 1.4rem; text-align: right; }
+        .fc-qty-pct .fc-qty-pct-suffix {
+            position: absolute; right: .55rem; top: 50%; transform: translateY(-50%);
+            color: #6c757d; pointer-events: none; font-size: .85em;
+        }
+    </style>
+{% endblock %}
+
+{% block fitcheck_content %}
+    {% if assignment %}
+        <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+            <i class="fa-solid fa-circle-info"></i>
+            <div>
+                {% blocktranslate with doctrine=assignment.doctrine.name %}
+                    Editing the per-doctrine policy snapshot for <strong>{{ doctrine }}</strong>.
+                    Changes here stay local to this combination - the fit's source defaults
+                    and other doctrine assignments are untouched.
+                {% endblocktranslate %}
+                {% if assignment.fit.doctrines.count > 1 %}
+                    <a class="ms-1" href="{% url 'fitcheck:manage_fit_items' assignment.fit.pk %}">
+                        {% translate "Edit the source defaults instead" %}
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+    <div class="card mb-3">
+        <div class="card-body fc-ship-row">
+            <img src="https://images.evetech.net/types/{{ fit.ship_type_id }}/render?size=64"
+                 alt="" width="48" height="48">
+            <div>
+                <strong>{{ fit.name }}</strong> &middot; {{ fit.ship_type.name }}
+                {% if assignment %}
+                    <span class="badge bg-info ms-1">{{ assignment.doctrine.name }}</span>
+                {% endif %}
+                <div class="small text-muted">
+                    v{{ fit.version }} &middot;
+                    {% if fit.compliance_policy %}
+                        {% blocktranslate with name=fit.compliance_policy.name %}Last applied policy: <strong>{{ name }}</strong>{% endblocktranslate %} &middot;
+                    {% endif %}
+                    {% translate "Module policies, exceptions and quantity leeway. Saving bumps the version; pending submissions become stale until you manually re-check them." %}
+                </div>
+            </div>
+            <div class="ms-auto d-flex gap-2 align-items-center flex-wrap justify-content-end">
+                {% if stale_pending_count %}
+                    <form method="post" action="{% url 'fitcheck:fit_recheck_stale' fit.pk %}">
+                        {% csrf_token %}
+                        <button class="btn btn-warning btn-sm" type="submit"
+                                title="{% translate 'Re-grade pending submissions against the current version' %}">
+                            <i class="fa-solid fa-rotate"></i>
+                            {% blocktranslate with n=stale_pending_count %}Recheck {{ n }} stale{% endblocktranslate %}
+                        </button>
+                    </form>
+                {% endif %}
+                {% if has_policies %}
+                    <form method="post" action="{% url 'fitcheck:fit_apply_policy' fit.pk %}" class="d-flex gap-2">
+                        {% csrf_token %}
+                        {{ apply_policy_form.policy }}
+                        <button class="btn btn-primary" type="submit"
+                                title="{% translate 'Bulk-apply a slot-group policy to all modules' %}">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> {% translate "Apply policy" %}
+                        </button>
+                    </form>
+                {% endif %}
+                <a class="btn btn-secondary" href="{% url 'fitcheck:fit_detail' fit.pk %}">
+                    {% translate "Back to fitting" %}
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" id="items-form">
+        {% csrf_token %}
+        {{ formset.management_form }}
+        <div class="d-flex justify-content-end mb-2">
+            <button type="submit" class="btn btn-success btn-sm">
+                <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Policies" %}
+            </button>
+        </div>
+        {% regroup rows by item.section as section_groups %}
+        {% for group in section_groups %}
+        <div class="fc-finding-section fc-sec-{{ group.grouper }} mb-3">
+            <div class="fc-finding-section-head">
+                {% include "fitcheck/partials/section_icon.html" with code=group.grouper %}
+                <span class="ms-1">{{ group.list.0.item.get_section_display }}</span>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm fitcheck-items align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% translate "Module" %}</th>
+                            <th>{% translate "Policy" %}</th>
+                            <th>{% translate "Allowed Meta Groups (Checked = Allowed)" %}</th>
+                            <th title="{% translate 'How far below the listed quantity still passes - e.g. 1000 Nanite Repair Paste at 50% passes with 500 or more. Slot modules always require the exact count. The checker validates against the rounded-up required amount.' %}">{% translate "Qty % Pass" %}</th>
+                            <th title="{% translate 'Per-module include/exclude overrides - force-allow a specific module as a substitute, or forbid one the policy would otherwise accept.' %}">{% translate "Exceptions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in group.list %}
+                            <tr data-policy-row data-own-meta-group="{{ row.own_meta_group }}"
+                                data-qty="{{ row.item.quantity }}">
+                                <td>
+                                    {{ row.form.id }}
+                                    <img class="fc-module-icon" src="https://images.evetech.net/types/{{ row.item.module_type_id }}/icon?size=32"
+                                         alt="" width="24" height="24">
+                                    {{ row.item.module_type.name }}
+                                    <span class="text-muted">&times;{{ row.item.quantity }}</span>
+                                    {% if row.form.errors %}
+                                        <div class="text-danger small">{{ row.form.errors }}</div>
+                                    {% endif %}
+                                </td>
+                                <td data-policy-cell>{{ row.form.policy }}</td>
+                                <td class="fitcheck-meta-groups" data-meta-cell>
+                                    <div data-meta-groups>{{ row.form.allowed_meta_groups }}</div>
+                                    <div class="fc-abyssal-wrap form-check" data-abyssal-wrap>
+                                        {{ row.form.allow_mutated }}
+                                        <label class="form-check-label" for="{{ row.form.allow_mutated.id_for_label }}">
+                                            {% translate "Abyssal (mutated modules that meet or beat)" %}
+                                        </label>
+                                    </div>
+                                </td>
+                                <td data-qty-cell>
+                                    {% if row.is_quantity_section %}
+                                        <div class="fc-qty-pct">
+                                            {{ row.form.min_quantity_pct }}
+                                            <span class="fc-qty-pct-suffix">%</span>
+                                        </div>
+                                        <div class="small text-muted mt-1">
+                                            {% translate "Minimum" %} <span class="fc-qty-needed">{{ row.item.required_quantity }}</span>
+                                        </div>
+                                    {% else %}
+                                        <input type="hidden"
+                                               name="{{ row.form.min_quantity_pct.html_name }}"
+                                               value="{{ row.item.min_quantity_pct }}">
+                                        <span class="text-muted small" data-qty-label
+                                              title="{% translate 'Slot sections always require the exact quantity. Type substitution is governed by the Policy column, not this field.' %}">
+                                            {% translate "exact qty" %}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td style="min-width: 18rem" data-exc-cell>
+                                    {% for ov in row.overrides %}
+                                        <span class="badge {% if ov.obj.mode == 'I' %}bg-success{% else %}bg-danger{% endif %} me-1 mb-1">
+                                            {{ ov.obj.alt_type.name }}
+                                            <button type="submit" class="btn-close btn-close-white ms-1"
+                                                    style="font-size: .6em"
+                                                    form="override-remove-{{ ov.obj.pk }}"
+                                                    aria-label="{% translate 'Remove' %}"></button>
+                                        </span>
+                                    {% endfor %}
+                                    <details class="mt-1 fc-override-picker"
+                                             data-section="{{ row.item.section }}"
+                                             data-section-label="{{ row.item.get_section_display }}"
+                                             data-doctrine-type-id="{{ row.item.module_type_id }}"
+                                             data-item-pk="{{ row.item.pk }}">
+                                        <summary class="small text-muted">
+                                            <i class="fa-solid fa-plus me-1"></i>{% translate "Add Exceptions" %}
+                                        </summary>
+                                        <div class="position-relative mt-1">
+                                            <div class="input-group input-group-sm">
+                                                <input type="search" class="form-control fc-mod-search"
+                                                       placeholder="{% blocktranslate with slot=row.item.get_section_display %}Search {{ slot }} modules…{% endblocktranslate %}"
+                                                       autocomplete="off">
+                                                <button type="button"
+                                                        class="btn btn-primary fc-mod-search-btn"
+                                                        title="{% translate 'Search now' %}">
+                                                    <i class="fa-solid fa-magnifying-glass fc-mod-search-icon"></i>
+                                                </button>
+                                            </div>
+                                            <div class="list-group fc-mod-suggest d-none position-absolute w-100"
+                                                 style="z-index: 30; max-height: 16rem; overflow-y: auto"></div>
+                                        </div>
+                                        <div class="fc-mod-status small mt-1" aria-live="polite"></div>
+                                        <div class="fc-mod-staged mt-1 d-flex flex-wrap gap-1"></div>
+                                        {% comment %}
+                                        Buttons submit the external form #ov-bulk-<pk> (declared after
+                                        #items-form closes) via the HTML5 form= attribute - a nested
+                                        <form> here would be illegal inside #items-form and break it.
+                                        {% endcomment %}
+                                        <div class="mt-1 d-flex gap-1 fc-mod-bulk-form">
+                                            <button class="btn btn-sm btn-success" type="submit"
+                                                    form="ov-bulk-{{ row.item.pk }}"
+                                                    name="mode" value="I" disabled>
+                                                <i class="fa-solid fa-check me-1"></i>{% translate "Allow Selected" %}
+                                            </button>
+                                            <button class="btn btn-sm btn-danger" type="submit"
+                                                    form="ov-bulk-{{ row.item.pk }}"
+                                                    name="mode" value="E" disabled>
+                                                <i class="fa-solid fa-ban me-1"></i>{% translate "Forbid Selected" %}
+                                            </button>
+                                        </div>
+                                    </details>
+                                    {% if row.has_rollable %}
+                                        <button type="button"
+                                                class="btn btn-sm btn-primary mt-1 fc-attr-trigger"
+                                                data-candidates-url="{{ row.urls.attr_candidates }}"
+                                                data-save-url="{{ row.urls.attr_save }}"
+                                                data-module-name="{{ row.item.module_type.name }}">
+                                            <i class="fa-solid fa-sliders me-1"></i>{% translate "Abyssal attributes" %}
+                                            {% if not row.item.checked_attributes %}
+                                                <span>({% translate "defaults" %})</span>
+                                            {% endif %}
+                                        </button>
+                                        {% if row.selected_attrs %}
+                                            <div class="fc-attr-summary d-flex flex-wrap gap-1 mt-1">
+                                                {% for a in row.selected_attrs %}
+                                                    <span class="badge bg-secondary fw-normal"
+                                                          title="{{ a.label }}{% if a.high_is_good %} ({% translate 'higher better' %}){% else %} ({% translate 'lower better' %}){% endif %}">
+                                                        {% if a.icon %}<i class="fa-solid {{ a.icon }} me-1"></i>{% endif %}
+                                                        {% if a.bound %}{{ a.bound.min|sig3 }}–{{ a.bound.max|sig3 }}{% else %}{{ a.baseline|sig3 }}+{% endif %}
+                                                    </span>
+                                                {% endfor %}
+                                            </div>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-success">
+            <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Policies" %}
+        </button>
+    </form>
+
+    {% for row in rows %}
+        <form id="override-add-{{ row.item.pk }}" method="post"
+              action="{{ row.urls.override_add }}">{% csrf_token %}</form>
+        <form id="ov-bulk-{{ row.item.pk }}" method="post"
+              action="{{ row.urls.override_add_bulk }}">{% csrf_token %}</form>
+        {% for ov in row.overrides %}
+            <form id="override-remove-{{ ov.obj.pk }}" method="post"
+                  action="{{ ov.remove_url }}">{% csrf_token %}</form>
+        {% endfor %}
+    {% endfor %}
+
+    {# Shared abyssal-attribute modal, populated per-item via JS. #}
+    <div class="modal fade" id="attrModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <form method="post" id="attr-modal-form">
+                    {% csrf_token %}
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="fa-solid fa-sliders me-2"></i>{% translate "Abyssal Attribute Requirements" %}
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="form-text">
+                            {% translate "Tick each attribute a mutated module must satisfy. The Abyssal Spec range defaults to the full roll range; narrow it to set an acceptance window - a roll is accepted when it's at least as good as the worst-side bound. Untouched attributes just meet-or-beat the baseline." %}
+                        </p>
+                        <table class="table table-sm align-middle">
+                            <thead>
+                                <tr>
+                                    <th style="width: 2rem"></th>
+                                    <th style="width: 34%">{% translate "Attribute" %}</th>
+                                    <th id="attr-modal-baseline-head" class="text-center" style="width: 13%">{% translate "Baseline" %}</th>
+                                    <th id="attr-modal-spec-head">{% translate "Abyssal Spec (Allowed Range)" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attr-modal-list"></tbody>
+                        </table>
+                        <div id="attr-modal-empty" class="text-muted d-none">
+                            {% translate "No mutaplasmid-rollable attributes for this module." %}
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fa-solid fa-floppy-disk me-1"></i>{% translate "Save attributes" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    <script>
+        // Policy-driven row behaviour: which controls are shown, and the default
+        // meta-group selection when the policy changes.
+        (function () {
+            const ALL_GROUPS = ["1", "2", "3", "4", "5", "6"];
+
+            function metaBoxes(row) {
+                const cell = row.querySelector("[data-meta-groups]");
+                return cell ? Array.from(cell.querySelectorAll("input[type=checkbox]")) : [];
+            }
+
+            // Reset the meta-group checkboxes to the policy's default selection.
+            function setMetaDefaults(row, policy) {
+                const own = row.dataset.ownMetaGroup;
+                metaBoxes(row).forEach(box => {
+                    if (policy === "EX") {
+                        box.checked = box.value === own;     // only the module's own group
+                    } else {
+                        box.checked = true;                  // VA / MB / AN: all allowed
+                    }
+                });
+            }
+
+            function show(el, visible) {
+                if (el) el.classList.toggle("fc-hidden", !visible);
+            }
+
+            function applyVisibility(row) {
+                const select = row.querySelector("[data-policy-cell] select");
+                if (!select) return;
+                const policy = select.value;
+                const isAny = policy === "AN";
+                const isMB = policy === "MB";
+                const abyssalWrap = row.querySelector("[data-abyssal-wrap]");
+                const abyssalBox = abyssalWrap ? abyssalWrap.querySelector("input[type=checkbox]") : null;
+
+                // Meta groups: hidden only under No-enforcement.
+                show(row.querySelector("[data-meta-cell] [data-meta-groups]"), !isAny);
+                // Abyssal: only meaningful under meets-or-beats.
+                show(abyssalWrap, isMB);
+                // Qty label + exceptions + required-attrs: hidden under No-enforcement.
+                show(row.querySelector("[data-qty-label]"), !isAny);
+                show(row.querySelector("[data-exc-cell] .fc-override-picker"), !isAny);
+                const trigger = row.querySelector(".fc-attr-trigger");
+                // Required attributes only when abyssal modules are allowed (MB + ticked).
+                show(trigger, isMB && !isAny && abyssalBox && abyssalBox.checked);
+            }
+
+            document.querySelectorAll("[data-policy-row]").forEach(row => {
+                applyVisibility(row);  // initial state from saved values
+                const select = row.querySelector("[data-policy-cell] select");
+                if (select) {
+                    select.addEventListener("change", () => {
+                        setMetaDefaults(row, select.value);
+                        applyVisibility(row);
+                    });
+                }
+                const abyssalBox = row.querySelector("[data-abyssal-wrap] input[type=checkbox]");
+                if (abyssalBox) {
+                    abyssalBox.addEventListener("change", () => applyVisibility(row));
+                }
+                // Live "= N needed" = ceil(listed qty * pct / 100) - what the checker
+                // validates against (you can't pass with a fractional crystal/charge).
+                const qtyInput = row.querySelector("[data-qty-cell] input[type=number]");
+                const qtyOut = row.querySelector(".fc-qty-needed");
+                if (qtyInput && qtyOut) {
+                    const baseQty = parseInt(row.dataset.qty || "0", 10);
+                    qtyInput.addEventListener("input", () => {
+                        const pct = parseFloat(qtyInput.value);
+                        if (!baseQty || isNaN(pct)) return;
+                        qtyOut.textContent = Math.max(1, Math.ceil(baseQty * pct / 100));
+                    });
+                }
+            });
+        })();
+
+        // Abyssal Attribute Requirements modal: per ticked attribute, a baseline
+        // column (the standard module) and an "Abyssal Spec" range (lower/upper
+        // handles) the manager can narrow. Posts attr_ids + min_<id>/max_<id>.
+        (function () {
+            const modalEl = document.getElementById("attrModal");
+            if (!modalEl || !window.bootstrap) return;
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            const form = document.getElementById("attr-modal-form");
+            const list = document.getElementById("attr-modal-list");
+            const empty = document.getElementById("attr-modal-empty");
+            const baselineHead = document.getElementById("attr-modal-baseline-head");
+            const specHead = document.getElementById("attr-modal-spec-head");
+
+            function r3(n) {
+                if (n === null || n === undefined || isNaN(n)) return "?";
+                const num = Number(n);
+                if (num === 0) return "0";
+                return parseFloat(num.toPrecision(3)).toString();
+            }
+
+            function rowHtml(a) {
+                const dir = a.high_is_good
+                    ? "{% translate 'higher better' %}"
+                    : "{% translate 'lower better' %}";
+                const lo = (a.abyssal_min ?? a.baseline);
+                const hi = (a.abyssal_max ?? a.baseline);
+                const curLo = a.bound ? a.bound.min : lo;
+                const curHi = a.bound ? a.bound.max : hi;
+                const id = a.attr_id;
+                // Track gradient: the "good" end is green, the "bad" end red.
+                const grad = a.high_is_good
+                    ? "linear-gradient(to right,#dc3545,#ffc107,#198754)"
+                    : "linear-gradient(to right,#198754,#ffc107,#dc3545)";
+                let spec, accept;
+                if (!(hi > lo)) {
+                    spec = `<span class="text-muted">${r3(lo)}</span>` +
+                        `<input type="hidden" name="min_${id}" value="${lo}">` +
+                        `<input type="hidden" name="max_${id}" value="${hi}">`;
+                    accept = "";  // no real roll range -> no acceptance window
+                } else {
+                    const step = Math.max((hi - lo) / 100, 0.001);
+                    spec =
+                        `<div class="fc-dual-range" data-attr="${id}" data-lo="${lo}" data-hi="${hi}">` +
+                          `<div class="fc-track" style="background:${grad}"></div>` +
+                          `<input type="range" class="fc-range-min" name="min_${id}" ` +
+                            `min="${lo}" max="${hi}" step="${step}" value="${curLo}">` +
+                          `<input type="range" class="fc-range-max" name="max_${id}" ` +
+                            `min="${lo}" max="${hi}" step="${step}" value="${curHi}">` +
+                          `<span class="fc-range-bubble fc-bubble-min"></span>` +
+                          `<span class="fc-range-bubble fc-bubble-max"></span>` +
+                        `</div>` +
+                        `<div class="d-flex justify-content-between small text-muted">` +
+                          `<span>${r3(lo)}</span><span>${r3(hi)}</span></div>`;
+                    // The acceptance window lives in the Attribute column (below the
+                    // name, above the direction), wired by attr id.
+                    accept =
+                        `<div class="small fw-normal text-muted" id="acc-${id}">` +
+                          `{% translate 'Accept' %} <span class="fc-range-lo">${r3(curLo)}</span> - ` +
+                          `<span class="fc-range-hi">${r3(curHi)}</span></div>`;
+                }
+                const icon = a.icon ? `<i class="fa-solid ${a.icon} me-1 text-muted"></i>` : "";
+                return `<tr>` +
+                    `<td><input class="form-check-input" type="checkbox" name="attr_ids" ` +
+                      `value="${id}" ${a.selected ? "checked" : ""}></td>` +
+                    `<td class="fc-attr-name">${icon}${a.label}${accept}` +
+                      `<div class="small text-muted">${dir}</div></td>` +
+                    `<td class="text-center">${r3(a.baseline)}</td>` +
+                    `<td>${spec}</td></tr>`;
+            }
+
+            function wireRange(container) {
+                const min = container.querySelector(".fc-range-min");
+                const max = container.querySelector(".fc-range-max");
+                if (!min || !max) return;
+                const id = container.dataset.attr;
+                const lo = parseFloat(container.dataset.lo), hi = parseFloat(container.dataset.hi);
+                const bubMin = container.querySelector(".fc-bubble-min");
+                const bubMax = container.querySelector(".fc-bubble-max");
+                const acc = document.getElementById("acc-" + id);
+                const loOut = acc ? acc.querySelector(".fc-range-lo") : null;
+                const hiOut = acc ? acc.querySelector(".fc-range-hi") : null;
+                const pct = v => (hi > lo ? ((v - lo) / (hi - lo)) * 100 : 0);
+                function place(bub, v) {
+                    if (!bub) return;
+                    bub.textContent = r3(v);
+                    bub.style.left = pct(v) + "%";
+                }
+                function sync() {
+                    let a = parseFloat(min.value), b = parseFloat(max.value);
+                    if (a > b) {
+                        if (document.activeElement === min) { max.value = a; b = a; }
+                        else { min.value = b; a = b; }
+                    }
+                    place(bubMin, a);
+                    place(bubMax, b);
+                    if (loOut) loOut.textContent = r3(a);
+                    if (hiOut) hiOut.textContent = r3(b);
+                }
+                min.addEventListener("input", sync);
+                max.addEventListener("input", sync);
+                sync();  // initial placement of bubbles
+            }
+
+            function typeIcon(typeId) {
+                return typeId
+                    ? `<img class="fc-module-icon me-1" width="20" height="20" alt="" ` +
+                      `src="https://images.evetech.net/types/${typeId}/icon?size=32">`
+                    : "";
+            }
+
+            document.querySelectorAll(".fc-attr-trigger").forEach(btn => {
+                btn.addEventListener("click", async () => {
+                    form.action = btn.dataset.saveUrl;
+                    const name = btn.dataset.moduleName || "{% translate 'Module' %}";
+                    baselineHead.textContent = name;
+                    specHead.textContent = "{% translate 'Abyssal Spec' %}";
+                    list.innerHTML =
+                        `<tr><td colspan="4" class="text-muted">{% translate 'Loading…' %}</td></tr>`;
+                    empty.classList.add("d-none");
+                    modal.show();
+                    let data;
+                    try {
+                        const resp = await fetch(btn.dataset.candidatesUrl);
+                        if (!resp.ok) throw new Error("fetch failed");
+                        data = await resp.json();
+                    } catch (err) {
+                        list.innerHTML =
+                            `<tr><td colspan="4" class="text-danger">{% translate 'Could not load attributes.' %}</td></tr>`;
+                        return;
+                    }
+                    // Column titles now carry the module icon + the EVE-standard
+                    // abyssal name pulled from the SDE.
+                    baselineHead.innerHTML = typeIcon(data.base_type_id) + (data.module || name);
+                    specHead.innerHTML = typeIcon(data.abyssal_type_id) +
+                        (data.abyssal_name || ("{% translate 'Abyssal' %} " + name));
+                    const attrs = data.attributes || [];
+                    if (!attrs.length) {
+                        list.innerHTML = "";
+                        empty.classList.remove("d-none");
+                        return;
+                    }
+                    list.innerHTML = attrs.map(rowHtml).join("");
+                    list.querySelectorAll(".fc-dual-range").forEach(wireRange);
+                });
+            });
+        })();
+
+        // Override picker: autocomplete by slot, multi-stage chips, bulk submit.
+        (function () {
+            const SEARCH_URL = "{% url 'fitcheck:module_search' %}";
+            const SLOT_KIND_LABELS = {
+                "HIGH": "{% translate 'High slot' %}",
+                "MED": "{% translate 'Mid slot' %}",
+                "LOW": "{% translate 'Low slot' %}",
+                "RIG": "{% translate 'Rig' %}",
+                "SUBSYS": "{% translate 'Subsystem' %}",
+                "DRONE": "{% translate 'Drone' %}",
+                "FIGHTER": "{% translate 'Fighter' %}",
+                "CHARGE": "{% translate 'Charge' %}",
+                "IMPLANT": "{% translate 'Implant' %}",
+                "OTHER": "{% translate 'Other' %}",
+            };
+
+            document.querySelectorAll(".fc-override-picker").forEach(picker => {
+                const section = picker.dataset.section;
+                const sectionLabel = picker.dataset.sectionLabel || section;
+                const itemPk = picker.dataset.itemPk;
+                const doctrineTypeId = picker.dataset.doctrineTypeId;
+                const input = picker.querySelector(".fc-mod-search");
+                const suggestBox = picker.querySelector(".fc-mod-suggest");
+                const staged = picker.querySelector(".fc-mod-staged");
+                const status = picker.querySelector(".fc-mod-status");
+                const searchBtn = picker.querySelector(".fc-mod-search-btn");
+                const searchIcon = picker.querySelector(".fc-mod-search-icon");
+                const form = picker.querySelector(".fc-mod-bulk-form");
+                // The actual <form> lives outside #items-form (nested forms are invalid);
+                // the buttons/inputs associate to it via the HTML5 form= attribute.
+                const bulkForm = document.getElementById("ov-bulk-" + itemPk);
+                if (!input || !form || !bulkForm) return;  // never let one bad row abort the rest
+                const buttons = form.querySelectorAll("button[type=submit]");
+                const stagedIds = new Set();
+                let timer = null;
+                let lastFetchToken = 0;
+
+                function syncButtons() {
+                    const has = stagedIds.size > 0;
+                    buttons.forEach(b => b.disabled = !has);
+                }
+
+                const STATUS_STATES = ["is-searching", "is-empty", "is-hit", "is-error"];
+                function setStatus(text, state) {
+                    status.textContent = text;
+                    STATUS_STATES.forEach(s => status.classList.remove(s));
+                    if (state) status.classList.add("is-" + state);
+                }
+
+                function setBusy(busy) {
+                    searchIcon.className = busy
+                        ? "fa-solid fa-spinner fa-spin fc-mod-search-icon"
+                        : "fa-solid fa-magnifying-glass fc-mod-search-icon";
+                    searchBtn.disabled = busy;
+                }
+
+                function stage(typeId, name) {
+                    if (stagedIds.has(typeId)) return;
+                    stagedIds.add(typeId);
+                    const chip = document.createElement("span");
+                    chip.className = "badge bg-secondary me-1 mb-1 d-inline-flex align-items-center gap-1";
+                    chip.dataset.typeId = typeId;
+                    chip.textContent = name;
+                    const close = document.createElement("button");
+                    close.type = "button";
+                    close.className = "btn-close btn-close-white";
+                    close.style.fontSize = ".55em";
+                    close.setAttribute("aria-label", "Remove");
+                    close.addEventListener("click", () => {
+                        stagedIds.delete(typeId);
+                        chip.remove();
+                        hidden.remove();
+                        syncButtons();
+                    });
+                    chip.appendChild(close);
+                    staged.appendChild(chip);
+                    const hidden = document.createElement("input");
+                    hidden.type = "hidden";
+                    hidden.name = "type_ids";
+                    hidden.value = String(typeId);
+                    bulkForm.appendChild(hidden);
+                    syncButtons();
+                }
+
+                async function runSearch() {
+                    const q = input.value.trim();
+                    if (q.length < 2) {
+                        suggestBox.classList.add("d-none");
+                        setStatus(q.length === 0
+                            ? ""
+                            : "{% translate 'Type at least 2 characters.' %}",
+                            q.length === 0 ? null : "searching");
+                        return;
+                    }
+                    const token = ++lastFetchToken;
+                    setBusy(true);
+                    setStatus("{% translate 'Searching…' %}", "searching");
+                    const url = SEARCH_URL + "?section=" + encodeURIComponent(section) +
+                                "&q=" + encodeURIComponent(q);
+                    let data;
+                    try {
+                        const resp = await fetch(url);
+                        if (!resp.ok) throw new Error("search failed");
+                        data = await resp.json();
+                    } catch (err) {
+                        if (token === lastFetchToken) {
+                            setBusy(false);
+                            setStatus("{% translate 'Search failed - try again.' %}", "error");
+                            suggestBox.classList.add("d-none");
+                        }
+                        return;
+                    }
+                    // Ignore stale responses.
+                    if (token !== lastFetchToken) return;
+                    setBusy(false);
+                    suggestBox.innerHTML = "";
+                    const rows = data.results.filter(r => !stagedIds.has(r.type_id));
+                    if (!rows.length) {
+                        suggestBox.classList.add("d-none");
+                        if (data.results.length) {
+                            setStatus("{% translate 'All matches are already staged below.' %}", "empty");
+                        } else {
+                            const offSlot = (data.off_slot || []);
+                            if (offSlot.length) {
+                                const hints = offSlot.slice(0, 3).map(o =>
+                                    (SLOT_KIND_LABELS[o.slot_kind] || o.slot_kind) +
+                                    " (" + o.count + ")").join(", ");
+                                setStatus(
+                                    "{% translate 'No' %} " + sectionLabel +
+                                    " {% translate 'matches for' %} \"" + q +
+                                    "\". {% translate 'Found in' %}: " + hints + ".",
+                                    "empty");
+                            } else {
+                                setStatus(
+                                    "{% translate 'No' %} " + sectionLabel +
+                                    " {% translate 'matches for' %} \"" + q + "\".",
+                                    "empty");
+                            }
+                        }
+                        return;
+                    }
+                    setStatus(rows.length === 1
+                        ? "{% translate '1 match - click to stage.' %}"
+                        : rows.length + " {% translate 'matches - click to stage.' %}",
+                        "hit"
+                    );
+                    rows.forEach(row => {
+                        const btn = document.createElement("button");
+                        btn.type = "button";
+                        btn.className = "list-group-item list-group-item-action d-flex align-items-center gap-2";
+                        btn.innerHTML =
+                            `<img src="https://images.evetech.net/types/${row.type_id}/icon?size=32" ` +
+                            `width="20" height="20" class="rounded"> ${row.name}`;
+                        btn.addEventListener("click", () => {
+                            stage(row.type_id, row.name);
+                            btn.remove();
+                            if (!suggestBox.children.length) {
+                                suggestBox.classList.add("d-none");
+                                setStatus("", null);
+                            }
+                        });
+                        suggestBox.appendChild(btn);
+                    });
+                    suggestBox.classList.remove("d-none");
+                }
+
+                input.addEventListener("input", () => {
+                    clearTimeout(timer);
+                    timer = setTimeout(runSearch, 200);
+                });
+                searchBtn.addEventListener("click", () => {
+                    clearTimeout(timer);
+                    runSearch();
+                });
+                input.addEventListener("keydown", e => {
+                    if (e.key === "Enter") {
+                        e.preventDefault();
+                        clearTimeout(timer);
+                        runSearch();
+                    }
+                });
+                document.addEventListener("click", e => {
+                    if (!picker.contains(e.target)) suggestBox.classList.add("d-none");
+                });
+            });
+        })();
+    </script>
+{% endblock %}

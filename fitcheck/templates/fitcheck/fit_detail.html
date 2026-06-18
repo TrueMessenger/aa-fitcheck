@@ -1,0 +1,220 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="card mb-3">
+        <div class="card-body fc-ship-row">
+            <img src="https://images.evetech.net/types/{{ fit.ship_type_id }}/render?size=128"
+                 alt="" width="80" height="80">
+            <div>
+                <div class="fc-eyebrow">
+                    {% translate "Fitting standard" %} &middot; {% translate "Fit" %} v{{ fit.version }}
+                    &middot; {% translate "Created" %} {{ fit.created_at|date:"Y-m-d" }}
+                    {% with updated=fit.bom_updated_at|default:fit.updated_at %}
+                        &middot; {% translate "Updated" %} {{ updated|date:"Y-m-d" }}
+                    {% endwith %}
+                    {% if perms.fitcheck.manage_doctrines and fit.archives.exists %}
+                        &middot; <a href="{% url 'fitcheck:fit_archives' fit.pk %}">{% translate "Version history" %}</a>
+                    {% endif %}
+                </div>
+                <h4 class="mb-1">{{ fit.name }}</h4>
+                <div class="small text-muted">{{ fit.ship_type.name }}</div>
+                <div class="mt-1 d-flex flex-wrap align-items-center gap-1">
+                    {% for chip in doctrine_chips %}
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <a class="fc-chip" href="{% url 'fitcheck:doctrine_detail' chip.doctrine.pk %}">
+                                <i class="fa-solid fa-book-skull"></i> {{ chip.doctrine.name }}
+                            </a>
+                            {% if perms.fitcheck.manage_doctrines and chip.assignment_pk %}
+                                <a class="badge bg-warning text-dark"
+                                   href="{% url 'fitcheck:manage_assignment_items' chip.assignment_pk %}"
+                                   title="{% translate 'Edit policies for this combination' %}">
+                                    <i class="fa-solid fa-sliders"></i>
+                                </a>
+                            {% endif %}
+                        </span>
+                        {% for category in chip.doctrine.categories.all %}
+                            <span class="badge" style="background:{{ category.color }};color:{{ category.text_color }};font-size:.65rem">{{ category.name }}</span>
+                        {% endfor %}
+                    {% empty %}
+                        <span class="fc-chip"><i class="fa-solid fa-cube"></i> {% translate "Standalone standard" %}</span>
+                    {% endfor %}
+                    {% if perms.fitcheck.manage_doctrines %}
+                        <button class="btn btn-sm btn-warning" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#fit-doctrine-edit">
+                            <i class="fa-solid fa-pen"></i> {% translate "Edit Doctrines" %}
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="ms-auto d-flex gap-2 flex-wrap justify-content-end">
+                <form method="post" action="{% url 'fitcheck:save_fit_to_eve' fit.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-primary"
+                            title="{% translate 'Push this fitting into your in-game Fittings panel' %}">
+                        <i class="fa-solid fa-rocket"></i> {% translate "Save to EVE" %}
+                    </button>
+                </form>
+                <button class="btn btn-primary" id="copy-eft-btn" type="button">
+                    <i class="fa-solid fa-copy"></i> {% translate "Copy EFT" %}
+                </button>
+                <button class="btn btn-primary" id="copy-buy-btn" type="button"
+                        title="{% translate 'Grouped, summed type list for EVE Multibuy' %}">
+                    <i class="fa-solid fa-cart-shopping"></i> {% translate "Copy Buy All" %}
+                </button>
+                <a class="btn btn-success"
+                   href="{% url 'fitcheck:ship_inventory' %}?type_id={{ fit.ship_type_id }}">
+                    <i class="fa-solid fa-user-astronaut"></i> {% translate "Validate My Ships" %}
+                </a>
+                {% if perms.fitcheck.view_member_inventory or perms.fitcheck.view_own_corp_inventory %}
+                    <a class="btn btn-success"
+                       href="{% url 'fitcheck:member_inventory_for_fit' fit.pk %}"
+                       title="{% translate 'Scan alliance/corp members for ships matching this hull' %}">
+                        <i class="fa-solid fa-users-viewfinder"></i> {% translate "Browse Member Ships" %}
+                    </a>
+                {% endif %}
+                {% if can_test %}
+                    <a class="btn btn-success" href="{% url 'fitcheck:submit_eft' fit.pk %}"
+                       title="{% translate 'Paste an EFT fit to test it against this standard' %}">
+                        <i class="fa-solid fa-vial"></i> {% translate "Test a Fit" %}
+                    </a>
+                {% endif %}
+                {% if perms.fitcheck.manage_doctrines %}
+                    <a class="btn btn-warning" href="{% url 'fitcheck:manage_fit_update' fit.pk %}"
+                       title="{% translate 'Edit the module list (BOM); archives the old version' %}">
+                        <i class="fa-solid fa-pen-to-square"></i> {% translate "Update Fit" %}
+                    </a>
+                    <a class="btn btn-warning" href="{% url 'fitcheck:manage_fit_items' fit.pk %}"
+                       title="{% translate 'Module policies and exceptions' %}">
+                        <i class="fa-solid fa-sliders"></i> {% translate "Module Policies" %}
+                    </a>
+                    <a class="btn btn-warning" href="{% url 'fitcheck:manage_fit_settings' fit.pk %}"
+                       title="{% translate 'Edit details (name, description, doctrines)' %}">
+                        <i class="fa-solid fa-gear"></i>
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if perms.fitcheck.manage_doctrines %}
+        <div class="collapse mb-3" id="fit-doctrine-edit">
+            <div class="card border-primary">
+                <div class="card-header">{% translate "Doctrines This Fitting Belongs To" %}</div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'fitcheck:fit_set_doctrines' fit.pk %}">
+                        {% csrf_token %}
+                        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-2 mb-3">
+                            {% for doctrine in all_doctrines %}
+                                <div class="col">
+                                    <label class="d-flex align-items-center gap-2 small">
+                                        <input type="checkbox" name="doctrine_ids" value="{{ doctrine.pk }}"
+                                               {% if doctrine.pk in assigned_doctrine_ids %}checked{% endif %}>
+                                        <span>{{ doctrine.name }}</span>
+                                        {% if not doctrine.is_active %}
+                                            <span class="badge bg-secondary">{% translate "inactive" %}</span>
+                                        {% endif %}
+                                    </label>
+                                </div>
+                            {% empty %}
+                                <div class="col-12 text-muted small">
+                                    {% translate "No doctrines yet. Create one from the Doctrines tab first." %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Doctrine Assignments" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if fit.description %}<p class="text-muted">{{ fit.description|linebreaksbr }}</p>{% endif %}
+
+    {% for section in sections %}
+        <div class="fc-finding-section fc-sec-{{ section.code }} mb-3">
+            <div class="fc-finding-section-head">
+                {% include "fitcheck/partials/section_icon.html" with code=section.code %}
+                <span class="ms-1">{{ section.section }}</span>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm align-middle mb-0">
+                    <tbody>
+                        {% for item in section.items %}
+                            <tr>
+                                <td style="width: 45%">
+                                    <img class="fc-module-icon" src="https://images.evetech.net/types/{{ item.module_type_id }}/icon?size=32"
+                                         alt="" width="24" height="24">
+                                    {{ item.module_type.name }}
+                                    {% if item.charge_type %}
+                                        <small class="text-muted">({{ item.charge_type.name }})</small>
+                                    {% endif %}
+                                    {% if item.notes %}
+                                        <i class="fa-solid fa-circle-info text-info ms-1" title="{{ item.notes }}"></i>
+                                    {% endif %}
+                                </td>
+                                <td style="width: 10%">
+                                    &times;{{ item.quantity }}
+                                    {% if item.min_quantity_pct != 100 %}
+                                        <small class="text-muted">({% blocktranslate with pct=item.min_quantity_pct %}min {{ pct }}%{% endblocktranslate %})</small>
+                                    {% endif %}
+                                </td>
+                                <td style="width: 22%">
+                                    {% if item.no_enforcement %}
+                                        <span class="badge bg-secondary">{% translate "No enforcement" %}</span>
+                                    {% else %}
+                                        {{ item.get_policy_display }}
+                                    {% endif %}
+                                    {% if item.mutated_allowed %}
+                                        <span class="badge bg-info" title="{% translate 'Mutated modules allowed when rolls meet or beat this module' %}">
+                                            {% translate "Abyssal OK" %}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.alternatives %}
+                                        <details>
+                                            <summary class="small">{{ item.alternatives|length }} {% translate "allowed alternatives" %}</summary>
+                                            {% for alt in item.alternatives %}
+                                                <span class="badge bg-secondary me-1 mb-1">{{ alt.name }}</span>
+                                            {% endfor %}
+                                        </details>
+                                    {% elif item.no_enforcement %}
+                                        <span class="text-muted small">{% translate "anything accepted" %}</span>
+                                    {% else %}
+                                        <span class="text-muted small">{% translate "exact only" %}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endfor %}
+
+    <textarea id="eft-source" class="d-none">{{ fit.eft_source }}</textarea>
+    <textarea id="buy-source" class="d-none">{{ buy_lines }}</textarea>
+{% endblock %}
+
+{% block extra_javascript %}
+    <script>
+        function fcWireCopy(btnId, sourceId, copiedLabel) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            const original = btn.innerHTML;
+            btn.addEventListener("click", function () {
+                const text = document.getElementById(sourceId).value;
+                navigator.clipboard.writeText(text).then(() => {
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> ' + copiedLabel;
+                    setTimeout(() => { btn.innerHTML = original; }, 1800);
+                });
+            });
+        }
+        fcWireCopy("copy-eft-btn", "eft-source", "{% translate 'Copied' %}");
+        fcWireCopy("copy-buy-btn", "buy-source", "{% translate 'Copied' %}");
+    </script>
+{% endblock %}

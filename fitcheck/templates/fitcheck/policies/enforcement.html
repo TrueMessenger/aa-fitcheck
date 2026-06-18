@@ -1,0 +1,66 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-9 col-xxl-7">
+            <div class="card">
+                <div class="card-header d-flex align-items-center">
+                    <i class="fa-solid fa-scale-balanced me-2"></i>
+                    {% translate "Enforcement Settings" %}
+                    <a class="btn btn-secondary btn-sm ms-auto" href="{% url 'fitcheck:policy_list' %}">
+                        <i class="fa-solid fa-arrow-left"></i> {% translate "Back" %}
+                    </a>
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        {% translate "How the checker treats the verification concerns it can't always confirm from a submission. Each mode:" %}
+                    </p>
+                    <ul class="small text-muted">
+                        <li><strong>{% translate "Reject - Always Enforce" %}</strong>: {% translate "a requirement that isn't confirmed met is a hard fail (even when unverifiable)." %}</li>
+                        <li><strong>{% translate "Enforce by policy" %}</strong>: {% translate "a verifiable shortfall fails; unverifiable cases only warn. (Default behaviour.)" %}</li>
+                        <li><strong>{% translate "Pass - Warning" %}</strong>: {% translate "never fails the fit; shows a warning when not met." %}</li>
+                        <li><strong>{% translate "Pass - Never Enforce" %}</strong>: {% translate "skips the check entirely." %}</li>
+                    </ul>
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">
+                                    <i class="fa-solid fa-brain me-1"></i>{% translate "Implant Verification" %}
+                                </label>
+                                {{ form.implant_mode }}
+                                <div class="form-text">{% translate "Implants plugged in the pilot's active clone (needs the implant ESI scope to verify)." %}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">
+                                    <i class="fa-solid fa-gas-pump me-1"></i>{% translate "Fuel Verification" %}
+                                </label>
+                                {{ form.fuel_mode }}
+                                <div class="form-text">{% translate "Isotopes in a capital's fuel bay, with Qty % leeway." %}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">
+                                    <i class="fa-solid fa-flask me-1"></i>{% translate "Booster Verification" %}
+                                </label>
+                                {{ form.booster_mode }}
+                                <div class="form-text">{% translate "Combat boosters. Absence can't be verified from EFT/ESI - only 'Reject' fails on absence." %}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">
+                                    <i class="fa-solid fa-life-ring me-1"></i>{% translate "Frigate Escape Bay Verification" %}
+                                </label>
+                                {{ form.feb_mode }}
+                                <div class="form-text">{% translate "Matches the doctrine fit's specified escape-bay frigate against the pilot's bay (ESI-sourced)." %}</div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success mt-3">
+                            <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Settings" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="fc-toolbar">
+        <div class="fc-eyebrow">
+            {% translate "Import the fittings you've saved in-game (Fitting window) and validate them against the published standards. Only you see your results." %}
+        </div>
+        <a class="btn btn-secondary btn-sm ms-auto" href="{% url 'fitcheck:pilot_fittings' %}">
+            <i class="fa-solid fa-arrow-left"></i> {% translate "Back" %}
+        </a>
+    </div>
+
+    {% if characters_without_token %}
+        <div class="alert alert-warning d-flex align-items-center gap-2">
+            <i class="fa-solid fa-key"></i>
+            <div>
+                {% translate "These characters have no saved-fittings token yet:" %}
+                {% for character in characters_without_token %}
+                    <strong>{{ character.character_name }}</strong>{% if not forloop.last %}, {% endif %}
+                {% endfor %}
+            </div>
+            <a class="btn btn-sm btn-warning ms-auto text-nowrap" href="{% url 'fitcheck:add_fittings_read_token' %}">
+                <i class="fa-solid fa-key"></i> {% translate "Add saved-fittings token" %}
+            </a>
+        </div>
+    {% endif %}
+
+    {% if groups %}
+        <form method="post">
+            {% csrf_token %}
+            {% for group in groups %}
+                <div class="card mb-3">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <img class="rounded-circle" width="28" height="28" alt=""
+                             src="https://images.evetech.net/characters/{{ group.character.character_id }}/portrait?size=32">
+                        <strong>{{ group.character.character_name }}</strong>
+                        <span class="small text-muted">{{ group.fittings|length }} {% translate "saved fitting(s)" %}</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-hover align-middle mb-0">
+                            <tbody>
+                                {% for f in group.fittings %}
+                                    <tr>
+                                        <td style="width: 2.5rem">
+                                            <input class="form-check-input" type="checkbox" name="fittings" value="{{ f.key }}">
+                                        </td>
+                                        <td>
+                                            {% if f.ship_type_id %}
+                                                <img class="fc-module-icon" width="24" height="24" alt=""
+                                                     src="https://images.evetech.net/types/{{ f.ship_type_id }}/icon?size=32">
+                                            {% endif %}
+                                            {{ f.name }}
+                                        </td>
+                                        <td class="small text-muted text-end">{{ f.item_count }} {% translate "items" %}</td>
+                                    </tr>
+                                {% empty %}
+                                    <tr><td class="p-3 text-muted">{% translate "No saved fittings on this character." %}</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-success">
+                <i class="fa-solid fa-clipboard-check"></i> {% translate "Validate Selected Fittings" %}
+            </button>
+        </form>
+    {% elif not characters_without_token %}
+        <div class="fc-empty">
+            <i class="fa-solid fa-folder-open fa-2x mb-3 d-block"></i>
+            {% translate "No saved fittings found on your characters." %}
+        </div>
+    {% endif %}
+{% endblock %}

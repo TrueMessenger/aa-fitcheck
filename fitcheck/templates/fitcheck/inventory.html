@@ -1,0 +1,173 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    {% if inventory.characters_without_token %}
+        <div class="alert alert-warning d-flex align-items-center gap-2">
+            <i class="fa-solid fa-key"></i>
+            <div>
+                {% translate "These characters have no asset token yet:" %}
+                {% for character in inventory.characters_without_token %}
+                    <strong>{{ character.character_name }}</strong>{% if not forloop.last %}, {% endif %}
+                {% endfor %}
+            </div>
+            <a class="btn btn-sm btn-warning ms-auto text-nowrap" href="{% url 'fitcheck:add_asset_token' %}">
+                <i class="fa-solid fa-key"></i> {% translate "Add asset token" %}
+            </a>
+        </div>
+    {% endif %}
+    <div class="alert alert-secondary d-flex align-items-center gap-2 py-2">
+        <i class="fa-solid fa-brain"></i>
+        <div class="small">
+            {% translate "Optional: grant the implant scope so submissions can verify the implants plugged into your active clone." %}
+        </div>
+        <a class="btn btn-sm btn-secondary ms-auto text-nowrap" href="{% url 'fitcheck:add_clones_token' %}">
+            <i class="fa-solid fa-brain"></i> {% translate "Add implant scope" %}
+        </a>
+    </div>
+    <div class="alert alert-secondary d-flex align-items-center gap-2 py-2">
+        <i class="fa-solid fa-map-location-dot"></i>
+        <div class="small">
+            {% translate "Private structures (Citadels) show as an ID until you re-grant your asset token, which now also names structures and adds system/region." %}
+        </div>
+        <a class="btn btn-sm btn-secondary ms-auto text-nowrap" href="{% url 'fitcheck:add_asset_token' %}">
+            <i class="fa-solid fa-key"></i> {% translate "Re-grant asset token" %}
+        </a>
+    </div>
+    {% for name, reason in inventory.errors.items %}
+        <div class="alert alert-danger">{{ name }}: {{ reason }}</div>
+    {% endfor %}
+
+    {% if filters.type_id %}
+        <div class="alert alert-info d-flex align-items-center gap-2">
+            <i class="fa-solid fa-filter"></i>
+            <div>
+                {% translate "Pre-filtered to" %}
+                <strong>{{ filters.type_name|default:filters.type_id }}</strong>
+                {% translate "from the fitting page." %}
+            </div>
+            <a class="btn btn-sm btn-secondary ms-auto" href="{% url 'fitcheck:ship_inventory' %}">
+                <i class="fa-solid fa-xmark"></i> {% translate "Show all ships" %}
+            </a>
+        </div>
+    {% endif %}
+
+    <form method="get" class="card mb-3">
+        {% if filters.type_id %}
+            <input type="hidden" name="type_id" value="{{ filters.type_id }}">
+        {% endif %}
+        <div class="card-body d-flex flex-wrap gap-2 align-items-end">
+            <div>
+                <label class="form-label small mb-1">{% translate "Character" %}</label>
+                <select class="form-select form-select-sm" name="character" onchange="this.form.submit()">
+                    <option value="">{% translate "All characters" %}</option>
+                    {% for name in filters.characters %}
+                        <option value="{{ name }}" {% if filters.character == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="form-label small mb-1">{% translate "Location" %}</label>
+                <select class="form-select form-select-sm" name="location" onchange="this.form.submit()">
+                    <option value="">{% translate "All locations" %}</option>
+                    {% for name in filters.locations %}
+                        <option value="{{ name }}" {% if filters.location == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="form-label small mb-1">{% translate "Ship Category" %}</label>
+                <select class="form-select form-select-sm" name="group" onchange="this.form.submit()">
+                    <option value="">{% translate "All categories" %}</option>
+                    {% for name in filters.groups %}
+                        <option value="{{ name }}" {% if filters.group == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex-grow-1" style="max-width: 18rem">
+                <label class="form-label small mb-1">{% translate "Ship type / name" %}</label>
+                <input class="form-control form-control-sm" type="search" name="q" value="{{ filters.q }}"
+                       placeholder="{% translate 'e.g. Hel, Ravager...' %}">
+            </div>
+            <button class="btn btn-sm btn-primary" type="submit">
+                <i class="fa-solid fa-filter"></i> {% translate "Filter" %}
+            </button>
+            {% if filters.character or filters.location or filters.group or filters.q %}
+                <a class="btn btn-sm btn-secondary" href="{% url 'fitcheck:ship_inventory' %}">{% translate "Clear" %}</a>
+            {% endif %}
+            <a class="btn btn-sm btn-primary ms-auto" href="{% url 'fitcheck:add_asset_token' %}"
+               title="{% translate 'Grant the assets scope for another character via EVE SSO' %}">
+                <i class="fa-solid fa-key"></i> {% translate "Add asset token" %}
+            </a>
+        </div>
+    </form>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="fc-toolbar">
+            <div class="fc-eyebrow">
+                {{ ships|length }} {% translate "ships" %} &middot;
+                <span id="selected-count">0</span> {% translate "selected" %}
+            </div>
+            <button class="btn btn-primary ms-auto" type="submit" id="validate-btn" disabled>
+                <i class="fa-solid fa-clipboard-check"></i> {% translate "Validate Selected Ships" %}
+            </button>
+        </div>
+
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 row-cols-xxl-4 g-3">
+            {% for ship in ships %}
+                <div class="col">
+                    <label class="fc-card fc-select-card p-3 d-block position-relative">
+                        <input type="checkbox" name="ships" value="{{ ship.character_id }}:{{ ship.item_id }}">
+                        <div class="fc-ship-row">
+                            <img src="https://images.evetech.net/types/{{ ship.type_id }}/render?size=64"
+                                 alt="" width="56" height="56">
+                            <div class="flex-grow-1">
+                                <strong>{{ ship.ship_name|default:ship.type_name }}</strong>
+                                <div class="small text-muted">{{ ship.type_name }}{% if ship.group_name %} &middot; {{ ship.group_name }}{% endif %}</div>
+                                <div class="small text-muted">
+                                    <i class="fa-solid fa-user-astronaut me-1"></i>{{ ship.character_name }}
+                                    <br><i class="fa-solid fa-location-dot me-1"></i>{{ ship.location_name }}
+                                    {% if ship.system_name %}
+                                        <br><i class="fa-solid fa-map-location-dot me-1"></i>{{ ship.system_name }}{% if ship.region_name %} &middot; {{ ship.region_name }}{% endif %}
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <i class="fa-solid fa-circle-check fa-lg text-primary fc-check d-none"></i>
+                        </div>
+                    </label>
+                </div>
+            {% empty %}
+                <div class="col-12">
+                    <div class="fc-empty">
+                        <i class="fa-solid fa-satellite-dish fa-2x mb-3 d-block"></i>
+                        {% translate "No ships found - adjust the filters, or add an ESI token with the assets scope." %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </form>
+{% endblock %}
+
+{% block extra_javascript %}
+    <script>
+        (function () {
+            const counter = document.getElementById("selected-count");
+            const btn = document.getElementById("validate-btn");
+            function refresh() {
+                const checked = document.querySelectorAll("input[name=ships]:checked").length;
+                counter.textContent = checked;
+                btn.disabled = checked === 0;
+            }
+            document.querySelectorAll(".fc-select-card input[type=checkbox]").forEach(box => {
+                box.addEventListener("change", function () {
+                    this.closest(".fc-select-card").classList.toggle("selected", this.checked);
+                    this.closest(".fc-select-card").querySelector(".fc-check").classList.toggle("d-none", !this.checked);
+                    refresh();
+                });
+            });
+            refresh();
+        })();
+    </script>
+{% endblock %}

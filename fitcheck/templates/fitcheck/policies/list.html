@@ -1,0 +1,109 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="fc-toolbar">
+        <div class="fc-eyebrow">
+            {% translate "Slot-group enforcement policies. Apply them to fittings from the Fittings & Standards pages. Visible to Auth admins and plugin admins only." %}
+        </div>
+        <div class="ms-auto d-flex gap-2">
+            <a class="btn btn-warning btn-sm" href="{% url 'fitcheck:enforcement_settings' %}">
+                <i class="fa-solid fa-scale-balanced"></i> {% translate "Enforcement Settings" %}
+            </a>
+            <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:policy_create' %}">
+                <i class="fa-solid fa-plus"></i> {% translate "New Policy" %}
+            </a>
+        </div>
+    </div>
+
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+        {% for policy in policies %}
+            <div class="col">
+                <div class="fc-card p-3{% if policy.is_builtin %} fc-card-builtin{% endif %}{% if policy.is_disabled %} fc-card-disabled{% endif %}">
+                    <div class="d-flex align-items-start">
+                        <div>
+                            <h5 class="mb-1">
+                                {% if not policy.is_builtin or user.is_superuser %}
+                                    <a class="text-decoration-none" href="{% url 'fitcheck:policy_edit' policy.pk %}">
+                                        <i class="fa-solid fa-scale-balanced me-1"></i>{{ policy.name }}
+                                    </a>
+                                {% else %}
+                                    <span><i class="fa-solid fa-scale-balanced me-1"></i>{{ policy.name }}</span>
+                                {% endif %}
+                                {% if policy.is_builtin %}
+                                    <span class="badge bg-danger ms-1"
+                                          title="{% translate 'Pre-built policy - editable by admins only, cannot be deleted' %}">{% translate "Built-in" %}</span>
+                                {% endif %}
+                                {% if policy.is_disabled %}
+                                    <span class="badge bg-secondary ms-1"
+                                          title="{% translate 'Disabled - not offered when applying a policy to a fitting' %}">{% translate "Disabled" %}</span>
+                                {% endif %}
+                            </h5>
+                            {% if policy.description %}
+                                <p class="small text-muted mb-2">{{ policy.description|truncatechars:120 }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="ms-auto d-flex gap-1">
+                            <form method="post" action="{% url 'fitcheck:policy_toggle_disabled' policy.pk %}">
+                                {% csrf_token %}
+                                {% if policy.is_disabled %}
+                                    <button class="btn btn-sm btn-success" type="submit"
+                                            title="{% translate 'Re-enable this policy so it can be applied again' %}">
+                                        <i class="fa-solid fa-circle-check"></i> {% translate "Enable" %}
+                                    </button>
+                                {% else %}
+                                    <button class="btn btn-sm btn-outline-secondary" type="submit"
+                                            title="{% translate 'Disable this policy (stops it being applied; fittings keep current settings)' %}">
+                                        <i class="fa-solid fa-ban"></i> {% translate "Disable" %}
+                                    </button>
+                                {% endif %}
+                            </form>
+                            {% if not policy.is_builtin %}
+                                <form method="post" action="{% url 'fitcheck:policy_delete' policy.pk %}"
+                                      onsubmit="return confirm('{% translate "Delete this policy? Fittings keep their current module settings." %}')">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-danger" type="submit"
+                                            title="{% translate 'Delete' %}"><i class="fa-solid fa-trash"></i></button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-1 mb-2">
+                        {% for rule in policy.rules.all %}
+                            <span class="fc-chip" title="{{ rule.get_enforcement_display }}">
+                                {% include "fitcheck/partials/section_icon.html" with code=rule.section %}
+                                {{ rule.get_section_display }}: {{ rule.get_enforcement_display }}
+                            </span>
+                        {% empty %}
+                            <span class="small text-muted">{% translate "No slot-group overrides yet." %}</span>
+                        {% endfor %}
+                    </div>
+                    <div class="small text-muted">
+                        {% blocktranslate count counter=policy.fits.count %}{{ counter }} fitting uses this policy{% plural %}{{ counter }} fittings use this policy{% endblocktranslate %}
+                    </div>
+                    <div class="small text-muted mt-2 border-top pt-2 d-flex flex-wrap gap-3">
+                        <span title="{% translate 'Created' %}">
+                            <i class="fa-solid fa-calendar-plus me-1"></i>{{ policy.created_at|date:"Y-m-d" }}
+                        </span>
+                        <span title="{% translate 'Last updated' %}">
+                            <i class="fa-solid fa-pen me-1"></i>{{ policy.updated_at|date:"Y-m-d" }}
+                        </span>
+                        {% if policy.is_disabled %}
+                            <span class="text-warning" title="{% translate 'Disabled' %}">
+                                <i class="fa-solid fa-ban me-1"></i>{{ policy.disabled_at|date:"Y-m-d" }}
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        {% empty %}
+            <div class="col-12">
+                <div class="fc-empty">
+                    <i class="fa-solid fa-scale-balanced fa-2x mb-3 d-block"></i>
+                    {% translate "No compliance policies yet. Create one to standardize slot-group enforcement across fittings." %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% endblock %}

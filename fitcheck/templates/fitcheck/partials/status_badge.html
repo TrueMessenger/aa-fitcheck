@@ -1,0 +1,7 @@
+{% if submission.status == "A" %}
+    <span class="badge bg-success">{{ submission.get_status_display }}</span>
+{% elif submission.status == "R" %}
+    <span class="badge bg-danger">{{ submission.get_status_display }}</span>
+{% else %}
+    <span class="badge bg-warning text-dark">{{ submission.get_status_display }}</span>
+{% endif %}

@@ -1,0 +1,74 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="card">
+        <div class="card-header">
+            {% translate "Your fit contains mutated (abyssal) modules" %}
+        </div>
+        <div class="card-body">
+            <p class="text-muted">
+                {% translate "The in-game fit copy does not include mutation rolls, so enter the values from each module's attributes (show info in game, or export from Pyfa with mutations to skip this step). Entered values are marked self-reported for the reviewer." %}
+            </p>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="stats_step" value="1">
+                <textarea name="eft_text" class="d-none">{{ eft_text }}</textarea>
+                {% for doctrine in selected_doctrines %}
+                    <input type="hidden" name="doctrines" value="{{ doctrine.pk }}">
+                {% endfor %}
+                {% for spec in specs %}
+                    <div class="card mb-3">
+                        <div class="card-header d-flex align-items-center gap-2">
+                            <img src="https://images.evetech.net/types/{{ spec.type_id }}/icon?size=32"
+                                 alt="" width="24" height="24">
+                            <strong>{{ spec.name }}</strong>
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-sm w-auto align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>{% translate "Attribute" %}</th>
+                                        <th>{% translate "Required (Baseline)" %}</th>
+                                        <th>{% translate "Your Roll" %}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for attr in spec.attributes %}
+                                        <tr>
+                                            <td>{{ attr.label }}</td>
+                                            <td class="text-muted">
+                                                {{ attr.baseline }}
+                                                <small>
+                                                    {% if attr.high_is_good %}
+                                                        ({% translate "higher is better" %})
+                                                    {% else %}
+                                                        ({% translate "lower is better" %})
+                                                    {% endif %}
+                                                </small>
+                                            </td>
+                                            <td>
+                                                <input type="number" step="any" required
+                                                       class="form-control form-control-sm"
+                                                       style="width: 9em"
+                                                       name="mstat-{{ spec.type_id }}-{{ attr.attr_id }}"
+                                                       value="{{ attr.value|default:'' }}">
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                {% endfor %}
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-clipboard-check"></i> {% translate "Check Fit" %}
+                </button>
+                <a class="btn btn-secondary" href="{% url 'fitcheck:submit_eft' fit.pk %}">
+                    {% translate "Back" %}
+                </a>
+            </form>
+        </div>
+    </div>
+{% endblock %}

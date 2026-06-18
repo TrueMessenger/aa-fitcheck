@@ -1,0 +1,56 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+{% load django_bootstrap5 %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-9 col-xxl-7">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fa-solid fa-pen-to-square me-2"></i>
+                    {% blocktranslate with name=fit.name %}Update fit: {{ name }}{% endblocktranslate %}
+                    <span class="badge bg-secondary ms-1">{% translate "Fit" %} v{{ fit.version }}</span>
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        {% translate "Saving replaces the current module list. The current version is archived for retrieval, and each module that stays in the fit keeps its policy and exceptions. New modules start from the fit's default policy." %}
+                    </p>
+                    <form method="post" id="bom-update-form">
+                        {% csrf_token %}
+                        {% bootstrap_form form %}
+                        <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#confirmUpdate">
+                            <i class="fa-solid fa-floppy-disk"></i> {% translate "Save updated fit" %}
+                        </button>
+                        <a class="btn btn-secondary" href="{% url 'fitcheck:fit_detail' fit.pk %}">{% translate "Cancel" %}</a>
+
+                        <div class="modal fade" id="confirmUpdate" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">
+                                            <i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>
+                                            {% translate "Replace this fit?" %}
+                                        </h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        {% blocktranslate with name=fit.name version=fit.version %}
+                                            <strong>{{ name }}</strong> will become v{{ version }}+1 and the current version will be archived. Per-module policy carries forward where the module is unchanged. This cannot be undone from the UI.
+                                        {% endblocktranslate %}
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button>
+                                        <button type="submit" class="btn btn-success">
+                                            <i class="fa-solid fa-check"></i> {% translate "Confirm and save" %}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

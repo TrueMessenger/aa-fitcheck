@@ -1,0 +1,72 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="fc-toolbar">
+        <div class="d-flex flex-wrap gap-1 align-items-center">
+            <a class="fc-chip {% if not active_category %}active{% endif %}" href="{% url 'fitcheck:index' %}">
+                {% translate "All" %}
+            </a>
+            {% for category in all_categories %}
+                <a class="fc-chip {% if active_category == category.pk|stringformat:'s' %}active{% endif %}"
+                   href="{% url 'fitcheck:index' %}?category={{ category.pk }}">
+                    <span class="badge p-1" style="background:{{ category.color }};width:.6rem;height:.6rem"></span>
+                    {{ category.name }}
+                </a>
+            {% endfor %}
+        </div>
+        {% if perms.fitcheck.manage_doctrines %}
+            <div class="ms-auto d-flex gap-2">
+                {% if fittings_available %}
+                    <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:fittings_plugin_import' %}">
+                        <i class="fa-solid fa-file-import"></i> {% translate "Import from Fittings Plugin" %}
+                    </a>
+                {% endif %}
+                <div class="btn-group">
+                    <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:doctrine_create' %}?mode=guided">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> {% translate "New Doctrine" %}
+                    </a>
+                    <button type="button" class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
+                            data-bs-toggle="dropdown" aria-expanded="false"></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{% url 'fitcheck:doctrine_create' %}?mode=guided">
+                            <i class="fa-solid fa-wand-magic-sparkles me-1"></i>{% translate "Guided Creation" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'fitcheck:doctrine_create' %}?mode=direct">
+                            <i class="fa-solid fa-bolt me-1"></i>{% translate "Direct Creation" %}</a></li>
+                    </ul>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if doctrines %}
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 row-cols-xxl-4 g-3">
+            {% for doctrine in doctrines %}
+                {% include "fitcheck/partials/doctrine_card.html" %}
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="fc-empty">
+            <i class="fa-solid fa-book-skull fa-2x mb-3 d-block"></i>
+            {% if perms.fitcheck.manage_doctrines %}
+                <p class="mb-3">{% translate "No doctrines yet. Import them from the Fittings plugin, or create one from scratch." %}</p>
+                <div class="d-flex gap-2 justify-content-center">
+                    {% if fittings_available %}
+                        <a class="btn btn-primary" href="{% url 'fitcheck:fittings_plugin_import' %}">
+                            <i class="fa-solid fa-file-import"></i> {% translate "Import from Fittings Plugin" %}
+                        </a>
+                    {% endif %}
+                    <a class="btn btn-primary" href="{% url 'fitcheck:doctrine_create' %}?mode=guided">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> {% translate "Guided Creation" %}
+                    </a>
+                    <a class="btn btn-primary" href="{% url 'fitcheck:doctrine_create' %}?mode=direct">
+                        <i class="fa-solid fa-bolt"></i> {% translate "Direct Creation" %}
+                    </a>
+                </div>
+            {% else %}
+                {% translate "No doctrines are visible to you yet." %}
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock %}

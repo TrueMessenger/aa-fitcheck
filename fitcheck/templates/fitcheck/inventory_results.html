@@ -1,0 +1,65 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="fc-toolbar">
+        <div class="fc-eyebrow">{% translate "Each ship was compared against every matching standard - one ship can satisfy several doctrines." %}</div>
+        <a class="btn btn-secondary btn-sm ms-auto" href="{% url 'fitcheck:ship_inventory' %}">
+            <i class="fa-solid fa-arrow-left"></i> {% translate "Back to inventory" %}
+        </a>
+        <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:pilot_fittings' %}">
+            <i class="fa-solid fa-clock-rotate-left"></i> {% translate "My history" %}
+        </a>
+    </div>
+
+    {% for result in results %}
+        <div class="card mb-3">
+            <div class="card-header fc-ship-row">
+                <img src="https://images.evetech.net/types/{{ result.ship_type_id }}/render?size=64"
+                     alt="" width="40" height="40">
+                <strong>{{ result.parsed.fit_name }}</strong>
+            </div>
+            <div class="card-body p-0">
+                {% if result.submissions %}
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>{% translate "Fitting Standard" %}</th>
+                                <th>{% translate "Graded Against" %}</th>
+                                <th>{% translate "Verdict" %}</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for submission in result.submissions %}
+                                <tr>
+                                    <td>{{ submission.doctrine_fit.name }}</td>
+                                    <td>
+                                        {% if submission.doctrine %}
+                                            <span class="fc-chip me-1">{{ submission.doctrine.name }}</span>
+                                        {% else %}
+                                            <span class="text-muted small">{% translate "source defaults" %}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{% include "fitcheck/partials/verdict_badge.html" %}</td>
+                                    <td class="text-end">
+                                        <a class="btn btn-sm btn-primary"
+                                           href="{% url 'fitcheck:submission_detail' submission.pk %}">
+                                            {% translate "Details" %}
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <div class="p-3 text-muted">
+                        <i class="fa-solid fa-circle-info me-1"></i>
+                        {% translate "No fitting standard exists for this hull (or none is visible to you)." %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+{% endblock %}

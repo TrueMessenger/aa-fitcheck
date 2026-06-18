@@ -1,0 +1,207 @@
+{% extends "allianceauth/base-bs5.html" %}
+
+{% load i18n %}
+
+{% block page_title %}{{ page_title }} - {% translate "Fit Check" %}{% endblock %}
+
+{% block extra_css %}
+    <style>
+        /* ---- fitcheck design system (scoped, theme-aware) ---- */
+        .fc-card {
+            border: 1px solid var(--bs-border-color);
+            border-radius: .75rem;
+            overflow: hidden;
+            transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+            height: 100%;
+            background: var(--bs-body-bg);
+        }
+        .fc-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 .75rem 1.5rem rgba(0, 0, 0, .35);
+            border-color: var(--bs-primary);
+        }
+        /* Pre-built (read-only) policy cards: red border. Declared after .fc-card
+           and its :hover so it wins the cascade and stays red on hover. */
+        .fc-card-builtin,
+        .fc-card-builtin:hover {
+            border-color: var(--bs-danger);
+            border-width: 2px;
+        }
+        /* Disabled (retired) policy cards: dimmed so they read as inactive. */
+        .fc-card-disabled {
+            opacity: .6;
+            border-style: dashed;
+        }
+        .fc-card-art {
+            position: relative;
+            display: block;
+            aspect-ratio: 21 / 9;
+            background:
+                radial-gradient(ellipse at 70% 20%, rgba(var(--bs-primary-rgb), .25), transparent 60%),
+                linear-gradient(160deg, rgba(var(--bs-primary-rgb), .12), rgba(0, 0, 0, .45));
+            overflow: hidden;
+        }
+        .fc-card-art img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center 35%;
+            opacity: .9;
+            transition: transform .3s ease;
+        }
+        .fc-card:hover .fc-card-art img { transform: scale(1.05); }
+        .fc-card-art .fc-art-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            opacity: .35;
+        }
+        .fc-eyebrow {
+            font-size: .7rem;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            opacity: .65;
+        }
+        .fc-section-head {
+            font-size: .72rem;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            opacity: .75;
+            border-bottom: 1px solid var(--bs-border-color);
+            padding-bottom: .25rem;
+            margin: 1rem 0 .5rem;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+        .fc-ship-row { display: flex; align-items: center; gap: .75rem; }
+        .fc-ship-row img { border-radius: .5rem; }
+        .fc-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: .3rem;
+            font-size: .72rem;
+            padding: .15rem .55rem;
+            border-radius: 999px;
+            border: 1px solid var(--bs-border-color);
+            text-decoration: none;
+        }
+        a.fc-chip:hover { border-color: var(--bs-primary); }
+        .fc-chip.active { background: var(--bs-primary); color: #fff; border-color: var(--bs-primary); }
+        .fc-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .5rem;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .fc-empty {
+            border: 1px dashed var(--bs-border-color);
+            border-radius: .75rem;
+            padding: 3rem 1.5rem;
+            text-align: center;
+            opacity: .8;
+        }
+        .fc-module-icon { border-radius: .25rem; vertical-align: -6px; }
+        .fc-select-card { cursor: pointer; }
+        .fc-select-card input[type="checkbox"] { position: absolute; opacity: 0; }
+        .fc-select-card.selected {
+            border-color: var(--bs-primary);
+            box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .4);
+        }
+        .fc-wizard-step { display: none; }
+        .fc-wizard-step.active { display: block; animation: fcFade .25s ease; }
+        @keyframes fcFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+        .fc-ship-suggest {
+            position: absolute;
+            z-index: 30;
+            width: 100%;
+            max-height: 16rem;
+            overflow-y: auto;
+        }
+        /* Findings grouped into per-section panels, each with a colour accent so
+           one section is visually distinct from the next. */
+        .fc-finding-section {
+            border: 1px solid var(--bs-border-color);
+            border-left: 4px solid var(--fc-sec-accent, var(--bs-secondary));
+            border-radius: .5rem;
+            overflow: hidden;
+            background: var(--bs-body-bg);
+        }
+        .fc-finding-section-head {
+            display: flex;
+            align-items: center;
+            font-weight: 600;
+            padding: .4rem .75rem;
+            background: color-mix(in srgb, var(--fc-sec-accent, var(--bs-secondary)) 14%, transparent);
+            border-bottom: 1px solid var(--bs-border-color);
+            color: var(--fc-sec-accent, var(--bs-body-color));
+        }
+        .fc-sec-HIGH    { --fc-sec-accent: #d9534f; }
+        .fc-sec-MED     { --fc-sec-accent: #f0ad4e; }
+        .fc-sec-LOW     { --fc-sec-accent: #5bc0de; }
+        .fc-sec-RIG     { --fc-sec-accent: #b58fd6; }
+        .fc-sec-SUBSYS  { --fc-sec-accent: #c9a26b; }
+        .fc-sec-DRONE   { --fc-sec-accent: #5cb85c; }
+        .fc-sec-FIGHTER { --fc-sec-accent: #4f9bd9; }
+        .fc-sec-CARGO   { --fc-sec-accent: #adb5bd; }
+        .fc-sec-IMPLANT { --fc-sec-accent: #e083b0; }
+        .fc-sec-BOOSTER { --fc-sec-accent: #43c6ac; }
+        .fc-sec-FEB     { --fc-sec-accent: #8c87d4; }
+        /* A finding row that owns a detail/message row below it: drop the line
+           between them so the message reads as belonging to its own module, and
+           let the detail row carry the separator to the next finding. */
+        .fc-has-detail > td { border-bottom: 0; }
+        /* Section-header rows inside a table (policy editor) carry the same
+           colour accent as the findings panels. */
+        tr.fc-sec-head > th {
+            border-left: 4px solid var(--fc-sec-accent, var(--bs-secondary));
+            background: color-mix(in srgb, var(--fc-sec-accent, var(--bs-secondary)) 16%, var(--bs-body-bg));
+        }
+        /* Dual-handle range for the abyssal acceptance window: two range inputs
+           overlaid on a single gradient track (green = good side, red = bad). */
+        .fc-dual-range { position: relative; height: 1.9rem; margin-top: 1rem; }
+        /* Value readout that tracks each slider thumb. */
+        .fc-dual-range .fc-range-bubble {
+            position: absolute; top: -0.95rem; transform: translateX(-50%);
+            font-size: .7rem; line-height: 1; white-space: nowrap; pointer-events: none;
+            color: var(--bs-body-color); background: var(--bs-body-bg);
+            padding: 0 .2rem; border-radius: .2rem;
+        }
+        .fc-dual-range .fc-track {
+            position: absolute; left: 0; right: 0; top: 50%; height: 6px;
+            transform: translateY(-50%); border-radius: 3px;
+            border: 1px solid var(--bs-border-color);
+        }
+        .fc-dual-range input[type="range"] {
+            position: absolute; left: 0; right: 0; top: 0; width: 100%; height: 1.9rem;
+            margin: 0; background: none; pointer-events: none;
+            -webkit-appearance: none; appearance: none;
+        }
+        .fc-dual-range input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; pointer-events: auto;
+            width: 16px; height: 16px; border-radius: 50%; cursor: pointer;
+            background: var(--bs-body-bg); border: 2px solid var(--bs-primary);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+        }
+        .fc-dual-range input[type="range"]::-moz-range-thumb {
+            pointer-events: auto; width: 16px; height: 16px; border-radius: 50%;
+            cursor: pointer; background: var(--bs-body-bg); border: 2px solid var(--bs-primary);
+        }
+        .fc-dual-range input[type="range"]::-moz-range-track { background: none; border: none; }
+    </style>
+    {% block fitcheck_css %}{% endblock %}
+{% endblock %}
+
+{% block content %}
+    <div class="container-fluid">
+        {% include "framework/header/page-header.html" with title=page_title %}
+        {% include "fitcheck/partials/menu.html" %}
+        {% block fitcheck_content %}{% endblock %}
+    </div>
+{% endblock content %}

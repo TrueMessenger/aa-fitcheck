@@ -1,0 +1,144 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+{% load static %}
+{% load django_bootstrap5 %}
+
+{% block fitcheck_css %}
+    <link rel="stylesheet" href="{% static 'fitcheck/vendor/tom-select.bootstrap5.min.css' %}">
+    <style>
+        /* FEB frigate pills match the green "Save" button (btn-success).
+           Selector specificity must beat tom-select's own
+           ".ts-wrapper.multi .ts-control > div" rule. */
+        .ts-wrapper.multi .ts-control > .item,
+        .ts-wrapper.multi .ts-control > .item.active {
+            background-color: var(--bs-success);
+            color: #fff;
+            border-color: var(--bs-success);
+        }
+        .ts-wrapper.multi .ts-control > .item .remove {
+            border-left-color: rgba(255, 255, 255, 0.4);
+            color: #fff;
+        }
+        .ts-wrapper.multi .ts-control > .item .remove:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+        /* The options dropdown must be readable on the dark AA theme:
+           white background, black text, green highlight on the active option. */
+        .ts-dropdown {
+            background-color: #fff;
+            color: #000;
+            border-color: #ced4da;
+        }
+        .ts-dropdown .option,
+        .ts-dropdown .no-results,
+        .ts-dropdown .optgroup-header {
+            color: #000;
+        }
+        .ts-dropdown .option.active,
+        .ts-dropdown .active {
+            background-color: var(--bs-success);
+            color: #fff;
+        }
+    </style>
+{% endblock %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-xxl-6">
+            <div class="card mb-3">
+                <div class="card-header fc-ship-row">
+                    <img src="https://images.evetech.net/types/{{ fit.ship_type_id }}/render?size=64"
+                         alt="" width="40" height="40">
+                    <div>
+                        <strong>{{ fit.name }}</strong>
+                        <div class="small text-muted">
+                            {{ fit.ship_type.name }} &middot; v{{ fit.version }} &middot;
+                            {% translate "Saving bumps the version and re-checks pending submissions." %}
+                        </div>
+                    </div>
+                    <a class="btn btn-sm btn-secondary ms-auto" href="{% url 'fitcheck:fit_detail' fit.pk %}">
+                        {% translate "Back to fitting" %}
+                    </a>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        {% bootstrap_form form %}
+                        <button type="submit" class="btn btn-success">
+                            <i class="fa-solid fa-floppy-disk"></i> {% translate "Save" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            {% if stale_pending_count %}
+                <div class="card border-warning mb-3">
+                    <div class="card-header bg-warning bg-opacity-25">
+                        <i class="fa-solid fa-rotate me-2"></i>{% translate "Stale Pending Submissions" %}
+                    </div>
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <div class="flex-grow-1 small">
+                            {% blocktranslate count counter=stale_pending_count %}
+                                {{ counter }} pending submission was checked against an older version of this fitting.
+                            {% plural %}
+                                {{ counter }} pending submissions were checked against an older version of this fitting.
+                            {% endblocktranslate %}
+                        </div>
+                        <form method="post" action="{% url 'fitcheck:fit_recheck_stale' fit.pk %}">
+                            {% csrf_token %}
+                            <button class="btn btn-warning btn-sm" type="submit">
+                                <i class="fa-solid fa-rotate"></i> {% translate "Recheck Stale" %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            {% endif %}
+
+            <div class="card">
+                <div class="card-header"><i class="fa-solid fa-scale-balanced me-2"></i>{% translate "Slot-Group Policy" %}</div>
+                <div class="card-body">
+                    {% if fit.compliance_policy %}
+                        <p class="small">
+                            {% blocktranslate with name=fit.compliance_policy.name %}Currently applied: <strong>{{ name }}</strong>{% endblocktranslate %}
+                        </p>
+                    {% endif %}
+                    {% if has_policies %}
+                        <form method="post" action="{% url 'fitcheck:fit_apply_policy' fit.pk %}" class="d-flex gap-2">
+                            {% csrf_token %}
+                            {{ apply_policy_form.policy }}
+                            <button class="btn btn-primary" type="submit">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> {% translate "Apply Policy" %}
+                            </button>
+                        </form>
+                        <div class="small text-muted mt-2">
+                            {% translate "Applying a policy overwrites the per-module settings for the slot groups it covers." %}
+                        </div>
+                    {% else %}
+                        <p class="small text-muted mb-0">
+                            {% translate "No compliance policies exist yet. Plugin admins can create them on the Policies tab." %}
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    <script src="{% static 'fitcheck/vendor/tom-select.complete.min.js' %}"></script>
+    <script>
+        // Tokenized chip picker for the FEB frigates: each accepted frigate becomes
+        // a removable pill showing its name, with an inline search over the eligible
+        // frigate list.
+        document.querySelectorAll("select[data-feb-picker]").forEach(function (el) {
+            new TomSelect(el, {
+                plugins: ["remove_button"],
+                maxOptions: 1000,
+                hideSelected: true,
+                closeAfterSelect: false,
+                placeholder: "{% translate 'Search frigates by name...' %}",
+            });
+        });
+    </script>
+{% endblock %}

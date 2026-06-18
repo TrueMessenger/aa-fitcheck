@@ -1,0 +1,134 @@
+"""ESI rate-limit safety for bulk member scans:
+
+1. The per-ship fit build reuses assets the scan already fetched, instead of
+   re-pulling the whole asset tree (the biggest ESI-call saving on a big scan).
+2. A scan aborts immediately when ESI signals its error limit (HTTP 420/429),
+   rather than hammering on and risking an application ban.
+"""
+
+from unittest import mock
+
+from django.test import TestCase
+
+from allianceauth.eveonline.models import EveCharacter
+from ..services import esi_assets
+from ..services.esi_assets import (
+    build_parsed_fit,
+    get_inventory_for_characters,
+    is_error_limited,
+)
+from .testdata.sde_fixtures import T, create_sde_testdata
+
+# Minimal ESI-shaped asset rows: a Harbinger hull with one fitted Heat Sink II.
+ASSETS = [
+    {"item_id": 1, "type_id": T.HARBINGER, "location_id": 60003760,
+     "location_flag": "Hangar", "quantity": 1, "is_singleton": True},
+    {"item_id": 2, "type_id": T.HEAT_SINK_II, "location_id": 1,
+     "location_flag": "LoSlot0", "quantity": 1, "is_singleton": False},
+]
+
+
+class _Resp:
+    status_code = 420
+
+
+class _ErrorLimited(Exception):
+    response = _Resp()
+
+
+class EsiRateLimitTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+        cls.char = EveCharacter.objects.create(
+            character_id=12345, character_name="Scout", corporation_id=2001,
+            corporation_name="Corp", corporation_ticker="CRP", security_status=0,
+        )
+
+    def test_is_error_limited_detects_420_429(self):
+        self.assertTrue(is_error_limited(_ErrorLimited()))
+        self.assertFalse(is_error_limited(ValueError("nope")))
+
+    def test_bulk_scan_does_not_refetch_assets_per_ship(self):
+        token = object()
+        with mock.patch.object(esi_assets, "tokens_by_character", return_value={12345: token}), \
+                mock.patch.object(esi_assets, "_fetch_assets", return_value=ASSETS) as fetch, \
+                mock.patch.object(esi_assets, "_fetch_asset_names", return_value={1: "My Harb"}), \
+                mock.patch.object(esi_assets, "_resolve_public_names", return_value={}), \
+                mock.patch.object(esi_assets, "_verify_mutated_items"):
+            inv = get_inventory_for_characters([self.char], hull_type_id=T.HARBINGER)
+            self.assertEqual(len(inv.ships), 1)
+            self.assertEqual(fetch.call_count, 1)  # one fetch for the scan
+            self.assertIn(12345, inv.assets_by_character)
+
+            # Per-ship build reuses the cached assets/token/name: NO second fetch.
+            parsed = build_parsed_fit(
+                None, 12345, 1,
+                assets=inv.assets_by_character[12345],
+                token=inv.token_by_character[12345],
+                fit_name="My Harb",
+            )
+            self.assertIsNotNone(parsed)
+            self.assertEqual(parsed.ship_type_id, T.HARBINGER)
+            self.assertEqual(fetch.call_count, 1)  # STILL one - no re-fetch
+
+    def test_scan_aborts_on_error_limit(self):
+        with mock.patch.object(esi_assets, "tokens_by_character", return_value={12345: object()}), \
+                mock.patch.object(esi_assets, "_fetch_assets", side_effect=_ErrorLimited()):
+            inv = get_inventory_for_characters([self.char], hull_type_id=T.HARBINGER)
+            self.assertTrue(inv.error_limited)
+            self.assertEqual(inv.ships, [])
+
+    def test_scan_aborts_when_name_resolution_hits_error_limit(self):
+        """H3: an error limit raised by the secondary name/location resolution
+        (not just the primary asset fetch) must abort the scan and surface
+        error_limited, rather than being swallowed."""
+        with mock.patch.object(esi_assets, "tokens_by_character", return_value={12345: object()}), \
+                mock.patch.object(esi_assets, "_fetch_assets", return_value=ASSETS), \
+                mock.patch.object(esi_assets, "_fetch_asset_names", side_effect=_ErrorLimited()):
+            inv = get_inventory_for_characters([self.char], hull_type_id=T.HARBINGER)
+            self.assertTrue(inv.error_limited)
+            self.assertEqual(inv.ships, [])
+
+    def _abyssal(self, n):
+        from ..constants import Section
+        from ..services.fit_data import FitItem
+        items = [
+            FitItem(section=Section.MED, type_id=T.WEB_ABYSSAL, quantity=1, source_item_id=1000 + i)
+            for i in range(n)
+        ]
+        rows = [{"type_id": T.WEB_ABYSSAL, "item_id": 1000 + i} for i in range(n)]
+        return items, rows
+
+    def _dogma_client(self, side_effect=None, result=None):
+        op = mock.Mock()
+        if side_effect is not None:
+            op.result.side_effect = side_effect
+        else:
+            op.result.return_value = result or {"dogma_attributes": []}
+        client = mock.Mock()
+        client.Dogma.GetDogmaDynamicItemsTypeIdItemId.return_value = op
+        provider = mock.Mock()
+        provider.client = client
+        return provider, client
+
+    def test_verify_mutated_items_caps_lookups(self):
+        """H4: the per-ship abyssal verification fan-out is bounded."""
+        from ..services.esi_assets import _MAX_DYNAMIC_ITEM_LOOKUPS, _verify_mutated_items
+        items, rows = self._abyssal(_MAX_DYNAMIC_ITEM_LOOKUPS + 5)
+        provider, client = self._dogma_client()
+        with mock.patch.object(esi_assets, "esi_client", return_value=provider):
+            _verify_mutated_items(items, rows)
+        self.assertEqual(
+            client.Dogma.GetDogmaDynamicItemsTypeIdItemId.call_count,
+            _MAX_DYNAMIC_ITEM_LOOKUPS,
+        )
+
+    def test_verify_mutated_items_reraises_on_error_limit(self):
+        """H4/H3: error limit during dynamic-item verification aborts cleanly."""
+        from ..services.esi_assets import _verify_mutated_items
+        items, rows = self._abyssal(3)
+        provider, _client = self._dogma_client(side_effect=_ErrorLimited())
+        with mock.patch.object(esi_assets, "esi_client", return_value=provider):
+            with self.assertRaises(_ErrorLimited):
+                _verify_mutated_items(items, rows)

@@ -1,0 +1,404 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="card mb-3 overflow-hidden">
+        <div class="row g-0">
+            <div class="col-md-3 fc-card-art" style="aspect-ratio: auto; min-height: 9rem">
+                {% if doctrine.image_type_id %}
+                    <img src="https://images.evetech.net/types/{{ doctrine.image_type_id }}/render?size=512" alt="">
+                {% else %}
+                    <span class="fc-art-placeholder"><i class="fa-solid fa-book-skull"></i></span>
+                {% endif %}
+            </div>
+            <div class="col-md-9">
+                <div class="p-3 d-flex flex-column h-100">
+                    <div class="d-flex align-items-start gap-2">
+                        <div>
+                            <div class="fc-eyebrow">
+                                {% translate "Doctrine" %}
+                                &middot; {% translate "Created" %} {{ doctrine.created_at|date:"Y-m-d" }}
+                                &middot; {% translate "Updated" %} {{ doctrine.updated_at|date:"Y-m-d" }}
+                            </div>
+                            <h4 class="mb-1">{{ doctrine.name }}</h4>
+                            <div>
+                                {% for category in doctrine.categories.all %}
+                                    <span class="badge me-1" style="background:{{ category.color }};color:{{ category.text_color }}">{{ category.name }}</span>
+                                {% endfor %}
+                                {% if not doctrine.is_active %}
+                                    <span class="badge bg-secondary">{% translate "inactive" %}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if can_manage %}
+                            <div class="ms-auto d-flex gap-2">
+                                {% if doctrine.source_plugin_pk %}
+                                    <form method="post"
+                                          action="{% url 'fitcheck:doctrine_resync_from_plugin' doctrine.pk %}"
+                                          title="{% translate 'Pull updates from the colcrunch fittings plugin' %}">
+                                        {% csrf_token %}
+                                        <button class="btn btn-sm btn-primary" type="submit">
+                                            <i class="fa-solid fa-rotate"></i>
+                                            {% translate "Pull updates" %}
+                                        </button>
+                                    </form>
+                                {% endif %}
+                                <button class="btn btn-sm btn-warning" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#doctrine-edit-panel">
+                                    <i class="fa-solid fa-pen"></i> {% translate "Edit" %}
+                                </button>
+                                <form method="post" action="{% url 'fitcheck:doctrine_delete' doctrine.pk %}"
+                                      onsubmit="return confirm('{% translate "Delete this doctrine? Its fittings remain as standalone standards." %}')">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-danger" type="submit">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        {% endif %}
+                    </div>
+                    {% if doctrine.description %}
+                        <p class="text-muted small mt-2 mb-0">{{ doctrine.description|linebreaksbr }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if can_manage %}
+        <div class="collapse mb-3" id="doctrine-edit-panel">
+            <div class="card border-primary">
+                <div class="card-header">{% translate "Edit Doctrine" %}</div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'fitcheck:doctrine_edit' doctrine.pk %}">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">{% translate "Name" %}</label>
+                                {{ doctrine_form.name }}
+                                <label class="form-label mt-2">{% translate "Description" %}</label>
+                                {{ doctrine_form.description }}
+                                <div class="form-check mt-2">
+                                    {{ doctrine_form.is_active }}
+                                    <label class="form-check-label" for="{{ doctrine_form.is_active.id_for_label }}">{% translate "Active" %}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">{% translate "Doctrine Image (Ship)" %}</label>
+                                {{ doctrine_form.image_type_id }}
+                                <div class="position-relative">
+                                    <input type="text" class="form-control form-control-sm" id="ship-search-input"
+                                           placeholder="{% translate 'Search ships...' %}" autocomplete="off">
+                                    <div class="list-group fc-ship-suggest d-none" id="ship-suggest"></div>
+                                </div>
+                                <label class="form-label mt-2">{% translate "Categories" %}</label>
+                                <div class="small">{{ doctrine_form.categories }}</div>
+                                <div class="form-text">
+                                    {% translate "Categories drive who can see this doctrine and its fits." %}
+                                    <a href="{% url 'fitcheck:category_list' %}">{% translate "Manage categories" %}</a>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn btn-success" type="submit">
+                            <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Doctrine" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3" id="fitting-picker">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="fa-solid fa-screwdriver-wrench"></i> {% translate "Manage Fittings in This Doctrine" %}
+                <a class="btn btn-sm btn-primary ms-auto"
+                   href="{% url 'fitcheck:manage_fit_import' doctrine.pk %}">
+                    <i class="fa-solid fa-file-import"></i> {% translate "Import a New Fitting (EFT)" %}
+                </a>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% url 'fitcheck:doctrine_assign_fits_bulk' doctrine.pk %}"
+                      id="fitting-picker-form">
+                    {% csrf_token %}
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">{% translate "Ship Group" %}</label>
+                            <select class="form-select form-select-sm" id="picker-group">
+                                <option value="">{% translate "Any group" %}</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 position-relative">
+                            <label class="form-label small mb-1">{% translate "Hull" %}</label>
+                            <input type="search" class="form-control form-control-sm" id="picker-hull-input"
+                                   placeholder="{% translate 'Any hull - type to filter' %}" autocomplete="off">
+                            <input type="hidden" id="picker-hull-id" value="">
+                            <div class="list-group fc-ship-suggest d-none" id="picker-hull-suggest"></div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1">{% translate "Name contains" %}</label>
+                            <input type="search" class="form-control form-control-sm" id="picker-query"
+                                   placeholder="{% translate 'e.g. Hel, Brawl, MJD...' %}" autocomplete="off">
+                        </div>
+                        <div class="col-md-2">
+                            <button type="button" class="btn btn-sm btn-secondary w-100"
+                                    id="picker-clear">
+                                <i class="fa-solid fa-rotate-left"></i> {% translate "Clear" %}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="small text-muted" id="picker-status">
+                        {% translate "Pick filters above to search for fittings to assign." %}
+                    </div>
+                    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-2 mt-1" id="picker-results"></div>
+                    <div class="d-flex align-items-center gap-2 mt-3">
+                        <button type="submit" class="btn btn-success" id="picker-submit" disabled>
+                            <i class="fa-solid fa-link"></i>
+                            <span id="picker-submit-label">{% translate "Assign Selected" %}</span>
+                        </button>
+                        <span class="text-muted small" id="picker-count">0 {% translate "selected" %}</span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    {% endif %}
+
+    <div class="fc-section-head"><i class="fa-solid fa-rocket"></i> {% translate "Fittings" %}</div>
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+        {% for fit in doctrine.fits.all %}
+            <div class="col">
+                <div class="fc-card p-3">
+                    <div class="fc-ship-row">
+                        <img src="https://images.evetech.net/types/{{ fit.ship_type_id }}/render?size=64"
+                             alt="" width="56" height="56">
+                        <div class="flex-grow-1">
+                            <a href="{% url 'fitcheck:fit_detail' fit.pk %}"><strong>{{ fit.name }}</strong></a>
+                            <div class="small text-muted">
+                                {{ fit.ship_type.name }} &middot; v{{ fit.version }}
+                                {% if not fit.is_active %}
+                                    &middot; <span class="badge bg-secondary">{% translate "inactive" %}</span>
+                                {% endif %}
+                            </div>
+                            <div class="mt-1">
+                                {% for category in doctrine.categories.all %}
+                                    <span class="badge me-1" style="background:{{ category.color }};color:{{ category.text_color }};font-size:.65rem">{{ category.name }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% if can_manage %}
+                            <div class="d-flex flex-column gap-1">
+                                <a class="btn btn-sm btn-warning" title="{% translate 'Fitting settings' %}"
+                                   href="{% url 'fitcheck:manage_fit_settings' fit.pk %}">
+                                    <i class="fa-solid fa-gear"></i>
+                                </a>
+                                <form method="post" action="{% url 'fitcheck:doctrine_remove_fit' doctrine.pk fit.pk %}"
+                                      onsubmit="return confirm('{% translate "Remove this fitting from the doctrine? The fitting itself is kept." %}')">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-danger" type="submit"
+                                            title="{% translate 'Remove from doctrine' %}">
+                                        <i class="fa-solid fa-link-slash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        {% empty %}
+            <div class="col-12"><div class="fc-empty">{% translate "No fittings in this doctrine yet." %}</div></div>
+        {% endfor %}
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    {% if can_manage %}
+        <script>
+            (function () {
+                const searchInput = document.getElementById("ship-search-input");
+                if (!searchInput) return;
+                const suggestBox = document.getElementById("ship-suggest");
+                const hiddenId = document.getElementById("{{ doctrine_form.image_type_id.id_for_label }}");
+                let timer = null;
+                searchInput.addEventListener("input", function () {
+                    clearTimeout(timer);
+                    const q = this.value.trim();
+                    if (q.length < 2) { suggestBox.classList.add("d-none"); return; }
+                    timer = setTimeout(async () => {
+                        const resp = await fetch("{% url 'fitcheck:ship_search' %}?q=" + encodeURIComponent(q));
+                        const data = await resp.json();
+                        suggestBox.innerHTML = "";
+                        data.results.forEach(ship => {
+                            const a = document.createElement("button");
+                            a.type = "button";
+                            a.className = "list-group-item list-group-item-action d-flex align-items-center gap-2";
+                            a.innerHTML = `<img src="https://images.evetech.net/types/${ship.type_id}/icon?size=32" width="24" height="24" class="rounded"> ${ship.name}`;
+                            a.addEventListener("click", () => {
+                                hiddenId.value = ship.type_id;
+                                searchInput.value = ship.name;
+                                suggestBox.classList.add("d-none");
+                            });
+                            suggestBox.appendChild(a);
+                        });
+                        suggestBox.classList.toggle("d-none", !data.results.length);
+                    }, 250);
+                });
+                document.addEventListener("click", (e) => {
+                    if (!suggestBox.contains(e.target) && e.target !== searchInput) suggestBox.classList.add("d-none");
+                });
+            })();
+
+            // Fitting multi-select picker: group/hull/name filters, card grid,
+            // many-fits-at-once assignment via doctrine_assign_fits_bulk.
+            (function () {
+                const root = document.getElementById("fitting-picker");
+                if (!root) return;
+                const DOCTRINE_PK = {{ doctrine.pk }};
+                const groupSel = document.getElementById("picker-group");
+                const hullInput = document.getElementById("picker-hull-input");
+                const hullId = document.getElementById("picker-hull-id");
+                const hullSuggest = document.getElementById("picker-hull-suggest");
+                const queryInput = document.getElementById("picker-query");
+                const clearBtn = document.getElementById("picker-clear");
+                const status = document.getElementById("picker-status");
+                const resultsBox = document.getElementById("picker-results");
+                const form = document.getElementById("fitting-picker-form");
+                const submitBtn = document.getElementById("picker-submit");
+                const submitLabel = document.getElementById("picker-submit-label");
+                const countLabel = document.getElementById("picker-count");
+                const selected = new Set();
+                let searchTimer = null;
+                let hullTimer = null;
+                let lastSearchToken = 0;
+
+                function syncSelected() {
+                    const n = selected.size;
+                    countLabel.textContent = n + " {% translate 'selected' %}";
+                    submitBtn.disabled = n === 0;
+                    submitLabel.textContent = n > 1
+                        ? "{% translate 'Assign' %} " + n + " {% translate 'fittings' %}"
+                        : "{% translate 'Assign Selected' %}";
+                }
+
+                function cardHtml(fit) {
+                    const checked = selected.has(fit.fit_id) ? " checked" : "";
+                    const otherDoctrines = Math.max(0, fit.doctrine_count);
+                    const inOthers = otherDoctrines > 0
+                        ? `<span class="badge bg-secondary ms-1" title="{% translate 'Already assigned to this many other doctrines' %}">+${otherDoctrines}</span>`
+                        : "";
+                    return `
+                        <div class="col">
+                            <label class="fc-card fc-select-card p-2 d-flex gap-2 align-items-center"
+                                   data-fit-id="${fit.fit_id}">
+                                <input type="checkbox" name="fit_ids" value="${fit.fit_id}"${checked}>
+                                <img src="https://images.evetech.net/types/${fit.ship_type_id}/render?size=64"
+                                     width="40" height="40" class="rounded">
+                                <div class="flex-grow-1 small">
+                                    <div><strong>${fit.name}</strong>${inOthers}</div>
+                                    <div class="text-muted">${fit.ship_name}${fit.group_name ? " - " + fit.group_name : ""}</div>
+                                </div>
+                            </label>
+                        </div>`;
+                }
+
+                async function runSearch() {
+                    const token = ++lastSearchToken;
+                    const url = new URL("{% url 'fitcheck:fitting_search' %}", window.location.origin);
+                    if (queryInput.value.trim()) url.searchParams.set("q", queryInput.value.trim());
+                    if (groupSel.value) url.searchParams.set("group", groupSel.value);
+                    if (hullId.value) url.searchParams.set("hull", hullId.value);
+                    url.searchParams.set("exclude_doctrine", DOCTRINE_PK);
+                    status.textContent = "{% translate 'Searching...' %}";
+                    let data;
+                    try {
+                        const resp = await fetch(url);
+                        data = await resp.json();
+                    } catch (err) {
+                        if (token !== lastSearchToken) return;
+                        status.textContent = "{% translate 'Search failed - try again.' %}";
+                        return;
+                    }
+                    if (token !== lastSearchToken) return;
+                    const rows = data.results || [];
+                    resultsBox.innerHTML = rows.map(cardHtml).join("");
+                    status.textContent = rows.length
+                        ? rows.length + " {% translate 'fittings - tick the ones to assign.' %}"
+                        : "{% translate 'No fittings match these filters.' %}";
+                    resultsBox.querySelectorAll("label.fc-select-card").forEach(card => {
+                        const checkbox = card.querySelector("input[type=checkbox]");
+                        if (checkbox.checked) card.classList.add("selected");
+                        checkbox.addEventListener("change", () => {
+                            const id = Number(checkbox.value);
+                            if (checkbox.checked) selected.add(id);
+                            else selected.delete(id);
+                            card.classList.toggle("selected", checkbox.checked);
+                            syncSelected();
+                        });
+                    });
+                }
+
+                async function runHullSearch() {
+                    const q = hullInput.value.trim();
+                    if (q.length < 2) { hullSuggest.classList.add("d-none"); return; }
+                    const resp = await fetch("{% url 'fitcheck:ship_search' %}?q=" + encodeURIComponent(q));
+                    const data = await resp.json();
+                    hullSuggest.innerHTML = "";
+                    (data.results || []).forEach(ship => {
+                        const btn = document.createElement("button");
+                        btn.type = "button";
+                        btn.className = "list-group-item list-group-item-action d-flex align-items-center gap-2";
+                        btn.innerHTML = `<img src="https://images.evetech.net/types/${ship.type_id}/icon?size=32" width="20" height="20" class="rounded"> ${ship.name}`;
+                        btn.addEventListener("click", () => {
+                            hullId.value = ship.type_id;
+                            hullInput.value = ship.name;
+                            hullSuggest.classList.add("d-none");
+                            runSearch();
+                        });
+                        hullSuggest.appendChild(btn);
+                    });
+                    hullSuggest.classList.toggle("d-none", !data.results.length);
+                }
+
+                async function loadGroups() {
+                    const resp = await fetch("{% url 'fitcheck:ship_group_list' %}");
+                    const data = await resp.json();
+                    (data.results || []).forEach(name => {
+                        const opt = document.createElement("option");
+                        opt.value = name;
+                        opt.textContent = name;
+                        groupSel.appendChild(opt);
+                    });
+                }
+
+                groupSel.addEventListener("change", runSearch);
+                queryInput.addEventListener("input", () => {
+                    clearTimeout(searchTimer);
+                    searchTimer = setTimeout(runSearch, 250);
+                });
+                hullInput.addEventListener("input", () => {
+                    clearTimeout(hullTimer);
+                    // typing without picking clears the saved hull id so the
+                    // partial text doesn't keep filtering by a stale id
+                    hullId.value = "";
+                    hullTimer = setTimeout(runHullSearch, 250);
+                });
+                clearBtn.addEventListener("click", () => {
+                    groupSel.value = "";
+                    queryInput.value = "";
+                    hullInput.value = "";
+                    hullId.value = "";
+                    resultsBox.innerHTML = "";
+                    status.textContent = "{% translate 'Pick filters above to search for fittings to assign.' %}";
+                    selected.clear();
+                    syncSelected();
+                });
+                document.addEventListener("click", e => {
+                    if (!hullSuggest.contains(e.target) && e.target !== hullInput) {
+                        hullSuggest.classList.add("d-none");
+                    }
+                });
+
+                loadGroups();
+                syncSelected();
+            })();
+        </script>
+    {% endif %}
+{% endblock %}

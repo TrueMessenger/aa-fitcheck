@@ -1,0 +1,282 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    {% if submission.verdict == "C" %}
+        <div class="alert alert-success d-flex align-items-center gap-3">
+    {% elif submission.verdict == "S" %}
+        <div class="alert alert-info d-flex align-items-center gap-3">
+    {% elif submission.verdict == "N" %}
+        <div class="alert alert-danger d-flex align-items-center gap-3">
+    {% else %}
+        <div class="alert alert-secondary d-flex align-items-center gap-3">
+    {% endif %}
+        <i class="fa-solid fa-clipboard-check fa-2x"></i>
+        <div>
+            <strong>{{ submission.get_verdict_display }}</strong><br>
+            <small>
+                {{ submission.doctrine_fit.name }} (v{{ submission.fit_version }})
+                {% if submission.doctrine %}
+                    <span class="fc-chip" title="{% translate 'Graded against this doctrine\'s policy snapshot' %}">{{ submission.doctrine.name }}</span>
+                {% else %}
+                    <span class="text-muted">{% translate "(source defaults)" %}</span>
+                {% endif %}
+                &middot; {{ submission.get_source_display }}
+                &middot; {{ submission.character|default:submission.user }}
+                &middot; {{ submission.created_at|date:"SHORT_DATETIME_FORMAT" }}
+            </small>
+        </div>
+        <span class="ms-auto">
+            {% include "fitcheck/partials/status_badge.html" %}
+            {% if submission.is_stale %}
+                <span class="badge bg-secondary">{% translate "stale" %}</span>
+            {% endif %}
+        </span>
+    </div>
+
+    {% if mutated_items %}
+        <div class="alert alert-light d-flex flex-wrap align-items-center gap-2">
+            <strong>{% translate "Mutated module stats:" %}</strong>
+            {% for item in mutated_items %}
+                <span>
+                    {{ item.eve_type.name }}
+                    {% if item.mutation_source == "ESI" %}
+                        <span class="badge bg-success">{{ item.get_mutation_source_display }}</span>
+                    {% elif item.mutation_source == "MAN" %}
+                        <span class="badge bg-warning text-dark"
+                              title="{% translate 'Values entered by the pilot - not verified against the game' %}">
+                            {{ item.get_mutation_source_display }}
+                        </span>
+                    {% else %}
+                        <span class="badge bg-info">{{ item.get_mutation_source_display }}</span>
+                    {% endif %}
+                </span>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    {% if submission.review_comment %}
+        <div class="alert alert-light">
+            <strong>{% translate "Reviewer comment" %}</strong> ({{ submission.reviewed_by }}):
+            {{ submission.review_comment|linebreaksbr }}
+        </div>
+    {% endif %}
+
+    <div class="d-flex gap-2 mb-3 align-items-center">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="history.back()">
+            <i class="fa-solid fa-arrow-left"></i> {% translate "Back" %}
+        </button>
+        {% if can_recheck %}
+            <form method="post" action="{% url 'fitcheck:submission_recheck' submission.pk %}">
+                {% csrf_token %}
+                <button class="btn btn-primary btn-sm" type="submit"
+                        title="{% translate 'Pulls your latest fit for this ship from EVE via ESI, re-grades it, and replaces this submission. To validate a different ship, use Pilot Fittings -> Validate ships from my inventory.' %}">
+                    <i class="fa-solid fa-rotate"></i> {% translate "Re-Check" %}
+                </button>
+            </form>
+        {% endif %}
+        {% if can_delete %}
+            <form method="post" action="{% url 'fitcheck:submission_delete' submission.pk %}"
+                  class="ms-auto"
+                  onsubmit="return confirm('{% translate "Remove this submission?" %}')">
+                {% csrf_token %}
+                <button class="btn btn-danger btn-sm" type="submit">
+                    <i class="fa-solid fa-trash"></i> {% translate "Delete Submission" %}
+                </button>
+            </form>
+        {% endif %}
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            {% include "fitcheck/partials/findings_table.html" %}
+
+            {% if show_feb_panel %}
+                {% comment %}FEB is informational (not graded) so it isn't in the findings
+                table; render it as the last framed section, below Boosters.{% endcomment %}
+                <div class="fc-finding-section fc-sec-FEB mb-3">
+                    <div class="fc-finding-section-head">
+                        {% include "fitcheck/partials/section_icon.html" with code="FEB" %}
+                        <span class="ms-1">{% translate "Frigate Escape Bay" %}</span>
+                        <small class="text-muted ms-2 fw-normal">{% translate "(informational, not part of the compliance check)" %}</small>
+                    </div>
+                    <div class="p-3">
+                        {% if feb_type %}
+                            <div class="d-flex align-items-center gap-3">
+                                <img src="https://images.evetech.net/types/{{ feb_type.id }}/render?size=64"
+                                     alt="" width="56" height="56" class="rounded">
+                                <div>
+                                    <strong>{{ feb_type.name }}</strong>
+                                    {% if feb_type.eve_group %}
+                                        <div class="small text-muted">{{ feb_type.eve_group.name }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% elif submission.frigate_escape_bay_type_id %}
+                            <div class="small text-muted">
+                                {% translate "A ship of type" %}
+                                <code>{{ submission.frigate_escape_bay_type_id }}</code>
+                                {% translate "(unrecognized) was in the bay at submission time." %}
+                            </div>
+                        {% else %}
+                            <div class="small text-muted">{% translate "Empty." %}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if can_review %}
+        <div class="card mb-3 border-primary">
+            <div class="card-header">{% translate "Review Decision" %}</div>
+            <div class="card-body">
+                {% if missing_multibuy %}
+                    <button type="button" class="btn btn-primary btn-sm mb-2" id="fill-missing-btn">
+                        <i class="fa-solid fa-cart-shopping"></i> {% translate "Missing Modules" %}
+                    </button>
+                    {{ missing_multibuy|json_script:"missing-multibuy" }}
+                {% endif %}
+                <form method="post" action="{% url 'fitcheck:review_decide' submission.pk %}"
+                      id="review-form">
+                    {% csrf_token %}
+                    <div class="mb-2">
+                        <textarea class="form-control" name="comment" rows="2"
+                                  id="review-comment"
+                                  placeholder="{% translate 'Comment (required when rejecting)' %}"></textarea>
+                    </div>
+                    <button class="btn btn-success" name="decision" value="approve" type="submit"
+                            id="review-approve">
+                        <i class="fa-solid fa-check"></i> {% translate "Approve" %}
+                    </button>
+                    <button class="btn btn-danger" name="decision" value="reject" type="submit"
+                            id="review-reject">
+                        <i class="fa-solid fa-xmark"></i> {% translate "Reject" %}
+                    </button>
+                </form>
+                <script>
+                    // Approve never needs a comment; Reject always does. We
+                    // flip the textarea's `required` attr just before submit
+                    // based on which button the reviewer clicked, so the
+                    // built-in form validation gives them the hint without
+                    // blocking the Approve path.
+                    (function () {
+                        const ta = document.getElementById("review-comment");
+                        const approveBtn = document.getElementById("review-approve");
+                        const rejectBtn = document.getElementById("review-reject");
+                        if (!ta || !approveBtn || !rejectBtn) return;
+                        approveBtn.addEventListener("click", () => { ta.required = false; });
+                        rejectBtn.addEventListener("click", () => { ta.required = true; });
+
+                        // "Missing Modules": drop a paste-ready EVE multibuy list of
+                        // the gaps into the comment so the pilot knows what to buy.
+                        const fillBtn = document.getElementById("fill-missing-btn");
+                        const src = document.getElementById("missing-multibuy");
+                        if (fillBtn && src) {
+                            fillBtn.addEventListener("click", () => {
+                                // json_script encodes the list so apostrophes in
+                                // EVE names (Agency 'Hardshell' ...) round-trip
+                                // instead of arriving HTML-escaped as &#x27;.
+                                const list = JSON.parse(src.textContent).trim();
+                                if (!list) return;
+                                ta.value = ta.value.trim()
+                                    ? ta.value.trim() + "\n\n" + list
+                                    : list;
+                                ta.focus();
+                            });
+                        }
+                    })();
+                </script>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if submitted_items %}
+        <div class="card mb-3">
+            <details class="fc-loadout">
+                <summary class="card-header" style="cursor: pointer;">
+                    <i class="fa-solid fa-list-check me-2"></i>{% translate "Submitted Loadout" %}
+                    <small class="text-muted ms-2">{% translate "(click to expand - everything captured from this submission, including bay contents)" %}</small>
+                </summary>
+                <div class="card-body">
+                    {% regroup submitted_items by get_section_display as loadout_sections %}
+                <div class="row">
+                    {% for sec in loadout_sections %}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="small text-uppercase text-muted fw-bold mb-1">{{ sec.grouper }}</div>
+                            <ul class="list-unstyled small mb-0">
+                                {% for item in sec.list %}
+                                    <li class="d-flex align-items-center mb-1">
+                                        <img src="https://images.evetech.net/types/{{ item.eve_type_id }}/icon?size=32"
+                                             alt="" width="20" height="20"
+                                             class="me-1 fc-type-icon" data-type-id="{{ item.eve_type_id }}">
+                                        <span>{{ item.eve_type.name }}</span>
+                                        {% if item.quantity > 1 %}
+                                            <span class="text-muted ms-1">&times;{{ item.quantity }}</span>
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endfor %}
+                    </div>
+                </div>
+            </details>
+        </div>
+        <script>
+            // The EVE image server serves blueprints under /bp, not /icon (which
+            // 400s for them), and a handful of types have no art at all. Retry
+            // /bp on the first error, then hide the icon so no broken-image glyph
+            // shows next to the item name.
+            (function () {
+                document.querySelectorAll(".fc-type-icon").forEach((img) => {
+                    img.addEventListener("error", () => {
+                        const id = img.dataset.typeId;
+                        if (img.dataset.fallbackTried) {
+                            img.style.visibility = "hidden";
+                            return;
+                        }
+                        img.dataset.fallbackTried = "1";
+                        img.src = "https://images.evetech.net/types/" + id + "/bp?size=32";
+                    });
+                });
+            })();
+        </script>
+    {% endif %}
+
+    <div class="row">
+        {% if submission.eft_text %}
+            <div class="col-md-6">
+                <div class="card mb-3">
+                    <details class="fc-eft">
+                        <summary class="card-header" style="cursor: pointer;">
+                            <i class="fa-solid fa-file-lines me-2"></i>{% translate "Submitted Fit (EFT)" %}
+                            <small class="text-muted ms-2">{% translate "(click to expand)" %}</small>
+                        </summary>
+                        <div class="card-body">
+                            <pre class="small mb-0">{{ submission.eft_text }}</pre>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        {% endif %}
+        <div class="col-md-6">
+            <div class="card mb-3">
+                <div class="card-header">{% translate "History" %}</div>
+                <div class="card-body">
+                    <ul class="list-unstyled small mb-0">
+                        {% for entry in log_entries %}
+                            <li>
+                                {{ entry.created_at|date:"SHORT_DATETIME_FORMAT" }} &middot;
+                                {{ entry.get_action_display }}
+                                {% if entry.actor %}({{ entry.actor }}){% endif %}
+                                {% if entry.comment %}&mdash; {{ entry.comment }}{% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

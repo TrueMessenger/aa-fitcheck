@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aa-fitcheck"
+dynamic = ["version"]
+description = "Doctrine ship-fit compliance with module substitutions for Alliance Auth"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    { name = "TrueMessenger", email = "truemessenger07@gmail.com" },
+]
+keywords = ["allianceauth", "eveonline", "doctrine", "fitting", "compliance", "fleet"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+dependencies = [
+    "allianceauth>=4.0,<6",
+    "allianceauth-app-utils>=1.20",
+    "django-eveuniverse>=1.5",
+    "requests",
+]
+
+[project.urls]
+Homepage = "https://github.com/TrueMessenger/aa-fitcheck"
+Source = "https://github.com/TrueMessenger/aa-fitcheck"
+
+[project.optional-dependencies]
+# Optional: enables the Secure Groups smart filter (FitComplianceFilter).
+# The plugin no-ops cleanly when this is not installed.
+securegroups = [
+    "allianceauth-securegroups",
+]
+tests = [
+    "coverage",
+    "allianceauth-securegroups",
+]
+
+[tool.hatch.version]
+path = "fitcheck/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fitcheck"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]

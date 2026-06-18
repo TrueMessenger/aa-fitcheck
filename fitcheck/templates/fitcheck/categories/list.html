@@ -1,0 +1,76 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="fc-toolbar">
+        <div class="fc-eyebrow">
+            {% translate "Categories group doctrines and fittings and gate who can see them by Auth group." %}
+        </div>
+        <a class="btn btn-primary btn-sm ms-auto" href="{% url 'fitcheck:category_create' %}">
+            <i class="fa-solid fa-plus"></i> {% translate "New Category" %}
+        </a>
+    </div>
+
+    <div class="fc-finding-section fc-sec-DRONE">
+        <div class="fc-finding-section-head">
+            <i class="fa-solid fa-tags"></i><span class="ms-1">{% translate "Categories" %}</span>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>{% translate "Category" %}</th>
+                        <th>{% translate "Selected Groups (Any)" %}</th>
+                        <th>{% translate "Required Groups (All)" %}</th>
+                        <th>{% translate "Doctrines" %}</th>
+                        <th>{% translate "Fittings" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for category in categories %}
+                        <tr>
+                            <td>
+                                <span class="badge" style="background:{{ category.color }};color:{{ category.text_color }}">
+                                    {{ category.name }}
+                                </span>
+                            </td>
+                            <td class="small">
+                                {% for g in category.selected_groups.all %}
+                                    <span class="badge bg-secondary fw-normal me-1">{{ g.name }}</span>
+                                {% empty %}<span class="text-muted">&mdash;</span>{% endfor %}
+                            </td>
+                            <td class="small">
+                                {% for g in category.required_groups.all %}
+                                    <span class="badge bg-dark fw-normal me-1">{{ g.name }}</span>
+                                {% empty %}<span class="text-muted">&mdash;</span>{% endfor %}
+                            </td>
+                            <td class="small text-muted">{{ category.doctrines.count }}</td>
+                            <td class="small text-muted">{{ category.fits.count }}</td>
+                            <td class="text-end text-nowrap">
+                                {% if not category.selected_groups.all and not category.required_groups.all %}
+                                    <span class="badge bg-info text-dark me-1" title="{% translate 'No group restriction - visible to all members' %}">{% translate "public" %}</span>
+                                {% endif %}
+                                <a class="btn btn-sm btn-warning" href="{% url 'fitcheck:category_edit' category.pk %}"
+                                   title="{% translate 'Edit' %}"><i class="fa-solid fa-pen"></i></a>
+                                <form class="d-inline" method="post"
+                                      action="{% url 'fitcheck:category_delete' category.pk %}"
+                                      onsubmit="return confirm('{% translate "Delete this category? Doctrines and fits stay, but lose this visibility gate." %}')">
+                                    {% csrf_token %}
+                                    <button class="btn btn-sm btn-danger" type="submit" title="{% translate 'Delete' %}">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6" class="p-4 text-center text-muted">
+                            {% translate "No categories yet. Create one to gate doctrines/fits by group." %}
+                        </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}

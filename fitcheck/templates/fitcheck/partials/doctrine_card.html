@@ -1,0 +1,48 @@
+{% load i18n %}
+
+<div class="col">
+    <div class="fc-card position-relative">
+        <a class="fc-card-art" href="{% url 'fitcheck:doctrine_detail' doctrine.pk %}">
+            {% if doctrine.image_type_id %}
+                <img src="https://images.evetech.net/types/{{ doctrine.image_type_id }}/render?size=512" alt="">
+            {% else %}
+                <span class="fc-art-placeholder"><i class="fa-solid fa-book-skull"></i></span>
+            {% endif %}
+        </a>
+        <div class="p-3">
+            <div class="d-flex justify-content-between align-items-start">
+                <h5 class="mb-1">
+                    <a class="text-decoration-none" href="{% url 'fitcheck:doctrine_detail' doctrine.pk %}">{{ doctrine.name }}</a>
+                </h5>
+                <span class="badge bg-secondary">{{ doctrine.fits.all|length }} {% translate "fits" %}</span>
+            </div>
+            {% if doctrine.categories.all %}
+                <div class="mb-2">
+                    {% for category in doctrine.categories.all %}
+                        <span class="badge me-1" style="background:{{ category.color }};color:{{ category.text_color }}">{{ category.name }}</span>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            {% if doctrine.description %}
+                <p class="small text-muted mb-2">{{ doctrine.description|truncatechars:140 }}</p>
+            {% endif %}
+            <div class="d-flex flex-wrap gap-1">
+                {% for fit in doctrine.fits.all|slice:":8" %}
+                    <a href="{% url 'fitcheck:fit_detail' fit.pk %}" title="{{ fit.name }} ({{ fit.ship_type.name }})">
+                        <img class="rounded" src="https://images.evetech.net/types/{{ fit.ship_type_id }}/icon?size=32"
+                             alt="{{ fit.ship_type.name }}" width="28" height="28">
+                    </a>
+                {% empty %}
+                    <span class="small text-muted">{% translate "No fittings assigned yet." %}</span>
+                {% endfor %}
+                {% if doctrine.fits.all|length > 8 %}
+                    <span class="small text-muted align-self-center">+{{ doctrine.fits.all|length|add:"-8" }}</span>
+                {% endif %}
+            </div>
+            <div class="small text-muted mt-2 d-flex flex-wrap gap-3">
+                <span title="{% translate 'Created' %}"><i class="fa-solid fa-calendar-plus me-1"></i>{{ doctrine.created_at|date:"Y-m-d" }}</span>
+                <span title="{% translate 'Last updated' %}"><i class="fa-solid fa-pen me-1"></i>{{ doctrine.updated_at|date:"Y-m-d" }}</span>
+            </div>
+        </div>
+    </div>
+</div>

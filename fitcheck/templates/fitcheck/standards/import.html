@@ -1,0 +1,40 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+{% load django_bootstrap5 %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-xxl-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fa-solid fa-file-import me-2"></i>
+                    {% if doctrine %}
+                        {% blocktranslate with name=doctrine.name %}Import a fitting into {{ name }}{% endblocktranslate %}
+                    {% else %}
+                        {% translate "Import a fitting standard" %}
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if not doctrine %}
+                        <p class="small text-muted">
+                            {% translate "The fitting will be created standalone - you can assign it to doctrines later from any doctrine page." %}
+                        </p>
+                    {% endif %}
+                    <form method="post">
+                        {% csrf_token %}
+                        {% bootstrap_form form %}
+                        <button type="submit" class="btn btn-success">
+                            <i class="fa-solid fa-file-import"></i> {% translate "Import" %}
+                        </button>
+                        {% if doctrine %}
+                            <a class="btn btn-secondary" href="{% url 'fitcheck:doctrine_detail' doctrine.pk %}">{% translate "Back" %}</a>
+                        {% else %}
+                            <a class="btn btn-secondary" href="{% url 'fitcheck:standards_list' %}">{% translate "Back" %}</a>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
