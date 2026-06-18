@@ -54,6 +54,57 @@
                 {% endif %}
             </div>
         </div>
+        {% if snapshot_differs %}
+            <div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <div class="flex-grow-1">
+                    {% translate "This copy differs from the fit template - either it was customized here, or the template changed after this copy was made. Audits use this copy." %}
+                    <a class="ms-1" href="{% url 'fitcheck:manage_fit_items' assignment.fit.pk %}">
+                        {% translate "View the template" %}
+                    </a>
+                </div>
+                <form method="post" action="{% url 'fitcheck:manage_assignment_resync' assignment.pk %}"
+                      onsubmit="return confirm('{% translate "Re-sync this copy from the fit template? This combination's customizations will be discarded." %}');">
+                    {% csrf_token %}
+                    <button class="btn btn-warning btn-sm" type="submit">
+                        <i class="fa-solid fa-rotate-left"></i> {% translate "Re-sync from template" %}
+                    </button>
+                </form>
+            </div>
+        {% endif %}
+    {% endif %}
+    {% if not assignment and used_in %}
+        <div class="alert alert-secondary mb-3">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <i class="fa-solid fa-diagram-project"></i>
+                <strong>{% blocktranslate count n=used_in|length %}Used in {{ n }} doctrine{% plural %}Used in {{ n }} doctrines{% endblocktranslate %}</strong>
+            </div>
+            <div class="small text-muted mb-2">
+                {% translate "Each doctrine this fit belongs to keeps its own policy copy, and audits grade against that copy - editing here changes the template only. Open a combination to edit it, or re-sync a drifted copy back to this template." %}
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                {% for combo in used_in %}
+                    <span class="d-inline-flex align-items-center gap-1 border rounded px-2 py-1">
+                        <a href="{% url 'fitcheck:manage_assignment_items' combo.assignment_pk %}">
+                            <i class="fa-solid fa-book-skull"></i> {{ combo.doctrine.name }}
+                        </a>
+                        {% if combo.differs %}
+                            <span class="badge bg-warning text-dark" title="{% translate 'This copy differs from the template' %}">{% translate "differs" %}</span>
+                            <form method="post" action="{% url 'fitcheck:manage_assignment_resync' combo.assignment_pk %}" class="d-inline"
+                                  onsubmit="return confirm('{% translate "Re-sync this copy from the fit template? This combination's customizations will be discarded." %}');">
+                                {% csrf_token %}
+                                <button class="btn btn-link btn-sm p-0 text-warning" type="submit"
+                                        title="{% translate 'Re-sync from template' %}">
+                                    <i class="fa-solid fa-rotate-left"></i>
+                                </button>
+                            </form>
+                        {% else %}
+                            <span class="badge bg-success" title="{% translate 'In sync with the template' %}">{% translate "in sync" %}</span>
+                        {% endif %}
+                    </span>
+                {% endfor %}
+            </div>
+        </div>
     {% endif %}
     <div class="card mb-3">
         <div class="card-body fc-ship-row">
@@ -136,6 +187,10 @@
                                          alt="" width="24" height="24">
                                     {{ row.item.module_type.name }}
                                     <span class="text-muted">&times;{{ row.item.quantity }}</span>
+                                    {% if row.differs %}
+                                        <span class="badge bg-warning text-dark ms-1"
+                                              title="{% translate 'This row differs from the fit template' %}">{% translate "differs" %}</span>
+                                    {% endif %}
                                     {% if row.form.errors %}
                                         <div class="text-danger small">{{ row.form.errors }}</div>
                                     {% endif %}

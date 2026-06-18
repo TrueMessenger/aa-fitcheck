@@ -156,10 +156,18 @@ def fit_detail(request, fit_pk: int):
     assignment_pk_by_doctrine = dict(
         FitAssignment.objects.filter(fit=fit).values_list("doctrine_id", "pk")
     )
+    # Flag combinations whose per-doctrine policy copy has drifted from this
+    # fit's template (manager-only - it's the surface they edit).
+    drifted: set[int] = set()
+    if request.user.has_perm("fitcheck.manage_doctrines"):
+        from ..services.assignments import differing_assignments
+
+        drifted = differing_assignments(fit)
     doctrine_chips = [
         {
             "doctrine": d,
             "assignment_pk": assignment_pk_by_doctrine.get(d.pk),
+            "differs": assignment_pk_by_doctrine.get(d.pk) in drifted,
         }
         for d in fit.doctrines.all().prefetch_related("categories")
     ]
@@ -714,6 +722,20 @@ def submission_detail(request, submission_pk: int):
             id=submission.frigate_escape_bay_type_id
         ).select_related("eve_group").first()
 
+    # Manager jump-link to the exact per-(doctrine, fit) policy this submission
+    # was graded against - the surface to edit when a verdict looks wrong.
+    policy_assignment_pk = None
+    if submission.doctrine_id and request.user.has_perm("fitcheck.manage_doctrines"):
+        from ..models import FitAssignment
+
+        policy_assignment_pk = (
+            FitAssignment.objects.filter(
+                doctrine_id=submission.doctrine_id, fit_id=submission.doctrine_fit_id
+            )
+            .values_list("pk", flat=True)
+            .first()
+        )
+
     return render(
         request,
         "fitcheck/submission_detail.html",
@@ -722,6 +744,7 @@ def submission_detail(request, submission_pk: int):
             "findings": findings,
             "mutated_items": mutated_items,
             "submitted_items": submitted_items,
+            "policy_assignment_pk": policy_assignment_pk,
             "can_review": can_review,
             "can_delete": is_owner and submission.status == FitSubmission.Status.PENDING,
             "can_recheck": is_owner,

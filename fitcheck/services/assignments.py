@@ -170,6 +170,91 @@ def reclone_empty_assignment_snapshots() -> list[int]:
     return repaired
 
 
+def _override_set(item) -> set[tuple[int, str]]:
+    """The ``(alt_type_id, mode)`` set of an item's overrides. Works for both a
+    DoctrineFitItem (FitItemOverride) and an AssignmentItemPolicy
+    (AssignmentItemOverride) - both expose ``overrides`` with the same shape."""
+    return {(o.alt_type_id, o.mode) for o in item.overrides.all()}
+
+
+def _comparable_policy(obj) -> tuple:
+    """An order-insensitive view of an item's policy fields for drift
+    comparison. The list fields (meta groups / checked attributes) are sorted
+    because selection order carries no meaning, and attribute_bounds is sorted
+    by key, so a snapshot that merely re-ordered them is not flagged as drift."""
+    kw = _policy_kwargs_from(obj)
+    return (
+        kw["policy"],
+        kw["min_meta_level"],
+        tuple(sorted(kw["allowed_meta_groups"])),
+        tuple(sorted(kw["checked_attributes"])),
+        tuple(sorted(kw["attribute_bounds"].items(), key=lambda kv: kv[0])),
+        kw["allow_mutated"],
+        kw["min_quantity_pct"],
+        kw["notes"],
+    )
+
+
+def assignment_item_differs(policy: AssignmentItemPolicy) -> bool:
+    """True when an AssignmentItemPolicy no longer matches its source
+    DoctrineFitItem - either a policy field or the override set has drifted.
+    A missing ``source_item`` (the source row was deleted out from under the
+    snapshot) counts as differing."""
+    source = policy.source_item
+    if source is None:
+        return True
+    if _comparable_policy(policy) != _comparable_policy(source):
+        return True
+    return _override_set(policy) != _override_set(source)
+
+
+def assignment_differs(assignment: FitAssignment) -> bool:
+    """True when an assignment's snapshot has drifted from the fit's current
+    source template: any item differs, OR the set of (section, module_type)
+    no longer matches the fit's source items (a module was added to or removed
+    from the BOM since this snapshot was cloned). This is the per-(doctrine,
+    fit) 'differs from template' state - distinct from the fit_version-based
+    'stale submission' concept."""
+    policies = list(assignment.item_policies.all())
+    snapshot_keys = {(p.section, p.module_type_id) for p in policies}
+    source_keys = {(i.section, i.module_type_id) for i in assignment.fit.items.all()}
+    if snapshot_keys != source_keys:
+        return True
+    return any(assignment_item_differs(p) for p in policies)
+
+
+def differing_assignments(fit: DoctrineFit) -> set[int]:
+    """The pks of `fit`'s assignments whose snapshot differs from the source
+    template. One pass with the prefetches the diff needs, so a 'used in N
+    doctrines' panel can flag each combination without N+1 queries."""
+    source_keys = {(i.section, i.module_type_id) for i in fit.items.all()}
+    result: set[int] = set()
+    assignments = fit.assignments.prefetch_related(
+        "item_policies__overrides", "item_policies__source_item__overrides"
+    )
+    for assignment in assignments:
+        policies = list(assignment.item_policies.all())
+        snapshot_keys = {(p.section, p.module_type_id) for p in policies}
+        if snapshot_keys != source_keys or any(
+            assignment_item_differs(p) for p in policies
+        ):
+            result.add(assignment.pk)
+    return result
+
+
+@transaction.atomic
+def resync_assignment_from_source(assignment: FitAssignment) -> None:
+    """Discard this assignment's policy snapshot and re-clone it from the fit's
+    CURRENT source items (policy fields + overrides). The explicit,
+    per-combination counterpart to the automatic carry-forward in
+    `rebuild_assignment_snapshots`: the manager chooses when a combination
+    should re-adopt the fit template, so any per-combination customizations on
+    this assignment are intentionally dropped. Snapshots stay independent until
+    a re-sync is requested - other assignments are untouched."""
+    AssignmentItemPolicy.objects.filter(assignment=assignment).delete()
+    _clone_source_items_into(assignment)
+
+
 @transaction.atomic
 def detach_fit_from_doctrine(fit: DoctrineFit, doctrine: Doctrine) -> bool:
     """Remove the assignment + back-compat M2M link. Returns True if it was
