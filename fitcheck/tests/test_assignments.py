@@ -23,7 +23,14 @@ from ..models import (
     FitSubmission,
 )
 from ..models.doctrine import SubstitutionPolicy
-from ..services.assignments import attach_fit_to_doctrine, detach_fit_from_doctrine
+from ..services.assignments import (
+    assignment_differs,
+    assignment_item_differs,
+    attach_fit_to_doctrine,
+    detach_fit_from_doctrine,
+    differing_assignments,
+    resync_assignment_from_source,
+)
 from ..services.check_runner import recheck_submission, submit_fit
 from ..services.compliance import check_fit, check_fit_for_doctrine
 from ..services.eft_parser import parse_eft
@@ -418,4 +425,217 @@ class TestFitSettingsDoesNotEditDoctrines(TestCase):
         )
         self.assertEqual(
             AssignmentItemPolicy.objects.filter(assignment__fit=self.fit).count(), before
+        )
+
+
+class TestSnapshotDriftDetection(TestCase):
+    """The per-(doctrine, fit) snapshot is a clone; editing the source template
+    does NOT propagate. These helpers detect that drift so the UI can warn and
+    offer a re-sync (the #454 root cause)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+
+    def setUp(self):
+        super().setUp()
+        self.manager = create_user("mgr", permissions=("basic_access", "manage_doctrines"))
+        self.doctrine = create_doctrine("Avatar")
+        self.fit = create_fit(None, T.HARBINGER, name="Brawl")
+        add_item(
+            self.fit, Section.LOW, T.HEAT_SINK_II, 3,
+            policy=SubstitutionPolicy.VARIANTS, min_quantity_pct=10,
+        )
+        self.assignment = attach_fit_to_doctrine(self.fit, self.doctrine, user=self.manager)
+        self.source = self.fit.items.get(module_type_id=T.HEAT_SINK_II)
+        self.policy = self.assignment.item_policies.get(module_type_id=T.HEAT_SINK_II)
+
+    def test_in_sync_after_attach(self):
+        self.assertFalse(assignment_item_differs(self.policy))
+        self.assertFalse(assignment_differs(self.assignment))
+        self.assertEqual(differing_assignments(self.fit), set())
+
+    def test_source_min_quantity_pct_change_is_drift(self):
+        """The #454 case: editing the source template leeway leaves the snapshot
+        stale - which the helpers must flag."""
+        self.source.min_quantity_pct = 50
+        self.source.save(update_fields=["min_quantity_pct"])
+        self.assertTrue(assignment_item_differs(self.policy))
+        self.assertTrue(assignment_differs(self.assignment))
+        self.assertEqual(differing_assignments(self.fit), {self.assignment.pk})
+
+    def test_source_policy_change_is_drift(self):
+        self.source.policy = SubstitutionPolicy.ANY
+        self.source.save(update_fields=["policy"])
+        self.assertTrue(assignment_item_differs(self.policy))
+
+    def test_override_change_is_drift(self):
+        FitItemOverride.objects.create(
+            item=self.source,
+            alt_type=EveType.objects.get(id=T.HEAT_SINK_IMPERIAL),
+            mode=FitItemOverride.Mode.INCLUDE,
+        )
+        self.assertTrue(assignment_item_differs(self.policy))
+
+    def test_added_source_module_is_drift_even_when_rows_match(self):
+        """A module added to the BOM after the snapshot was cloned drifts the
+        assignment via the key-set check, even though every existing row matches."""
+        add_item(self.fit, Section.MED, T.WEB_II, 1, policy=SubstitutionPolicy.VARIANTS)
+        self.assertFalse(assignment_item_differs(self.policy))  # existing row fine
+        self.assertTrue(assignment_differs(self.assignment))    # but BOM changed
+        self.assertEqual(differing_assignments(self.fit), {self.assignment.pk})
+
+    def test_reordered_meta_groups_is_not_drift(self):
+        """Comparison is order-insensitive for the list fields."""
+        self.policy.allowed_meta_groups = list(reversed(self.source.allowed_meta_groups))
+        self.policy.save(update_fields=["allowed_meta_groups"])
+        self.assertFalse(assignment_item_differs(self.policy))
+
+
+class TestResyncFromSource(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+
+    def setUp(self):
+        super().setUp()
+        self.manager = create_user("mgr", permissions=("basic_access", "manage_doctrines"))
+        self.doctrine = create_doctrine("Avatar")
+        self.other = create_doctrine("Other")
+        self.fit = create_fit(None, T.HARBINGER, name="Brawl")
+        add_item(
+            self.fit, Section.LOW, T.HEAT_SINK_II, 3,
+            policy=SubstitutionPolicy.VARIANTS, min_quantity_pct=10,
+        )
+        self.assignment = attach_fit_to_doctrine(self.fit, self.doctrine, user=self.manager)
+        self.other_assignment = attach_fit_to_doctrine(self.fit, self.other, user=self.manager)
+        self.source = self.fit.items.get(module_type_id=T.HEAT_SINK_II)
+
+    def test_resync_restores_snapshot_to_template(self):
+        # Drift the snapshot (a per-combination customization).
+        policy = self.assignment.item_policies.get(module_type_id=T.HEAT_SINK_II)
+        policy.min_quantity_pct = 100
+        policy.policy = SubstitutionPolicy.EXACT
+        policy.save(update_fields=["min_quantity_pct", "policy"])
+        self.assertTrue(assignment_differs(self.assignment))
+
+        resync_assignment_from_source(self.assignment)
+
+        synced = self.assignment.item_policies.get(module_type_id=T.HEAT_SINK_II)
+        self.assertEqual(synced.min_quantity_pct, 10)
+        self.assertEqual(synced.policy, SubstitutionPolicy.VARIANTS)
+        self.assertFalse(assignment_differs(self.assignment))
+
+    def test_resync_re_clones_overrides(self):
+        FitItemOverride.objects.create(
+            item=self.source,
+            alt_type=EveType.objects.get(id=T.HEAT_SINK_IMPERIAL),
+            mode=FitItemOverride.Mode.INCLUDE,
+        )
+        self.assertTrue(assignment_differs(self.assignment))
+        resync_assignment_from_source(self.assignment)
+        synced = self.assignment.item_policies.get(module_type_id=T.HEAT_SINK_II)
+        self.assertEqual(
+            {(o.alt_type_id, o.mode) for o in synced.overrides.all()},
+            {(T.HEAT_SINK_IMPERIAL, FitItemOverride.Mode.INCLUDE)},
+        )
+
+    def test_resync_leaves_other_assignment_untouched(self):
+        # Customize the OTHER assignment, then re-sync only the first.
+        other_policy = self.other_assignment.item_policies.get(module_type_id=T.HEAT_SINK_II)
+        other_policy.policy = SubstitutionPolicy.EXACT
+        other_policy.save(update_fields=["policy"])
+        self.source.min_quantity_pct = 50
+        self.source.save(update_fields=["min_quantity_pct"])
+
+        resync_assignment_from_source(self.assignment)
+
+        # First re-synced to template; the other keeps its EXACT customization.
+        other_policy.refresh_from_db()
+        self.assertEqual(other_policy.policy, SubstitutionPolicy.EXACT)
+        self.assertTrue(assignment_differs(self.other_assignment))
+
+    def test_resync_view_requires_manage_perm(self):
+        member = create_user("member")
+        self.client.force_login(member)
+        resp = self.client.post(
+            reverse("fitcheck:manage_assignment_resync", args=[self.assignment.pk])
+        )
+        self.assertEqual(resp.status_code, 302)  # redirect to login
+
+    def test_resync_view_rejects_get(self):
+        self.client.force_login(self.manager)
+        resp = self.client.get(
+            reverse("fitcheck:manage_assignment_resync", args=[self.assignment.pk])
+        )
+        self.assertEqual(resp.status_code, 405)  # require_POST
+
+    def test_resync_view_syncs_and_bumps_version(self):
+        self.client.force_login(self.manager)
+        self.source.min_quantity_pct = 50
+        self.source.save(update_fields=["min_quantity_pct"])
+        before_version = self.fit.version
+
+        resp = self.client.post(
+            reverse("fitcheck:manage_assignment_resync", args=[self.assignment.pk])
+        )
+        self.assertEqual(resp.status_code, 302)
+        synced = self.assignment.item_policies.get(module_type_id=T.HEAT_SINK_II)
+        self.assertEqual(synced.min_quantity_pct, 50)
+        self.fit.refresh_from_db()
+        self.assertGreater(self.fit.version, before_version)
+
+
+class TestDriftSurfacedInTemplates(TestCase):
+    """Smoke tests: the drift state and the manager jump-links render."""
+
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+
+    def setUp(self):
+        super().setUp()
+        self.manager = create_user("mgr", permissions=("basic_access", "manage_doctrines"))
+        self.client.force_login(self.manager)
+        self.doctrine = create_doctrine("Avatar")
+        self.fit = create_fit(None, T.HARBINGER, name="Brawl")
+        add_item(
+            self.fit, Section.LOW, T.HEAT_SINK_II, 3,
+            policy=SubstitutionPolicy.VARIANTS, min_quantity_pct=10,
+        )
+        self.assignment = attach_fit_to_doctrine(self.fit, self.doctrine, user=self.manager)
+
+    def test_assignment_editor_shows_drift_banner_when_template_changed(self):
+        source = self.fit.items.get(module_type_id=T.HEAT_SINK_II)
+        source.min_quantity_pct = 50
+        source.save(update_fields=["min_quantity_pct"])
+        resp = self.client.get(
+            reverse("fitcheck:manage_assignment_items", args=[self.assignment.pk])
+        )
+        self.assertContains(resp, "Re-sync from template")
+
+    def test_assignment_editor_no_banner_when_in_sync(self):
+        resp = self.client.get(
+            reverse("fitcheck:manage_assignment_items", args=[self.assignment.pk])
+        )
+        self.assertNotContains(resp, "Re-sync from template")
+
+    def test_source_editor_shows_used_in_panel(self):
+        resp = self.client.get(
+            reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
+        )
+        self.assertContains(resp, "Used in 1 doctrine")
+        self.assertContains(resp, "Avatar")
+
+    def test_submission_detail_shows_combination_edit_link(self):
+        eft = "[Harbinger, Mine]\nHeat Sink II\nHeat Sink II\nHeat Sink II\n"
+        submission = submit_fit(
+            self.manager, self.fit, parse_eft(eft), doctrine=self.doctrine
+        )
+        resp = self.client.get(
+            reverse("fitcheck:submission_detail", args=[submission.pk])
+        )
+        self.assertContains(resp, "Edit policy for this combination")
+        self.assertContains(
+            resp, reverse("fitcheck:manage_assignment_items", args=[self.assignment.pk])
         )

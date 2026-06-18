@@ -19,6 +19,13 @@
                 {{ submission.doctrine_fit.name }} (v{{ submission.fit_version }})
                 {% if submission.doctrine %}
                     <span class="fc-chip" title="{% translate 'Graded against this doctrine\'s policy snapshot' %}">{{ submission.doctrine.name }}</span>
+                    {% if policy_assignment_pk %}
+                        <a class="badge bg-warning text-dark"
+                           href="{% url 'fitcheck:manage_assignment_items' policy_assignment_pk %}"
+                           title="{% translate 'Edit the policy this submission was graded against' %}">
+                            <i class="fa-solid fa-sliders"></i> {% translate "Edit policy for this combination" %}
+                        </a>
+                    {% endif %}
                 {% else %}
                     <span class="text-muted">{% translate "(source defaults)" %}</span>
                 {% endif %}

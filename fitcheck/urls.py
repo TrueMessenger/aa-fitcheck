@@ -104,6 +104,11 @@ urlpatterns = [
         manage.assignment_items,
         name="manage_assignment_items",
     ),
+    path(
+        "assignment/<int:assignment_pk>/resync/",
+        manage.assignment_resync,
+        name="manage_assignment_resync",
+    ),
     path("standards/fit/<int:fit_pk>/delete/", manage.fit_delete, name="fit_delete"),
     path(
         "standards/fit/<int:fit_pk>/apply-policy/",

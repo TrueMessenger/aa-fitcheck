@@ -29,6 +29,18 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+### Added
+- **Policy template drift detection + re-sync.** A fit's per-module policy is a
+  *template*; each doctrine the fit belongs to keeps an independent copy that
+  audits actually grade against, cloned when the fit is attached. Editing the
+  template never propagated to those copies, so leeway/policy edits could appear
+  to do nothing. Now: the per-(doctrine, fit) editor shows a **"differs from
+  template"** warning (and per-row badges) when a copy has drifted, with a
+  **Re-sync from template** button; the fit's policy page lists **"Used in N
+  doctrines"** with each copy's in-sync/differs status and re-sync; and a
+  submission page gives managers an **Edit policy for this combination** jump-link
+  to the exact copy that graded it. No schema change.
+
 ## [1.1.0] - 2026-06-18
 
 ### Added

@@ -32,6 +32,13 @@
                                    title="{% translate 'Edit policies for this combination' %}">
                                     <i class="fa-solid fa-sliders"></i>
                                 </a>
+                                {% if chip.differs %}
+                                    <a class="badge bg-warning text-dark"
+                                       href="{% url 'fitcheck:manage_assignment_items' chip.assignment_pk %}"
+                                       title="{% translate 'This combination differs from the fit template' %}">
+                                        <i class="fa-solid fa-triangle-exclamation"></i> {% translate "differs" %}
+                                    </a>
+                                {% endif %}
                             {% endif %}
                         </span>
                         {% for category in chip.doctrine.categories.all %}

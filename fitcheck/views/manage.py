@@ -376,8 +376,12 @@ def _row_overrides(item, *, assignment: bool) -> list:
     ]
 
 
-def _build_policy_row(form, item, last_section, *, assignment: bool, meta_groups: dict):
-    """Shared row dict for the policy editor (source-fit and per-assignment)."""
+def _build_policy_row(
+    form, item, last_section, *, assignment: bool, meta_groups: dict, differs: bool = False
+):
+    """Shared row dict for the policy editor (source-fit and per-assignment).
+    `differs` marks an assignment row whose policy has drifted from its source
+    template (assignment mode only)."""
     rollable = rollable_attributes_for_item(item)
     return {
         "form": form,
@@ -393,6 +397,7 @@ def _build_policy_row(form, item, last_section, *, assignment: bool, meta_groups
         "selected_attrs": [a for a in rollable if a["selected"]],
         "urls": _policy_row_urls(item, assignment=assignment),
         "overrides": _row_overrides(item, assignment=assignment),
+        "differs": differs,
     }
 
 
@@ -443,6 +448,20 @@ def fit_items(request, fit_pk: int):
             _build_policy_row(form, item, last_section, assignment=False, meta_groups=meta_groups)
         )
         last_section = item.section
+    # "Used in N doctrines" panel: each combination this fit is graded under
+    # gets its own policy copy (the audit reads the copy, not this template),
+    # flagged when it has drifted from the template.
+    from ..services.assignments import differing_assignments
+
+    drifted = differing_assignments(fit)
+    used_in = [
+        {
+            "doctrine": a.doctrine,
+            "assignment_pk": a.pk,
+            "differs": a.pk in drifted,
+        }
+        for a in fit.assignments.select_related("doctrine").order_by("doctrine__name")
+    ]
     return render(
         request,
         "fitcheck/standards/fit_items.html",
@@ -450,6 +469,7 @@ def fit_items(request, fit_pk: int):
             "fit": fit,
             "formset": formset,
             "rows": rows,
+            "used_in": used_in,
             "override_form": OverrideAddForm(),
             "apply_policy_form": ApplyPolicyForm(),
             "has_policies": CompliancePolicy.objects.exists(),
@@ -468,6 +488,7 @@ def assignment_items(request, assignment_pk: int):
     local to this combination and don't move the fit's source defaults."""
     from ..forms import AssignmentItemPolicyFormSet
     from ..models import AssignmentItemPolicy, FitAssignment
+    from ..services.assignments import assignment_item_differs
 
     assignment = get_object_or_404(
         FitAssignment.objects.select_related("doctrine", "fit", "fit__ship_type"),
@@ -475,8 +496,8 @@ def assignment_items(request, assignment_pk: int):
     )
     queryset = (
         AssignmentItemPolicy.objects.filter(assignment=assignment)
-        .select_related("module_type", "charge_type")
-        .prefetch_related("overrides__alt_type")
+        .select_related("module_type", "charge_type", "source_item")
+        .prefetch_related("overrides__alt_type", "source_item__overrides")
     )
     if request.method == "POST":
         formset = AssignmentItemPolicyFormSet(request.POST, queryset=queryset)
@@ -514,9 +535,21 @@ def assignment_items(request, assignment_pk: int):
     for form in forms_sorted:
         item = form.instance
         rows.append(
-            _build_policy_row(form, item, last_section, assignment=True, meta_groups=meta_groups)
+            _build_policy_row(
+                form,
+                item,
+                last_section,
+                assignment=True,
+                meta_groups=meta_groups,
+                differs=assignment_item_differs(item),
+            )
         )
         last_section = item.section
+    # Snapshot drifts from the source template when any row differs OR the BOM
+    # gained/lost a module since this snapshot was cloned (compare key sets).
+    source_keys = {(i.section, i.module_type_id) for i in assignment.fit.items.all()}
+    snapshot_keys = {(f.instance.section, f.instance.module_type_id) for f in formset.forms}
+    snapshot_differs = snapshot_keys != source_keys or any(r["differs"] for r in rows)
     return render(
         request,
         "fitcheck/standards/fit_items.html",
@@ -525,6 +558,7 @@ def assignment_items(request, assignment_pk: int):
             "assignment": assignment,
             "formset": formset,
             "rows": rows,
+            "snapshot_differs": snapshot_differs,
             "override_form": OverrideAddForm(),
             "apply_policy_form": ApplyPolicyForm(),
             "has_policies": CompliancePolicy.objects.exists(),
@@ -533,6 +567,31 @@ def assignment_items(request, assignment_pk: int):
             % {"fit": assignment.fit.name, "doctrine": assignment.doctrine.name},
         },
     )
+
+
+@login_required
+@permission_required("fitcheck.manage_doctrines")
+@require_POST
+def assignment_resync(request, assignment_pk: int):
+    """Re-clone one assignment's policy snapshot from the fit's current source
+    template, discarding this combination's customizations. Bumps the fit
+    version so dependent pending submissions show stale and can be rechecked."""
+    from ..models import FitAssignment
+    from ..services.assignments import resync_assignment_from_source
+
+    assignment = get_object_or_404(
+        FitAssignment.objects.select_related("doctrine", "fit"), pk=assignment_pk
+    )
+    resync_assignment_from_source(assignment)
+    _bump_fit_version(assignment.fit)
+    messages.success(
+        request,
+        _(
+            "Re-synced %(fit)s in %(doctrine)s from the fit template. Pending submissions are now stale - use Recheck Stale to re-grade them."
+        )
+        % {"fit": assignment.fit.name, "doctrine": assignment.doctrine.name},
+    )
+    return redirect("fitcheck:manage_assignment_items", assignment_pk=assignment.pk)
 
 
 @login_required
