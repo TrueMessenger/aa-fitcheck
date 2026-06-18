@@ -107,10 +107,6 @@ class ShipInventory:
     characters_without_token: list = field(default_factory=list)
     # Characters whose asset fetch errored (name -> reason).
     errors: dict[str, str] = field(default_factory=dict)
-    # Per-character raw asset list + token, kept so build_parsed_fit can reuse
-    # them and NOT re-fetch the whole asset tree a second time per ship.
-    assets_by_character: dict = field(default_factory=dict)
-    token_by_character: dict = field(default_factory=dict)
     # Set when a scan was cut short by the ESI error limit.
     error_limited: bool = False
 
@@ -221,6 +217,113 @@ def resolve_assets(character_id: int, token=None) -> list[dict] | None:
     return _fetch_assets(token, character_id)
 
 
+def _ship_type_id_set(hull_type_id: int | None = None) -> set[int]:
+    """The SHIP-category type_ids a scan should surface. Restricted to one hull
+    when `hull_type_id` is given (the doctrine case), else every ship type the
+    SDE mirror knows (a few hundred - cheap for an `__in` filter + membership
+    test)."""
+    qs = SdeType.objects.filter(category_id=EveCategoryId.SHIP)
+    if hull_type_id is not None:
+        qs = qs.filter(type_id=hull_type_id)
+    return set(qs.values_list("type_id", flat=True))
+
+
+def resolve_ship_list(character_id: int, token, ship_type_ids) -> list[dict] | None:
+    """Phase 1: the assembled ships a character owns, as ESI-shaped dicts -
+    NOT the whole asset tree.
+
+    corptools serves a narrow query (ships only); a live ESI fetch has no
+    server-side filter, so it pulls the tree once and keeps only the ship rows
+    (the rest is discarded, never stashed). Returns None when no source can
+    supply the character, so the caller marks them ungranted."""
+    from . import corptools_source
+
+    source = _asset_source()
+    if source in ("auto", "corptools"):
+        ships = corptools_source.ship_assets_for_character(character_id, ship_type_ids)
+        if ships is not None:
+            return ships
+        if source == "corptools":
+            return None
+    if token is None:
+        return None
+    assets = _fetch_assets(token, character_id)
+    return [
+        a for a in assets
+        if a["type_id"] in ship_type_ids and a.get("is_singleton")
+    ]
+
+
+def resolve_contents(
+    character_id: int, ship_item_ids, token=None
+) -> list[dict] | None:
+    """Phase 2: the rows needed to grade the given ship(s) - each ship row plus
+    its direct contents.
+
+    corptools serves the narrow two-query slice; live ESI has no server-side
+    filter, so it returns the character's tree once (one fetch per character, not
+    per ship) and lets `build_parsed_fit` slice out each ship's contents. Returns
+    None when no source can supply the character."""
+    from . import corptools_source
+
+    source = _asset_source()
+    if source in ("auto", "corptools"):
+        narrow = corptools_source.ship_contents_for_character(character_id, ship_item_ids)
+        if narrow is not None:
+            return narrow
+        if source == "corptools":
+            return None
+    if token is None:
+        return None
+    return _fetch_assets(token, character_id)
+
+
+def _build_owned_ships(
+    character_id: int, char_name: str, ships: list[dict], token, structure_tokens: list
+) -> list[OwnedShip]:
+    """Turn a character's ship rows into OwnedShip listing entries (names +
+    location). Shared by the self-inventory and member-inventory scans.
+
+    May raise on an ESI error-limit while resolving names/locations; callers
+    catch it and set `error_limited`. Location resolution walks only the ship
+    rows we hold: a docked ship (location_id is a station/structure/system)
+    resolves exactly; the rarer ship nested inside a carrier/container degrades
+    to a generic label rather than dragging in the whole tree."""
+    by_item_id = {s["item_id"]: s for s in ships}
+    type_ids = {s["type_id"] for s in ships}
+    type_names = dict(
+        SdeType.objects.filter(type_id__in=type_ids).values_list("type_id", "name")
+    )
+    group_names = _ship_group_names(type_ids)
+    root_ids = {_root_location(s, by_item_id) for s in ships}
+    if token is not None:
+        ship_names = _fetch_asset_names(token, character_id, [s["item_id"] for s in ships])
+        location_details = _resolve_locations(root_ids, structure_tokens)
+    else:
+        # corptools-served character: no fitcheck token to resolve ESI names/
+        # locations with. Use the cached custom ship name.
+        ship_names = {s["item_id"]: s.get("name", "") for s in ships}
+        location_details = {}
+    out: list[OwnedShip] = []
+    for ship in ships:
+        root = _root_location(ship, by_item_id)
+        out.append(
+            OwnedShip(
+                character_id=character_id,
+                character_name=char_name,
+                item_id=ship["item_id"],
+                type_id=ship["type_id"],
+                type_name=type_names.get(ship["type_id"], f"Type {ship['type_id']}"),
+                group_name=group_names.get(ship["type_id"], ""),
+                ship_name=ship_names.get(ship["item_id"], ""),
+                location_name=(location_details.get(root) or {}).get("name", f"Structure {root}"),
+                system_name=(location_details.get(root) or {}).get("system", ""),
+                region_name=(location_details.get(root) or {}).get("region", ""),
+            )
+        )
+    return out
+
+
 def get_inventory_for_characters(characters, hull_type_id: int | None = None) -> ShipInventory:
     """Same shape as `get_ship_inventory(user)` but iterates a set of EveCharacter
     rows we already pulled (alliance- or corp-scoped). `hull_type_id` pre-filters
@@ -231,11 +334,15 @@ def get_inventory_for_characters(characters, hull_type_id: int | None = None) ->
     char_by_id = {c.character_id: c for c in characters}
     tokens = tokens_by_character(char_by_id.keys())
     structure_tokens = _structure_tokens(char_by_id.keys())
+    ship_type_ids = _ship_type_id_set(hull_type_id)
+    if not ship_type_ids:
+        # The hull isn't a ship type the SDE mirror knows - nothing to scan.
+        return inventory
     for character_id, character in char_by_id.items():
         token = tokens.get(character_id)
         char_name = character.character_name if character else str(character_id)
         try:
-            assets = resolve_assets(character_id, token)
+            ships = resolve_ship_list(character_id, token, ship_type_ids)
         except Exception as exc:  # pragma: no cover - network dependent
             if is_error_limited(exc):
                 logger.error("ESI error limited during member scan; aborting at %s", char_name)
@@ -244,67 +351,23 @@ def get_inventory_for_characters(characters, hull_type_id: int | None = None) ->
             logger.warning("Asset fetch failed for %s: %s", char_name, exc)
             inventory.errors[char_name] = str(exc)
             continue
-        if assets is None:
+        if ships is None:
             # Neither a granted token nor a corptools cache can supply this
             # character's assets - nothing to scan.
             inventory.characters_without_token.append(character)
             continue
-        # Stash for build_parsed_fit so the per-ship pass doesn't re-fetch.
-        inventory.assets_by_character[character_id] = assets
-        inventory.token_by_character[character_id] = token
-        by_item_id = {a["item_id"]: a for a in assets}
-        ship_ids_in_assets = {a["type_id"] for a in assets}
-        ship_filter = SdeType.objects.filter(
-            type_id__in=ship_ids_in_assets, category_id=EveCategoryId.SHIP
-        )
-        if hull_type_id is not None:
-            ship_filter = ship_filter.filter(type_id=hull_type_id)
-        ship_type_ids = set(ship_filter.values_list("type_id", flat=True))
-        ships = [
-            a for a in assets
-            if a["type_id"] in ship_type_ids and a.get("is_singleton")
-        ]
         if not ships:
             continue
-        type_names = dict(
-            SdeType.objects.filter(
-                type_id__in={s["type_id"] for s in ships}
-            ).values_list("type_id", "name")
-        )
-        group_names = _ship_group_names({s["type_id"] for s in ships})
-        root_ids = {_root_location(s, by_item_id) for s in ships}
-        if token is not None:
-            try:
-                ship_names = _fetch_asset_names(token, character_id, [s["item_id"] for s in ships])
-                location_details = _resolve_locations(root_ids, structure_tokens)
-            except Exception as exc:  # pragma: no cover - network dependent
-                if is_error_limited(exc):
-                    logger.error("ESI error limited resolving names/locations; aborting member scan")
-                    inventory.error_limited = True
-                    break
-                raise
-        else:
-            # corptools-served character: no fitcheck token to resolve ESI
-            # names/locations with. Use the cached custom ship name; location
-            # degrades to the structure id in the row.
-            ship_names = {s["item_id"]: s.get("name", "") for s in ships}
-            location_details = {}
-        for ship in ships:
-            root = _root_location(ship, by_item_id)
-            inventory.ships.append(
-                OwnedShip(
-                    character_id=character_id,
-                    character_name=char_name,
-                    item_id=ship["item_id"],
-                    type_id=ship["type_id"],
-                    type_name=type_names.get(ship["type_id"], f"Type {ship['type_id']}"),
-                    group_name=group_names.get(ship["type_id"], ""),
-                    ship_name=ship_names.get(ship["item_id"], ""),
-                    location_name=(location_details.get(root) or {}).get("name", f"Structure {root}"),
-                    system_name=(location_details.get(root) or {}).get("system", ""),
-                    region_name=(location_details.get(root) or {}).get("region", ""),
-                )
+        try:
+            inventory.ships.extend(
+                _build_owned_ships(character_id, char_name, ships, token, structure_tokens)
             )
+        except Exception as exc:  # pragma: no cover - network dependent
+            if is_error_limited(exc):
+                logger.error("ESI error limited resolving names/locations; aborting member scan")
+                inventory.error_limited = True
+                break
+            raise
     inventory.ships.sort(key=lambda s: (s.character_name, s.type_name))
     return inventory
 
@@ -463,12 +526,13 @@ def get_ship_inventory(user) -> ShipInventory:
         for o in user.character_ownerships.select_related("character")
     }
     structure_tokens = _structure_tokens(characters.keys())
+    ship_type_ids = _ship_type_id_set()
 
     for character_id, character in characters.items():
         token = tokens.get(character_id)
         char_name = character.character_name if character else str(character_id)
         try:
-            assets = resolve_assets(character_id, token)
+            ships = resolve_ship_list(character_id, token, ship_type_ids)
         except Exception as exc:  # pragma: no cover - network dependent
             if is_error_limited(exc):
                 logger.error("ESI error limited during inventory scan; aborting")
@@ -477,61 +541,22 @@ def get_ship_inventory(user) -> ShipInventory:
             logger.warning("Asset fetch failed for %s: %s", char_name, exc)
             inventory.errors[char_name] = str(exc)
             continue
-        if assets is None:
+        if ships is None:
             # No granted token and no corptools cache for this character.
             inventory.characters_without_token.append(character)
             continue
-
-        by_item_id = {a["item_id"]: a for a in assets}
-        ship_type_ids = set(
-            SdeType.objects.filter(
-                type_id__in={a["type_id"] for a in assets},
-                category_id=EveCategoryId.SHIP,
-            ).values_list("type_id", flat=True)
-        )
-        ships = [a for a in assets if a["type_id"] in ship_type_ids and a.get("is_singleton")]
         if not ships:
             continue
-
-        type_names = dict(
-            SdeType.objects.filter(
-                type_id__in={s["type_id"] for s in ships}
-            ).values_list("type_id", "name")
-        )
-        group_names = _ship_group_names({s["type_id"] for s in ships})
-        root_ids = {_root_location(s, by_item_id) for s in ships}
-        if token is not None:
-            try:
-                ship_names = _fetch_asset_names(token, character_id, [s["item_id"] for s in ships])
-                location_details = _resolve_locations(root_ids, structure_tokens)
-            except Exception as exc:  # pragma: no cover - network dependent
-                if is_error_limited(exc):
-                    logger.error("ESI error limited resolving names/locations; aborting inventory scan")
-                    inventory.error_limited = True
-                    break
-                raise
-        else:
-            # corptools-served character: no fitcheck token for ESI name/
-            # location lookups. Use the cached custom ship name.
-            ship_names = {s["item_id"]: s.get("name", "") for s in ships}
-            location_details = {}
-
-        for ship in ships:
-            root = _root_location(ship, by_item_id)
-            inventory.ships.append(
-                OwnedShip(
-                    character_id=character_id,
-                    character_name=char_name,
-                    item_id=ship["item_id"],
-                    type_id=ship["type_id"],
-                    type_name=type_names.get(ship["type_id"], f"Type {ship['type_id']}"),
-                    group_name=group_names.get(ship["type_id"], ""),
-                    ship_name=ship_names.get(ship["item_id"], ""),
-                    location_name=(location_details.get(root) or {}).get("name", f"Structure {root}"),
-                    system_name=(location_details.get(root) or {}).get("system", ""),
-                    region_name=(location_details.get(root) or {}).get("region", ""),
-                )
+        try:
+            inventory.ships.extend(
+                _build_owned_ships(character_id, char_name, ships, token, structure_tokens)
             )
+        except Exception as exc:  # pragma: no cover - network dependent
+            if is_error_limited(exc):
+                logger.error("ESI error limited resolving names/locations; aborting inventory scan")
+                inventory.error_limited = True
+                break
+            raise
     inventory.ships.sort(key=lambda s: (s.character_name, s.group_name, s.type_name))
     return inventory
 

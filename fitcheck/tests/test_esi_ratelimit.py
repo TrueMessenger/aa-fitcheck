@@ -1,7 +1,8 @@
 """ESI rate-limit safety for bulk member scans:
 
-1. The per-ship fit build reuses assets the scan already fetched, instead of
-   re-pulling the whole asset tree (the biggest ESI-call saving on a big scan).
+1. Phase 1 (listing) reads only the ship rows and does NOT retain the whole
+   asset tree; Phase 2 (grading) resolves a character's contents once and feeds
+   that slice to build_parsed_fit, which does not re-fetch when given assets.
 2. A scan aborts immediately when ESI signals its error limit (HTTP 420/429),
    rather than hammering on and risking an application ban.
 """
@@ -49,28 +50,35 @@ class EsiRateLimitTests(TestCase):
         self.assertTrue(is_error_limited(_ErrorLimited()))
         self.assertFalse(is_error_limited(ValueError("nope")))
 
-    def test_bulk_scan_does_not_refetch_assets_per_ship(self):
+    def test_phase1_lists_ships_with_one_fetch_and_no_tree_stash(self):
+        """Phase 1 lists ships from a single asset fetch and does NOT retain the
+        tree - the old per-character whole-tree stash is gone (that was the
+        alliance-scale memory blowup)."""
         token = object()
         with mock.patch.object(esi_assets, "tokens_by_character", return_value={12345: token}), \
                 mock.patch.object(esi_assets, "_fetch_assets", return_value=ASSETS) as fetch, \
                 mock.patch.object(esi_assets, "_fetch_asset_names", return_value={1: "My Harb"}), \
-                mock.patch.object(esi_assets, "_resolve_public_names", return_value={}), \
-                mock.patch.object(esi_assets, "_verify_mutated_items"):
+                mock.patch.object(esi_assets, "_resolve_locations", return_value={}):
             inv = get_inventory_for_characters([self.char], hull_type_id=T.HARBINGER)
-            self.assertEqual(len(inv.ships), 1)
-            self.assertEqual(fetch.call_count, 1)  # one fetch for the scan
-            self.assertIn(12345, inv.assets_by_character)
+        self.assertEqual(len(inv.ships), 1)
+        self.assertEqual(fetch.call_count, 1)  # one fetch to list
+        self.assertFalse(hasattr(inv, "assets_by_character"))  # nothing stashed
 
-            # Per-ship build reuses the cached assets/token/name: NO second fetch.
+    def test_phase2_grades_from_one_fetch_per_character(self):
+        """Phase 2 resolves a character's contents ONCE (resolve_contents) and
+        feeds that slice to build_parsed_fit, which does not re-fetch when given
+        assets - so grading a selected ship is one fetch, not one-per-ship."""
+        token = object()
+        with mock.patch.object(esi_assets, "_fetch_assets", return_value=ASSETS) as fetch, \
+                mock.patch.object(esi_assets, "_verify_mutated_items"):
+            contents = esi_assets.resolve_contents(12345, [1], token)
+            self.assertEqual(fetch.call_count, 1)  # one fetch for the character
             parsed = build_parsed_fit(
-                None, 12345, 1,
-                assets=inv.assets_by_character[12345],
-                token=inv.token_by_character[12345],
-                fit_name="My Harb",
+                None, 12345, 1, assets=contents, token=token, fit_name="My Harb",
             )
             self.assertIsNotNone(parsed)
             self.assertEqual(parsed.ship_type_id, T.HARBINGER)
-            self.assertEqual(fetch.call_count, 1)  # STILL one - no re-fetch
+            self.assertEqual(fetch.call_count, 1)  # build reused the slice
 
     def test_scan_aborts_on_error_limit(self):
         with mock.patch.object(esi_assets, "tokens_by_character", return_value={12345: object()}), \

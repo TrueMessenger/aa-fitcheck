@@ -182,7 +182,7 @@ class TestMemberScanWithoutToken(TestCase):
             "name": "My Harb",
         }]
         with mock.patch.object(esi_assets, "tokens_by_character", return_value={}), \
-             mock.patch("fitcheck.services.corptools_source.assets_for_character",
+             mock.patch("fitcheck.services.corptools_source.ship_assets_for_character",
                         return_value=ship_assets), \
              mock.patch.object(esi_assets, "_ship_group_names",
                                return_value={T.HARBINGER: "Battlecruiser"}):
@@ -193,6 +193,70 @@ class TestMemberScanWithoutToken(TestCase):
         self.assertEqual([s.type_id for s in inventory.ships], [T.HARBINGER])
         self.assertEqual(inventory.ships[0].ship_name, "My Harb")  # cached name used
         self.assertEqual(inventory.characters_without_token, [])  # not flagged ungranted
+
+
+class TestNarrowAssetReads(TestCase):
+    """Phase-1 (ships only) and Phase-2 (ship contents) read a NARROW slice
+    instead of the whole asset tree, but emit the same ESI dict shape and keep
+    the None-fallback semantics so the caller still drops through to live ESI.
+
+    (corptools isn't installed in tests, so the fakes ignore the DB filters and
+    return the rows given - these lock the shape + None handling, not the SQL.)"""
+
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+
+    def test_ship_assets_returns_mapped_ship_rows(self):
+        ship_row = {
+            "item_id": 5000, "type_id": T.HARBINGER, "location_id": 60003760,
+            "location_flag": "Hangar", "quantity": 1, "singleton": True,
+            "name": "My Harb",
+        }
+        with _patched_corptools([FakeAudit()], [ship_row]):
+            out = corptools_source.ship_assets_for_character(123, [T.HARBINGER])
+        self.assertEqual(out, [{
+            "item_id": 5000, "type_id": T.HARBINGER, "location_id": 60003760,
+            "location_flag": "Hangar", "quantity": 1, "is_singleton": True,
+            "name": "My Harb",
+        }])
+
+    def test_ship_assets_none_when_not_synced(self):
+        with _patched_corptools([FakeAudit(assets_synced=None)], [dict(ASSET_ROW)]):
+            self.assertIsNone(
+                corptools_source.ship_assets_for_character(123, [T.HARBINGER])
+            )
+
+    def test_ship_assets_none_when_not_installed(self):
+        with mock.patch.object(corptools_source, "corptools_installed", lambda: False):
+            self.assertIsNone(corptools_source.ship_assets_for_character(123, None))
+
+    def test_ship_contents_returns_ship_and_its_contents(self):
+        ship_row = {
+            "item_id": 5000, "type_id": T.HARBINGER, "location_id": 60003760,
+            "location_flag": "Hangar", "quantity": 1, "singleton": True, "name": "Harb",
+        }
+        module_row = {
+            "item_id": 5001, "type_id": T.HEAT_SINK_II, "location_id": 5000,
+            "location_flag": "LoSlot0", "quantity": 1, "singleton": False, "name": "",
+        }
+        with _patched_corptools([FakeAudit()], [ship_row, module_row]):
+            out = corptools_source.ship_contents_for_character(123, [5000])
+        self.assertEqual({r["item_id"] for r in out}, {5000, 5001})
+
+    def test_ship_contents_empty_list_for_no_ids(self):
+        # Servable audit but no ships asked for -> empty (NOT None, which would
+        # wrongly trigger an ESI fallback).
+        with _patched_corptools([FakeAudit()], [dict(ASSET_ROW)]):
+            self.assertEqual(
+                corptools_source.ship_contents_for_character(123, []), []
+            )
+
+    def test_ship_contents_none_when_not_installed(self):
+        with mock.patch.object(corptools_source, "corptools_installed", lambda: False):
+            self.assertIsNone(
+                corptools_source.ship_contents_for_character(123, [5000])
+            )
 
 
 class TestExistingToken(TestCase):
