@@ -1185,10 +1185,105 @@ def _resolve_target_charset(user):
     return EveCharacter.objects.none()
 
 
+# Upper bound on ships graded in a single audit POST, so the on-demand ESI /
+# engine fan-out stays predictable even if every box on the page is ticked.
+_MAX_AUDIT_SHIPS = 50
+
+
+def _audit_selected_ships(request, fit, ships, char_by_id, tokens, selected):
+    """Phase 2: grade the reviewer-selected ships on demand and persist one
+    FitSubmission each. Returns {ship_item_id: {"verdict", "submission_pk"}}.
+
+    Security: only ships present in the legitimately-listed `ships` (already
+    scope- and hull-filtered by Phase 1) are graded, so the POSTed
+    (character, item) pairs are never trusted blindly - a crafted POST cannot
+    reach a character outside the requester's scope or an item that isn't this
+    doctrine's hull."""
+    from collections import defaultdict
+
+    from ..services.check_runner import submit_fit
+    from ..services.esi_assets import build_parsed_fit, is_error_limited, resolve_contents
+
+    legitimate = {(s.character_id, s.item_id): s for s in ships}
+    wanted: dict[int, list[int]] = defaultdict(list)
+    for raw in selected:
+        try:
+            cid, iid = (int(p) for p in str(raw).split(":"))
+        except (ValueError, TypeError):
+            continue
+        if (cid, iid) in legitimate and iid not in wanted[cid]:
+            wanted[cid].append(iid)
+
+    graded: dict[int, dict] = {}
+    rate_limited = False
+    for cid, item_ids in wanted.items():
+        if len(graded) >= _MAX_AUDIT_SHIPS or rate_limited:
+            break
+        token = tokens.get(cid)
+        # The owning User backs the persisted submission; fall back to the
+        # requester when a corptools-served ship has no fitcheck token.
+        owner = getattr(token, "user", None) or request.user
+        try:
+            # One fetch per character (ESI) or a narrow slice (corptools), shared
+            # across every selected ship on that character.
+            contents = resolve_contents(cid, item_ids, token)
+        except Exception as exc:  # pragma: no cover - network dependent
+            if is_error_limited(exc):
+                rate_limited = True
+                break
+            raise
+        if contents is None:
+            continue
+        for iid in item_ids:
+            if len(graded) >= _MAX_AUDIT_SHIPS:
+                break
+            ship = legitimate[(cid, iid)]
+            try:
+                parsed = build_parsed_fit(
+                    owner, cid, iid, assets=contents, token=token,
+                    fit_name=ship.ship_name or None,
+                )
+            except Exception as exc:  # pragma: no cover - network dependent
+                if is_error_limited(exc):
+                    rate_limited = True
+                    break
+                raise
+            if parsed is None:
+                continue
+            # Defence in depth: the listing already hull-filters, so this only
+            # rejects a crafted/raced item_id that isn't this doctrine's hull.
+            if fit.ship_type_id and parsed.ship_type_id != fit.ship_type_id:
+                continue
+            submission = submit_fit(
+                owner, fit, parsed,
+                source=FitSubmission.Source.ESI,
+                character=char_by_id.get(cid),
+                doctrine=None,
+            )
+            graded[iid] = {"verdict": submission.verdict, "submission_pk": submission.pk}
+
+    if rate_limited:
+        messages.warning(
+            request,
+            _("EVE's ESI rate limit was reached mid-audit - results are partial."),
+        )
+    if graded:
+        messages.success(
+            request, _("Audited %(n)d ship(s).") % {"n": len(graded)}
+        )
+    return graded
+
+
 @login_required
 def member_inventory_for_fit(request, fit_pk: int):
     """Proactive fit check: list alliance/corp members' ships matching this
-    doctrine's hull, with per-ship verdicts against the fitting.
+    doctrine's hull; grade the ones a reviewer selects for audit.
+
+    Two phases (decoupled so an alliance-wide scan never materialises every
+    pilot's whole asset tree, nor grades hulls nobody asked about):
+      - GET lists the ships in scope - a narrow read, no grading, no submissions.
+      - POST grades only the ticked ships (`ships` = "character_id:item_id"
+        values) and persists one FitSubmission each.
 
     Permission gating is dual: view_member_inventory unlocks the alliance-wide
     view; view_own_corp_inventory narrows to the requester's own corporation.
@@ -1196,11 +1291,8 @@ def member_inventory_for_fit(request, fit_pk: int):
     (toggle to only show pilots with a valid asset-scope token)."""
     from allianceauth.eveonline.models import EveCorporationInfo
 
-    from ..services.check_runner import submit_fit
     from ..services.esi_assets import (
-        build_parsed_fit,
         get_inventory_for_characters,
-        is_error_limited,
         tokens_by_character,
     )
 
@@ -1214,6 +1306,9 @@ def member_inventory_for_fit(request, fit_pk: int):
         messages.error(request, _("This fitting has no hull set - cannot scan."))
         return redirect("fitcheck:fit_detail", fit_pk=fit.pk)
 
+    # Filters travel in the querystring on BOTH GET and POST (the audit form
+    # posts to "?<querystring>"), so the listed scope stays identical between
+    # showing the ships and grading the selected ones.
     q = request.GET.get("q", "").strip()
     corp_filter = request.GET.get("corp", "").strip()
     granted_only = request.GET.get("granted", "") == "1"
@@ -1232,6 +1327,8 @@ def member_inventory_for_fit(request, fit_pk: int):
         characters = [c for c in characters if c.character_id in tokens]
     char_by_id = {c.character_id: c for c in characters}
 
+    # Phase 1 - list ships of this hull in scope. No grading: this reads only the
+    # narrow ship rows (corptools) or the ship slice of a live fetch (ESI).
     inventory = get_inventory_for_characters(characters, hull_type_id=fit.ship_type_id)
     if inventory.error_limited:
         messages.warning(
@@ -1240,54 +1337,22 @@ def member_inventory_for_fit(request, fit_pk: int):
               "Results are partial; try again in a minute."),
         )
 
-    # Run compliance per ship. The validate_parsed_ship path persists a
-    # FitSubmission - that gives us per-character history of proactive checks
-    # for free, and the same code path the self-validate flow uses. We reuse the
-    # assets already fetched by the scan above so each ship doesn't re-pull the
-    # character's whole asset tree (ESI rate-limit etiquette).
+    # Phase 2 - grade only the ships the reviewer ticked and submitted for audit.
+    graded: dict[int, dict] = {}
+    if request.method == "POST":
+        graded = _audit_selected_ships(
+            request, fit, inventory.ships, char_by_id, tokens,
+            request.POST.getlist("ships"),
+        )
+
     ship_rows = []
     for ship in inventory.ships:
-        token_holder = tokens.get(ship.character_id)
-        # Resolve the User that owns the token (validate_parsed_ship attaches
-        # the submission to a user).
-        owner = getattr(token_holder, "user", None) or request.user
-        try:
-            parsed = build_parsed_fit(
-                owner,
-                ship.character_id,
-                ship.item_id,
-                assets=inventory.assets_by_character.get(ship.character_id),
-                token=inventory.token_by_character.get(ship.character_id),
-                fit_name=ship.ship_name or None,
-            )
-        except Exception as exc:  # pragma: no cover - network dependent
-            if is_error_limited(exc):
-                messages.warning(
-                    request,
-                    _("EVE's ESI rate limit was reached mid-scan - results are partial."),
-                )
-                break
-            raise
-        verdict = None
-        submission_pk = None
-        if parsed is not None:
-            # Grade this ship against THIS fit's source defaults and persist one
-            # submission (validate_parsed_ship fans out across every matching fit
-            # and returns a list - wrong shape for a single-fit proactive check).
-            submission = submit_fit(
-                owner,
-                fit,
-                parsed,
-                source=FitSubmission.Source.ESI,
-                character=char_by_id.get(ship.character_id),
-                doctrine=None,
-            )
-            verdict = submission.verdict
-            submission_pk = submission.pk
+        result = graded.get(ship.item_id)
         ship_rows.append({
             "ship": ship,
-            "verdict": verdict,
-            "submission_pk": submission_pk,
+            "verdict": result["verdict"] if result else None,
+            "submission_pk": result["submission_pk"] if result else None,
+            "audited": result is not None,
         })
 
     # Corp dropdown options: only meaningful for alliance-scoped users.
@@ -1314,6 +1379,7 @@ def member_inventory_for_fit(request, fit_pk: int):
                 "corp": corp_filter,
                 "granted": granted_only,
             },
+            "querystring": request.GET.urlencode(),
             "corps": corps,
             "show_corp_filter": show_corp_filter,
             "scope_label": (

@@ -29,6 +29,20 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+### Changed
+- **Member inventory is now select-to-audit, not audit-everything.** Opening a
+  fitting's **Member Inventory** page used to fetch every in-scope pilot's entire
+  asset tree and immediately grade every matching hull — writing one submission
+  per ship on every page load, and holding all of it in memory at once (an
+  alliance with thousands of audited pilots is millions of asset rows). It now
+  **lists** the matching ships cheaply (a narrow read — ships only, not the whole
+  hangar) and grades only the ships you **tick and "Audit selected"**. Submissions
+  are created only for ships you actually audit, so the review queue no longer
+  fills with auto-generated proactive checks. When the optional **corptools**
+  cache backs the read, both the listing and the per-ship grade are narrow DB
+  queries; with live ESI, listing keeps only the ship rows and grading fetches a
+  selected pilot's contents once. No schema change.
+
 ### Added
 - **FEB ship-class quick-add.** The Frigate Escape Bay "Allowed" picker on the
   fit settings page now has a companion **"Add a whole ship class"** selector:

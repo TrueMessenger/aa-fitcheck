@@ -131,8 +131,6 @@ class TestMemberInventoryView(TestCase):
                     characters_without_token=[],
                     errors={},
                     error_limited=False,
-                    assets_by_character={},
-                    token_by_character={},
                 ),
             ),
             mock.patch(
@@ -182,20 +180,9 @@ class TestMemberInventoryView(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context["show_corp_filter"])
 
-    def test_scan_grades_each_ship_against_this_fit(self):
-        """Regression for C1: with ships present, the per-fit scan must grade each
-        one against THIS fit via submit_fit and persist one FitSubmission. The
-        previous code called validate_parsed_ship with unsupported kwargs (and a
-        list return) - a runtime TypeError the empty-ships tests never exercised."""
-        from ..models import FitSubmission
+    def _ship_and_inventory(self):
+        """An OwnedShip + a mock ShipInventory listing it - the Phase-1 result."""
         from ..services.esi_assets import OwnedShip
-        from ..services.fit_data import ParsedFit
-
-        user = create_user("alliance_scan")
-        _attach_main(user, alliance_id=99, corporation_id=2001)
-        user = _grant(user, "view_member_inventory")
-        _make_member(character_id=50010, alliance_id=99, corporation_id=2001)
-        fit = create_fit(None, T.HARBINGER, name="Scan Target")
 
         ship = OwnedShip(
             character_id=50010, character_name="Member 50010", item_id=70001,
@@ -204,19 +191,29 @@ class TestMemberInventoryView(TestCase):
         )
         inv = mock.Mock(
             ships=[ship], characters_without_token=[], errors={},
-            error_limited=False, assets_by_character={50010: []},
-            token_by_character={50010: object()},
+            error_limited=False,
         )
+        return ship, inv
+
+    def test_get_lists_ships_without_grading(self):
+        """Phase 1: a GET lists the ships in scope but grades NOTHING and persists
+        no submissions - the eager pre-audit (one FitSubmission per hull on every
+        page load) is gone. Each row is selectable, not yet audited."""
+        from ..models import FitSubmission
+
+        user = create_user("alliance_list")
+        _attach_main(user, alliance_id=99, corporation_id=2001)
+        user = _grant(user, "view_member_inventory")
+        _make_member(character_id=50010, alliance_id=99, corporation_id=2001)
+        fit = create_fit(None, T.HARBINGER, name="List Target")
+
+        _ship, inv = self._ship_and_inventory()
         with mock.patch(
             "fitcheck.services.esi_assets.get_inventory_for_characters",
             return_value=inv,
         ), mock.patch(
             "fitcheck.services.esi_assets.build_parsed_fit",
-            return_value=ParsedFit(
-                ship_type_id=T.HARBINGER, fit_name="Member's Harb",
-                items=[], source_ship_item_id=70001,
-            ),
-        ):
+        ) as build:
             self.client.force_login(user)
             response = self.client.get(
                 reverse("fitcheck:member_inventory_for_fit", args=[fit.pk])
@@ -225,9 +222,83 @@ class TestMemberInventoryView(TestCase):
         self.assertEqual(response.status_code, 200)
         rows = response.context["ship_rows"]
         self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]["submission_pk"])
+        self.assertFalse(rows[0]["audited"])
+        build.assert_not_called()  # nothing graded on a GET
+        self.assertFalse(FitSubmission.objects.filter(doctrine_fit=fit).exists())
+
+    def test_post_audits_only_selected_ships(self):
+        """Phase 2: a POST grades exactly the ticked ship(s) and persists one
+        FitSubmission each. A ship that is listed but NOT selected stays
+        ungraded."""
+        from ..models import FitSubmission
+        from ..services.fit_data import ParsedFit
+
+        user = create_user("alliance_audit")
+        _attach_main(user, alliance_id=99, corporation_id=2001)
+        user = _grant(user, "view_member_inventory")
+        _make_member(character_id=50010, alliance_id=99, corporation_id=2001)
+        fit = create_fit(None, T.HARBINGER, name="Audit Target")
+
+        _ship, inv = self._ship_and_inventory()
+        with mock.patch(
+            "fitcheck.services.esi_assets.get_inventory_for_characters",
+            return_value=inv,
+        ), mock.patch(
+            "fitcheck.services.esi_assets.resolve_contents",
+            return_value=[{"item_id": 70001, "type_id": T.HARBINGER}],
+        ), mock.patch(
+            "fitcheck.services.esi_assets.build_parsed_fit",
+            return_value=ParsedFit(
+                ship_type_id=T.HARBINGER, fit_name="Member's Harb",
+                items=[], source_ship_item_id=70001,
+            ),
+        ):
+            self.client.force_login(user)
+            response = self.client.post(
+                reverse("fitcheck:member_inventory_for_fit", args=[fit.pk]),
+                {"ships": ["50010:70001"]},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.context["ship_rows"]
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["audited"])
         self.assertIsNotNone(rows[0]["submission_pk"])
         self.assertTrue(
             FitSubmission.objects.filter(
                 doctrine_fit=fit, esi_ship_item_id=70001
             ).exists()
         )
+
+    def test_post_ignores_ships_outside_the_listed_scope(self):
+        """Security: a crafted POST naming a ship that ISN'T in the legitimate
+        Phase-1 listing grades nothing - the pairs are validated against the
+        listed ships, never trusted blindly."""
+        from ..models import FitSubmission
+
+        user = create_user("alliance_craft")
+        _attach_main(user, alliance_id=99, corporation_id=2001)
+        user = _grant(user, "view_member_inventory")
+        _make_member(character_id=50010, alliance_id=99, corporation_id=2001)
+        fit = create_fit(None, T.HARBINGER, name="Craft Target")
+
+        _ship, inv = self._ship_and_inventory()  # lists only 50010:70001
+        with mock.patch(
+            "fitcheck.services.esi_assets.get_inventory_for_characters",
+            return_value=inv,
+        ), mock.patch(
+            "fitcheck.services.esi_assets.resolve_contents",
+        ) as contents, mock.patch(
+            "fitcheck.services.esi_assets.build_parsed_fit",
+        ) as build:
+            self.client.force_login(user)
+            response = self.client.post(
+                reverse("fitcheck:member_inventory_for_fit", args=[fit.pk]),
+                {"ships": ["99999:88888"]},  # not in the listing
+            )
+
+        self.assertEqual(response.status_code, 200)
+        contents.assert_not_called()
+        build.assert_not_called()
+        self.assertFalse(FitSubmission.objects.filter(doctrine_fit=fit).exists())

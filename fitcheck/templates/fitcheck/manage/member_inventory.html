@@ -80,62 +80,122 @@
         <div class="alert alert-danger small">{{ name }}: {{ reason }}</div>
     {% endfor %}
 
-    <div class="fc-toolbar">
-        <div class="fc-eyebrow">
-            {{ ship_rows|length }} {% translate "ship(s) of this hull found in scope" %}
+    <form method="post" action="?{{ querystring }}">
+        {% csrf_token %}
+        <div class="fc-toolbar d-flex align-items-center gap-2 flex-wrap">
+            <div class="fc-eyebrow">
+                {{ ship_rows|length }} {% translate "ship(s) of this hull found in scope" %}
+            </div>
+            {% if ship_rows %}
+                <div class="ms-auto d-flex align-items-center gap-3">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="fc-select-all">
+                        <label class="form-check-label small" for="fc-select-all">
+                            {% translate "Select all" %}
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-success">
+                        <i class="fa-solid fa-clipboard-check"></i>
+                        {% translate "Audit selected" %}
+                    </button>
+                </div>
+            {% endif %}
         </div>
-    </div>
 
-    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
-        {% for row in ship_rows %}
-            <div class="col">
-                <div class="fc-card p-3">
-                    <div class="fc-ship-row">
-                        <img src="https://images.evetech.net/types/{{ row.ship.type_id }}/render?size=64"
-                             alt="" width="56" height="56">
-                        <div class="flex-grow-1">
-                            <div>
-                                <strong>{{ row.ship.ship_name|default:row.ship.type_name }}</strong>
-                            </div>
-                            <div class="small text-muted">
-                                <i class="fa-solid fa-user-astronaut me-1"></i>{{ row.ship.character_name }}
-                            </div>
-                            <div class="small text-muted">
-                                <i class="fa-solid fa-location-dot me-1"></i>{{ row.ship.location_name }}
-                                {% if row.ship.system_name %}
-                                    <br><i class="fa-solid fa-map-location-dot me-1"></i>{{ row.ship.system_name }}{% if row.ship.region_name %} &middot; {{ row.ship.region_name }}{% endif %}
-                                {% endif %}
-                            </div>
-                            <div class="mt-1">
-                                {% if row.verdict == "COMPLIANT" %}
-                                    <span class="badge bg-success">{% translate "Compliant" %}</span>
-                                {% elif row.verdict == "COMPLIANT_SUBS" %}
-                                    <span class="badge bg-info">{% translate "Compliant (subs)" %}</span>
-                                {% elif row.verdict == "NON_COMPLIANT" %}
-                                    <span class="badge bg-danger">{% translate "Non-compliant" %}</span>
-                                {% elif row.verdict == "ERROR" %}
-                                    <span class="badge bg-warning">{% translate "Error" %}</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">{% translate "Not validated" %}</span>
-                                {% endif %}
-                                {% if row.submission_pk %}
-                                    <a class="small ms-2"
-                                       href="{% url 'fitcheck:submission_detail' row.submission_pk %}">
-                                        {% translate "details" %}
-                                    </a>
-                                {% endif %}
+        <p class="small text-muted mb-3">
+            {% translate "Select the ships to check against this fitting, then Audit selected. Only ships you audit are graded and recorded." %}
+        </p>
+
+        <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+            {% for row in ship_rows %}
+                <div class="col">
+                    <div class="fc-card p-3 h-100 fc-ship-toggle {% if row.audited %}border-info{% endif %}"
+                         style="cursor: pointer">
+                        <div class="fc-ship-row">
+                            <input class="form-check-input fc-ship-check mt-0" type="checkbox"
+                                   name="ships"
+                                   value="{{ row.ship.character_id }}:{{ row.ship.item_id }}"
+                                   id="ship-{{ row.ship.item_id }}"
+                                   aria-label="{% blocktranslate with name=row.ship.ship_name|default:row.ship.type_name %}Select {{ name }} for audit{% endblocktranslate %}">
+                            <img src="https://images.evetech.net/types/{{ row.ship.type_id }}/render?size=64"
+                                 alt="" width="56" height="56">
+                            <div class="flex-grow-1">
+                                <div>
+                                    <strong>{{ row.ship.ship_name|default:row.ship.type_name }}</strong>
+                                </div>
+                                <div class="small text-muted">
+                                    <i class="fa-solid fa-user-astronaut me-1"></i>{{ row.ship.character_name }}
+                                </div>
+                                <div class="small text-muted">
+                                    <i class="fa-solid fa-location-dot me-1"></i>{{ row.ship.location_name }}
+                                    {% if row.ship.system_name %}
+                                        <br><i class="fa-solid fa-map-location-dot me-1"></i>{{ row.ship.system_name }}{% if row.ship.region_name %} &middot; {{ row.ship.region_name }}{% endif %}
+                                    {% endif %}
+                                </div>
+                                <div class="mt-1">
+                                    {% if row.audited %}
+                                        {% if row.verdict == "COMPLIANT" %}
+                                            <span class="badge bg-success">{% translate "Compliant" %}</span>
+                                        {% elif row.verdict == "COMPLIANT_SUBS" %}
+                                            <span class="badge bg-info">{% translate "Compliant (subs)" %}</span>
+                                        {% elif row.verdict == "NON_COMPLIANT" %}
+                                            <span class="badge bg-danger">{% translate "Non-compliant" %}</span>
+                                        {% elif row.verdict == "ERROR" %}
+                                            <span class="badge bg-warning">{% translate "Error" %}</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{% translate "Not validated" %}</span>
+                                        {% endif %}
+                                        {% if row.submission_pk %}
+                                            <a class="small ms-2"
+                                               href="{% url 'fitcheck:submission_detail' row.submission_pk %}">
+                                                {% translate "details" %}
+                                            </a>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="badge bg-secondary">{% translate "Not audited" %}</span>
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        {% empty %}
-            <div class="col-12">
-                <div class="fc-empty">
-                    <i class="fa-solid fa-satellite-dish fa-2x mb-3 d-block"></i>
-                    {% translate "No ships of this hull found among the pilots in scope." %}
+            {% empty %}
+                <div class="col-12">
+                    <div class="fc-empty">
+                        <i class="fa-solid fa-satellite-dish fa-2x mb-3 d-block"></i>
+                        {% translate "No ships of this hull found among the pilots in scope." %}
+                    </div>
                 </div>
-            </div>
-        {% endfor %}
-    </div>
+            {% endfor %}
+        </div>
+    </form>
+
+    <script>
+        (function () {
+            // Progressive enhancement only: every checkbox already submits on its
+            // own, so the page works with JS disabled.
+            var master = document.getElementById("fc-select-all");
+            var boxes = document.querySelectorAll(".fc-ship-check");
+
+            // "Select all" mirrors its state onto every ship checkbox.
+            if (master) {
+                master.addEventListener("change", function () {
+                    boxes.forEach(function (b) { b.checked = master.checked; });
+                });
+            }
+
+            // Clicking anywhere on a card toggles its checkbox - except when the
+            // click lands on the checkbox itself or a link (e.g. "details"), which
+            // keep their own behaviour.
+            document.querySelectorAll(".fc-ship-toggle").forEach(function (card) {
+                card.addEventListener("click", function (e) {
+                    if (e.target.closest("a") || e.target.classList.contains("fc-ship-check")) {
+                        return;
+                    }
+                    var box = card.querySelector(".fc-ship-check");
+                    if (box) { box.checked = !box.checked; }
+                });
+            });
+        })();
+    </script>
 {% endblock %}
