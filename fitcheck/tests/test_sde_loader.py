@@ -231,3 +231,101 @@ class TestBoosterResection(TestCase):
         _resection_implant_booster_items()
         snap.refresh_from_db()
         self.assertEqual(snap.section, Section.BOOSTER)
+
+
+class TestFuelResection(TestCase):
+    """A reload re-points stored DOCTRINE rows from CARGO to the Fuel Bay when the
+    type is now classified as fuel (racial isotopes). Forward-only: a non-isotope
+    FUEL_BAY row is never evicted, and a pilot's CARGO submission row is left where
+    it physically is (the engine credits carried fuel instead)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from .testdata.sde_fixtures import create_sde_testdata
+
+        create_sde_testdata()
+
+    def test_resection_moves_doctrine_cargo_isotope_to_fuel_bay(self):
+        from ..constants import Section
+        from ..services.sde_loader import _resection_fuel_items
+        from .testdata.factories import add_item, create_doctrine, create_fit
+        from .testdata.sde_fixtures import T
+
+        fit = create_fit(create_doctrine(), T.HARBINGER, name="fuel")
+        item = add_item(fit, Section.CARGO, T.HELIUM_ISOTOPES, 1000)  # stale CARGO row
+        _resection_fuel_items()
+        item.refresh_from_db()
+        self.assertEqual(item.section, Section.FUEL_BAY)
+
+    def test_resection_leaves_non_fuel_cargo(self):
+        from ..constants import Section
+        from ..services.sde_loader import _resection_fuel_items
+        from .testdata.factories import add_item, create_doctrine, create_fit
+        from .testdata.sde_fixtures import T
+
+        fit = create_fit(create_doctrine(), T.HARBINGER, name="cargo")
+        # Nitrogen Isotopes are SlotKind.OTHER in the fixture (not fuel) - selectivity.
+        item = add_item(fit, Section.CARGO, T.NITROGEN_ISOTOPES, 500)
+        _resection_fuel_items()
+        item.refresh_from_db()
+        self.assertEqual(item.section, Section.CARGO)
+
+    def test_resection_does_not_evict_non_isotope_fuel_bay(self):
+        """Forward-only: a non-fuel type legitimately in the Fuel Bay (the
+        ozone/heavy-water case) is never swept back to CARGO."""
+        from ..constants import Section
+        from ..services.sde_loader import _resection_fuel_items
+        from .testdata.factories import add_item, create_doctrine, create_fit
+        from .testdata.sde_fixtures import T
+
+        fit = create_fit(create_doctrine(), T.HARBINGER, name="ozone")
+        item = add_item(fit, Section.FUEL_BAY, T.NITROGEN_ISOTOPES, 500)
+        _resection_fuel_items()
+        item.refresh_from_db()
+        self.assertEqual(item.section, Section.FUEL_BAY)
+
+    def test_resection_moves_assignment_snapshot_fuel_items(self):
+        """The per-(doctrine, fit) AssignmentItemPolicy snapshot grading reads must
+        move CARGO->FUEL_BAY too (same path as the booster snapshot resection)."""
+        from ..constants import Section
+        from ..models import AssignmentItemPolicy
+        from ..services.assignments import attach_fit_to_doctrine
+        from ..services.sde_loader import _resection_fuel_items
+        from .testdata.factories import add_item, create_doctrine, create_fit, create_user
+        from .testdata.sde_fixtures import T
+
+        user = create_user("fuel-asg")
+        fit = create_fit(None, T.HARBINGER, name="fuel-asg")
+        add_item(fit, Section.CARGO, T.HELIUM_ISOTOPES, 1000)  # stale CARGO row
+        attach_fit_to_doctrine(fit, create_doctrine(name="d-fuel"), user=user)
+        snap = AssignmentItemPolicy.objects.get(module_type_id=T.HELIUM_ISOTOPES)
+        self.assertEqual(snap.section, Section.CARGO)  # cloned stale section
+        _resection_fuel_items()
+        snap.refresh_from_db()
+        self.assertEqual(snap.section, Section.FUEL_BAY)
+
+    def test_resection_leaves_submission_items(self):
+        """A pilot's fuel genuinely carried in cargo stays a CARGO SubmissionItem -
+        the engine credits it as carried-refit, so the resection must NOT move it
+        (moving it would misreport where the pilot's fuel actually is)."""
+        from eveuniverse.models import EveType
+
+        from ..constants import Section
+        from ..models import FitSubmission, SubmissionItem
+        from ..services.sde_loader import _resection_fuel_items
+        from .testdata.factories import create_doctrine, create_fit, create_user
+        from .testdata.sde_fixtures import T
+
+        user = create_user("fuel-sub")
+        fit = create_fit(create_doctrine(), T.HARBINGER, name="fuel-sub")
+        submission = FitSubmission.objects.create(
+            user=user, doctrine_fit=fit, fit_version=fit.version,
+            source=FitSubmission.Source.ESI, verdict=FitSubmission.Verdict.COMPLIANT,
+        )
+        item = SubmissionItem.objects.create(
+            submission=submission, section=Section.CARGO,
+            eve_type=EveType.objects.get(id=T.HELIUM_ISOTOPES), quantity=1000,
+        )
+        _resection_fuel_items()
+        item.refresh_from_db()
+        self.assertEqual(item.section, Section.CARGO)  # pilot fuel stays in cargo
