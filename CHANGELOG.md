@@ -29,6 +29,19 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+### Fixed
+- **Capital jump fuel is now counted wherever it sits.** A doctrine's fuel-bay
+  requirement is now satisfied by isotopes the pilot holds in the **fuel bay, the
+  cargo hold, or the fleet/freight hangar** (the last two both arrive as cargo) —
+  pooled together. Fuel in the bay reads as a clean pass; fuel carried in cargo /
+  the fleet hangar passes flagged **"carried in cargo or the fleet hangar (not in
+  the fuel bay)"** (a refit pass, like implants/boosters carried in cargo), so it
+  counts even under the strict Reject fuel mode. Previously only fuel physically
+  in the fuel bay counted, so a capital carrying its jump fuel in cargo showed a
+  false shortfall. Also, on an SDE reload the loader now re-sections stale
+  **doctrine** isotope rows left in Cargo (created before isotopes were classified
+  as fuel) into the Fuel Bay. No schema change.
+
 ### Changed
 - **Member inventory is now select-to-audit, not audit-everything.** Opening a
   fitting's **Member Inventory** page used to fetch every in-scope pilot's entire

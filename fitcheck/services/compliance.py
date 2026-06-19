@@ -774,6 +774,30 @@ def _check_quantity_sections(
                                 matched += 1
                                 used_fitted[cand_id] = used_fitted.get(cand_id, 0) + 1
 
+            # Capital jump fuel counts whether it sits in the fuel bay, the cargo
+            # hold, or the fleet/freight hangar (the latter two both map to
+            # Section.CARGO). Draw any fuel-bay shortfall from the pilot's leftover
+            # cargo as CARGO_REFIT (carried, not in the bay) - mirroring implants/
+            # boosters carried in cargo; passes in every enforcement mode.
+            carried_fuel: dict[int, int] = {}
+            if matched < threshold and section == Section.FUEL_BAY and cargo_pool is not None:
+                candidate_ids = [exact_type_id] + (
+                    [t for t in allowed.substitutes if t != exact_type_id] if allowed else []
+                )
+                for cand_id in candidate_ids:
+                    if matched >= threshold:
+                        break
+                    units = [
+                        u for u in cargo_pool.get(cand_id, [])
+                        if not u.consumed and u.mutated_attributes is None
+                    ]
+                    take = min(len(units), threshold - matched)
+                    for u in units[:take]:
+                        u.consumed = True
+                    if take:
+                        matched += take
+                        carried_fuel[cand_id] = carried_fuel.get(cand_id, 0) + take
+
             for sub_id, qty in used_subs.items():
                 findings.append(
                     Finding(
@@ -818,8 +842,36 @@ def _check_quantity_sections(
                     )
                 )
 
+            for cand_id, qty in carried_fuel.items():
+                if cand_id == exact_type_id:
+                    message = (
+                        f"{qty}x {name_of(cand_id)} carried in cargo or the fleet "
+                        "hangar (not in the fuel bay)."
+                    )
+                else:
+                    message = (
+                        f"{qty}x {name_of(cand_id)} carried in cargo as a substitute "
+                        f"for {name_of(exact_type_id)}."
+                    )
+                findings.append(
+                    Finding(
+                        code=Code.CARGO_REFIT,
+                        section=Section.FUEL_BAY,
+                        expected_type_id=exact_type_id,
+                        actual_type_id=cand_id,
+                        expected_qty=qty,
+                        actual_qty=qty,
+                        message=message,
+                    )
+                )
+
             if matched >= threshold:
-                exact_qty = matched - sum(used_subs.values()) - sum(used_fitted.values())
+                exact_qty = (
+                    matched
+                    - sum(used_subs.values())
+                    - sum(used_fitted.values())
+                    - sum(carried_fuel.values())
+                )
                 if exact_qty > 0:
                     findings.append(
                         Finding(

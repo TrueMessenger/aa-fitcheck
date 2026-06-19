@@ -523,6 +523,75 @@ class TestFuelBayAndBoosters(EngineTestCase):
         self.assertIsNone(short.actual_type_id)
         self.assertEqual(short.actual_qty, 0)
 
+    def test_fuel_in_cargo_counts_as_carried_refit(self):
+        """Capital jump fuel carried in the cargo hold or fleet hangar (both ESI
+        location flags map to Section.CARGO) counts toward the fuel-bay
+        requirement, flagged CARGO_REFIT - not in the bay, but accounted for."""
+        result = check_fit(
+            fit_of(self._hull(), FitItem(Section.CARGO, T.HELIUM_ISOTOPES, 1000)),
+            self._fuel_fit(),
+        )
+        refit = next(
+            f for f in result.findings
+            if f.section == Section.FUEL_BAY and f.code == Code.CARGO_REFIT
+        )
+        self.assertEqual(refit.actual_type_id, T.HELIUM_ISOTOPES)
+        self.assertEqual(refit.actual_qty, 1000)
+        self.assertEqual(result.verdict, Verdict.COMPLIANT_SUBS)
+        self.assertNotIn(Code.UNVERIFIED, codes(result))  # requirement met, no shortfall
+
+    def test_fuel_split_bay_and_cargo_pools(self):
+        """Fuel partly in the bay and partly in cargo pools to meet the
+        requirement: the bay portion is a clean OK, the cargo portion CARGO_REFIT."""
+        result = check_fit(
+            fit_of(
+                self._hull(),
+                FitItem(Section.FUEL_BAY, T.HELIUM_ISOTOPES, 600),
+                FitItem(Section.CARGO, T.HELIUM_ISOTOPES, 400),
+            ),
+            self._fuel_fit(),
+        )
+        self.assertEqual(result.verdict, Verdict.COMPLIANT_SUBS)
+        ok = next(
+            f for f in result.findings
+            if f.section == Section.FUEL_BAY and f.code == Code.OK
+        )
+        refit = next(
+            f for f in result.findings
+            if f.section == Section.FUEL_BAY and f.code == Code.CARGO_REFIT
+        )
+        self.assertEqual(ok.actual_qty, 600)
+        self.assertEqual(refit.actual_qty, 400)
+        self.assertNotIn(Code.UNVERIFIED, codes(result))
+
+    def test_fuel_still_short_after_pooling_reports_total_held(self):
+        """When the bay + cargo together still fall short, the shortfall reports
+        the pooled total held (300 bay + 200 cargo = 500 of 1000)."""
+        result = check_fit(
+            fit_of(
+                self._hull(),
+                FitItem(Section.FUEL_BAY, T.HELIUM_ISOTOPES, 300),
+                FitItem(Section.CARGO, T.HELIUM_ISOTOPES, 200),
+            ),
+            self._fuel_fit(),
+        )
+        self.assertNotEqual(result.verdict, Verdict.NON_COMPLIANT)  # warn-only by default
+        short = next(
+            f for f in result.findings
+            if f.section == Section.FUEL_BAY and f.code == Code.UNVERIFIED
+        )
+        self.assertEqual(short.actual_qty, 500)
+
+    def test_bay_fuel_alone_stays_clean_ok(self):
+        """Regression: fuel actually in the bay is a clean OK / COMPLIANT, with no
+        spurious carried-in-cargo row."""
+        result = check_fit(
+            fit_of(self._hull(), FitItem(Section.FUEL_BAY, T.HELIUM_ISOTOPES, 1000)),
+            self._fuel_fit(),
+        )
+        self.assertEqual(result.verdict, Verdict.COMPLIANT)
+        self.assertNotIn(Code.CARGO_REFIT, codes(result))
+
     def _booster_fit(self):
         fit = self.make_fit()
         add_item(fit, Section.LOW, T.HEAT_SINK_II, 1)
@@ -607,6 +676,22 @@ class TestEnforcementModes(EngineTestCase):
         r = self._short_fuel(self._fuel_fit())
         self.assertEqual(r.verdict, Verdict.COMPLIANT)
         self.assertEqual([f for f in r.findings if f.section == Section.FUEL_BAY], [])
+
+    def test_fuel_carried_in_cargo_passes_under_reject(self):
+        """Carried fuel passes in every mode, like carried implants/boosters: a
+        Reject fuel mode with the pilot's fuel entirely in cargo / the fleet
+        hangar is still a pass (CARGO_REFIT), not a QTY_SHORT."""
+        self._set(fuel_mode=VerificationMode.REJECT)
+        r = check_fit(
+            fit_of(
+                FitItem(Section.LOW, T.HEAT_SINK_II, 1),
+                FitItem(Section.CARGO, T.HELIUM_ISOTOPES, 1000),
+            ),
+            self._fuel_fit(),
+        )
+        self.assertEqual(r.verdict, Verdict.COMPLIANT_SUBS)
+        self.assertIn(Code.CARGO_REFIT, codes(r))
+        self.assertNotIn(Code.QTY_SHORT, codes(r))
 
     def _booster_fit(self):
         fit = self.make_fit()

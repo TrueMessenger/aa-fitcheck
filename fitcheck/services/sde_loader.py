@@ -214,6 +214,35 @@ def _resection_implant_booster_items() -> None:
         ).update(section=Section.IMPLANT)
 
 
+def _resection_fuel_items() -> None:
+    """Move stored DOCTRINE rows from CARGO to FUEL_BAY for types now classified
+    as fuel (racial isotopes), so a doctrine's fuel requirement created before the
+    fuel classification grades as a fuel-bay demand.
+
+    FORWARD-ONLY: no reverse FUEL_BAY->CARGO move, because Section.FUEL_BAY is
+    populated by the ESI "SpecializedFuelBay" location flag independent of
+    slot_kind, so it legitimately holds non-isotope fuel-bay contents (ozone,
+    heavy water) a reverse sweep would wrongly evict. SubmissionItem is
+    deliberately excluded: a pilot's fuel genuinely carried in cargo stays in
+    cargo, where the engine credits it as carried-refit toward the fuel demand."""
+    from ..models import AssignmentItemPolicy, ComplianceFinding, DoctrineFitItem
+
+    fuel_ids = set(
+        SdeType.objects.filter(slot_kind=SlotKind.FUEL).values_list("type_id", flat=True)
+    )
+    if not fuel_ids:
+        return
+    moves = [
+        (DoctrineFitItem, "module_type_id"),
+        (AssignmentItemPolicy, "module_type_id"),
+        (ComplianceFinding, "expected_type_id"),
+    ]
+    for model, type_field in moves:
+        model.objects.filter(
+            section=Section.CARGO, **{f"{type_field}__in": fuel_ids}
+        ).update(section=Section.FUEL_BAY)
+
+
 @transaction.atomic
 def load_from_data(
     *,
@@ -382,8 +411,11 @@ def load_from_data(
     SdeMutaplasmidMapping.objects.bulk_create(mapping_objs, batch_size=_BATCH_SIZE)
 
     # Existing doctrine/submission rows may carry a stale IMPLANT section for
-    # types now classified as boosters (or vice versa) - fix them up.
+    # types now classified as boosters (or vice versa) - fix them up. Likewise,
+    # doctrine fuel requirements stored before isotopes were classified as fuel
+    # still sit in CARGO - move them to the Fuel Bay.
     _resection_implant_booster_items()
+    _resection_fuel_items()
 
     record = SdeLoadRecord.objects.create(sde_build=build, type_count=len(type_rows))
     logger.info("SDE load complete: %s types, build %s", len(type_rows), build)
