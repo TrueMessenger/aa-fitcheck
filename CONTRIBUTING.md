@@ -3,6 +3,21 @@
 Thanks for your interest in improving aa-fitcheck! Bug reports, feature ideas, and
 pull requests are all welcome.
 
+## Reporting issues & suggesting features
+
+The [GitHub issue tracker](https://github.com/TrueMessenger/aa-fitcheck/issues) is the
+home for bugs, feature ideas, and cosmetic nits — please use the templates:
+
+- **Feature request** → labeled `enhancement`
+- **Bug report** → labeled `bug`
+- **Cosmetic / polish** → labeled `cosmetic`
+
+Browse the [open issues](https://github.com/TrueMessenger/aa-fitcheck/issues) first to
+avoid duplicates; the `good first issue` label marks approachable starting points, and
+roadmap-level direction is grouped under the **Next** and **Later** milestones (mirrored
+in the [README roadmap](README.md#roadmap)). Please report **security vulnerabilities**
+privately via [SECURITY.md](SECURITY.md), not a public issue.
+
 ## Development setup
 
 aa-fitcheck targets **Python 3.10–3.12** and Alliance Auth 4.x–5.x. The repo ships a

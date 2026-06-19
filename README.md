@@ -327,7 +327,10 @@ priority, not pinned to specific version numbers (those are assigned at release)
 | **Next** | Compliance reports + CSV export (`view_compliance_reports`); i18n pass |
 | **Later** | Corporation-role internal audits (corp members with the right EVE roles audit ships in corp hangars against doctrines, no approval flow); [aa-srp](https://apps.allianceauth.org/apps/detail/aa-srp) integration (compare a loss's killmail fit to doctrines/fits/substitutions during SRP review); bulk "audit all my fits" for pilots; per-doctrine reviewer scoping; override-chip allow/forbid toggle |
 
-See [CHANGELOG.md](CHANGELOG.md) for released and in-progress changes.
+This table is the high-level summary; the **itemized backlog** (features, bugs, cosmetic
+nits) lives in [GitHub Issues](https://github.com/TrueMessenger/aa-fitcheck/issues),
+grouped by the **Next** and **Later** milestones. See [CHANGELOG.md](CHANGELOG.md) for
+released and in-progress changes.
 
 ---
 
