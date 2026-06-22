@@ -104,6 +104,40 @@ class EveMetaGroupId:
     STRUCTURE_TECH_II = 53
 
 
+# Display labels for every non-abyssal meta group that can appear in a variant
+# family. Abyssal (15) is deliberately omitted - mutated modules are gated by the
+# per-item ``allow_mutated`` flag, never by a meta-group checkbox. This is the
+# single source of truth; META_GROUP_CHOICES (forms.py) derives from it.
+META_GROUP_LABELS = {
+    EveMetaGroupId.TECH_I: _("Tech I"),
+    EveMetaGroupId.TECH_II: _("Tech II"),
+    EveMetaGroupId.STORYLINE: _("Storyline"),
+    EveMetaGroupId.TECH_III: _("Tech III"),
+    EveMetaGroupId.STRUCTURE_TECH_I: _("Structure Tech I"),
+    EveMetaGroupId.STRUCTURE_TECH_II: _("Structure Tech II"),
+    EveMetaGroupId.FACTION: _("Faction"),
+    EveMetaGroupId.OFFICER: _("Officer"),
+    EveMetaGroupId.DEADSPACE: _("Deadspace"),
+    EveMetaGroupId.PREMIUM: _("Premium"),
+    EveMetaGroupId.LIMITED_TIME: _("Limited Time"),
+}
+
+# Stable checkbox order for the meta-group allow-list (tech tiers, then structure,
+# then faction-and-up, then the rare event tiers).
+META_GROUP_DISPLAY_ORDER = (
+    EveMetaGroupId.TECH_I,
+    EveMetaGroupId.TECH_II,
+    EveMetaGroupId.TECH_III,
+    EveMetaGroupId.STRUCTURE_TECH_I,
+    EveMetaGroupId.STRUCTURE_TECH_II,
+    EveMetaGroupId.FACTION,
+    EveMetaGroupId.OFFICER,
+    EveMetaGroupId.DEADSPACE,
+    EveMetaGroupId.PREMIUM,
+    EveMetaGroupId.LIMITED_TIME,
+)
+
+
 class EveDogmaAttributeId:
     LOW_SLOTS = 12
     MED_SLOTS = 13

@@ -43,6 +43,17 @@ Unreleased set contains new features, so the next release will be a minor bump.)
   as fuel) into the Fuel Bay. No schema change.
 
 ### Changed
+- **Module Policies only offers the meta groups that can actually exist for each
+  item.** The "Allowed Meta Groups" checkboxes used to show the same six tiers
+  (Tech I/II, Storyline, Faction, Officer, Deadspace) for every module, even when
+  most are impossible — a rig has no Officer variant, ammo has no Deadspace tier.
+  Now each item offers only the meta groups present in its variant family (a rig →
+  Tech I/II; a structure module → its Structure Tech I/II tiers), and a module with
+  no variants shows a "no variant substitutes" hint. Impossible groups are rejected
+  on save, and any left over from the old all-tiers default are dropped the next
+  time a fit's policies are saved. Computed from the local SDE mirror (the variant
+  family + each type's meta group) — no extra ESI calls, no schema change. Grading
+  results are unchanged (impossible groups never matched anything anyway).
 - **Multi-select pickers are now readable and consistently styled everywhere.**
   The tokenized multi-select dropdowns (category group/doctrine/fitting pickers,
   the FEB "Allowed" picker, module exception pickers) now render with a **white

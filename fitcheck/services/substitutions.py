@@ -599,3 +599,53 @@ def abyssal_name_for_item(item) -> tuple[int | None, str | None]:
     if mapping is None:
         return None, None
     return mapping.abyssal_type_id, mapping.abyssal_type.name
+
+
+def _families_for_type_ids(
+    type_ids: set[int],
+) -> tuple[dict[int, list[dict]], dict[int, int]]:
+    """For the variant families of the given module type ids, return
+    ``(families, parent_by_type)``: ``families`` maps a family parent id to its
+    member rows (``{type_id, name, meta_group_id}``); ``parent_by_type`` maps each
+    requested type id to its (normalized) family parent id. One ``in_bulk`` plus
+    one family query - the same pattern as ``resolve_allowed_bulk``."""
+    type_ids = {int(t) for t in type_ids}
+    if not type_ids:
+        return {}, {}
+    sde_types = SdeType.objects.in_bulk(type_ids)
+    parent_by_type = {
+        tid: (sde.variation_parent_type_id or sde.type_id)
+        for tid, sde in sde_types.items()
+    }
+    families: dict[int, list[dict]] = defaultdict(list)
+    for row in SdeType.objects.filter(
+        variation_parent_type_id__in=set(parent_by_type.values()), published=True
+    ).values("type_id", "name", "variation_parent_type_id", "meta_group_id"):
+        families[row["variation_parent_type_id"]].append(row)
+    return families, parent_by_type
+
+
+def possible_meta_groups_bulk(type_ids) -> dict[int, set[int]]:
+    """Map each module ``type_id`` to the set of meta-group ids that actually
+    exist in its variant family - the only meta groups worth offering as a
+    substitution allow-list. Excludes abyssal (``EveMetaGroupId.ABYSSAL``, gated
+    separately by ``allow_mutated``) and ``None`` groups. A type's own group is
+    included (it is a family member). Types absent from the SDE map to an empty set."""
+    families, parent_by_type = _families_for_type_ids({int(t) for t in type_ids})
+    return {
+        type_id: {
+            row["meta_group_id"]
+            for row in families.get(parent_id, ())
+            if row["meta_group_id"] is not None
+            and row["meta_group_id"] != EveMetaGroupId.ABYSSAL
+        }
+        for type_id, parent_id in parent_by_type.items()
+    }
+
+
+def possible_meta_groups_for_item(item) -> set[int]:
+    """The meta groups present in this item's variant family (see
+    ``possible_meta_groups_bulk``)."""
+    return possible_meta_groups_bulk({item.module_type_id}).get(
+        item.module_type_id, set()
+    )

@@ -1,10 +1,14 @@
 from django.test import TestCase
 from eveuniverse.models import EveType
 
-from ..constants import EveMetaGroupId, Section
-from ..models import FitItemOverride
+from ..constants import EveCategoryId, EveMetaGroupId, Section, SlotKind
+from ..models import FitItemOverride, SdeType
 from ..models.doctrine import SubstitutionPolicy
-from ..services.substitutions import resolve_allowed_bulk
+from ..services.substitutions import (
+    possible_meta_groups_bulk,
+    possible_meta_groups_for_item,
+    resolve_allowed_bulk,
+)
 from .testdata.factories import add_item, create_doctrine, create_fit
 from .testdata.sde_fixtures import Attrs, T, create_sde_testdata
 
@@ -155,3 +159,75 @@ class TestSubstitutions(TestCase):
         allowed = self._resolve(item)
         self.assertNotIn(T.WEB_ABYSSAL, allowed.substitutes)
         self.assertEqual(allowed.mutated_candidates, {})
+
+
+class TestPossibleMetaGroups(TestCase):
+    """possible_meta_groups_* report the meta groups that actually exist in an
+    item's variant family - the only groups worth offering in the policy editor."""
+
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+        cls.doctrine = create_doctrine()
+        cls.fit = create_fit(cls.doctrine, T.HARBINGER)
+
+    def _possible(self, section, type_id):
+        return possible_meta_groups_for_item(add_item(self.fit, section, type_id))
+
+    def test_module_family_offers_only_its_tiers(self):
+        # Heat Sink family = Tech I (I/Basic) + Tech II + Faction (two navy hulls).
+        got = self._possible(Section.LOW, T.HEAT_SINK_II)
+        self.assertEqual(
+            got,
+            {EveMetaGroupId.TECH_I, EveMetaGroupId.TECH_II, EveMetaGroupId.FACTION},
+        )
+        self.assertNotIn(EveMetaGroupId.OFFICER, got)
+        self.assertNotIn(EveMetaGroupId.DEADSPACE, got)
+
+    def test_tech1_tech2_only_family(self):
+        # Cap Recharger family is Tech I + Tech II only (the rig-like case).
+        self.assertEqual(
+            self._possible(Section.MED, T.CAP_RECHARGER_II),
+            {EveMetaGroupId.TECH_I, EveMetaGroupId.TECH_II},
+        )
+
+    def test_ammo_family_has_no_officer(self):
+        # Charge family = Tech I base + Faction navy charge; never Officer/Deadspace.
+        got = self._possible(Section.CARGO, T.MULTIFREQ_L_NAVY)
+        self.assertEqual(got, {EveMetaGroupId.TECH_I, EveMetaGroupId.FACTION})
+        self.assertNotIn(EveMetaGroupId.OFFICER, got)
+
+    def test_structure_family_offers_structure_tiers(self):
+        self.assertEqual(
+            self._possible(Section.RIG, T.STRUCTURE_RIG_II),
+            {EveMetaGroupId.STRUCTURE_TECH_I, EveMetaGroupId.STRUCTURE_TECH_II},
+        )
+
+    def test_abyssal_group_excluded(self):
+        # A family containing an abyssal member (meta group 15) must drop it -
+        # abyssal is gated by allow_mutated, never a meta-group checkbox.
+        for tid, mg in (
+            (990001, EveMetaGroupId.TECH_I),
+            (990002, EveMetaGroupId.TECH_II),
+            (990003, EveMetaGroupId.ABYSSAL),
+        ):
+            SdeType.objects.create(
+                type_id=tid, name=f"Foo {tid}", group_id=70,
+                category_id=EveCategoryId.MODULE, variation_parent_type_id=990001,
+                meta_group_id=mg, slot_kind=SlotKind.MED, published=True,
+            )
+        self.assertEqual(
+            possible_meta_groups_bulk({990001})[990001],
+            {EveMetaGroupId.TECH_I, EveMetaGroupId.TECH_II},
+        )
+
+    def test_bulk_returns_all_and_unknown_is_empty(self):
+        result = possible_meta_groups_bulk({T.HEAT_SINK_II, T.WEB_II, 999999})
+        self.assertEqual(
+            result[T.HEAT_SINK_II],
+            {EveMetaGroupId.TECH_I, EveMetaGroupId.TECH_II, EveMetaGroupId.FACTION},
+        )
+        self.assertEqual(
+            result[T.WEB_II], {EveMetaGroupId.TECH_I, EveMetaGroupId.TECH_II}
+        )
+        self.assertEqual(result.get(999999, set()), set())

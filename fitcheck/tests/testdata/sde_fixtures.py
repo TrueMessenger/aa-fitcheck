@@ -77,6 +77,11 @@ class T:
     HELIUM_ISOTOPES = 16274  # classified SlotKind.FUEL -> Section.FUEL_BAY
     NANITE_PASTE = 28668
 
+    # A structure-module variant family whose members carry the Structure Tech I/II
+    # meta groups (52/53) - meta groups a ship-module family never contains.
+    STRUCTURE_RIG_I = 37260
+    STRUCTURE_RIG_II = 37261
+
 
 def _sde_type(
     type_id,
@@ -202,6 +207,16 @@ def create_sde_testdata():
     _sde_type(
         T.PULSE_LASER_II, "Focused Medium Pulse Laser II", module, SlotKind.HIGH,
         meta_group=EveMetaGroupId.TECH_II, meta_level=5,
+    )
+
+    # Structure-module family: meta groups Structure Tech I (52) / Tech II (53).
+    _sde_type(
+        T.STRUCTURE_RIG_I, "Standup Energy Neutralizer I", module, SlotKind.RIG,
+        meta_group=EveMetaGroupId.STRUCTURE_TECH_I, meta_level=0,
+    )
+    _sde_type(
+        T.STRUCTURE_RIG_II, "Standup Energy Neutralizer II", module, SlotKind.RIG,
+        parent=T.STRUCTURE_RIG_I, meta_group=EveMetaGroupId.STRUCTURE_TECH_II, meta_level=5,
     )
 
     _sde_type(T.HOBGOBLIN_I, "Hobgoblin I", EveCategoryId.DRONE, SlotKind.DRONE, meta_level=0)
