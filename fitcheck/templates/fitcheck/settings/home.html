@@ -1,0 +1,84 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    {% if can_import %}
+        <div class="fc-section-head"><i class="fa-solid fa-file-import"></i>{% translate "Fittings import" %}</div>
+        <p class="small text-muted">
+            {% translate "Bring fittings into Fit Check as fitting standards. Imported fittings start standalone (in no doctrine) - bind them to doctrines and tune slot policies afterwards." %}
+        </p>
+        <div class="row row-cols-1 row-cols-md-3 g-3 mb-4">
+            <div class="col">
+                <div class="fc-card">
+                    <div class="card-body">
+                        <h6 class="mb-2"><i class="fa-solid fa-keyboard me-2"></i>{% translate "Manual (EFT paste)" %}</h6>
+                        <p class="small text-muted">
+                            {% translate "Paste an EFT block from the in-game fitting window or Pyfa. Zero friction; needs no ESI scope or extra plugin." %}
+                        </p>
+                        <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:standard_import' %}">
+                            <i class="fa-solid fa-keyboard"></i> {% translate "Paste a fit" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="fc-card fc-card-disabled">
+                    <div class="card-body">
+                        <h6 class="mb-2">
+                            <i class="fa-solid fa-user-astronaut me-2"></i>{% translate "In-game saved fittings (ESI)" %}
+                            <span class="badge bg-secondary ms-1">{% translate "Planned" %}</span>
+                        </h6>
+                        <p class="small text-muted">
+                            {% translate "Bulk-import a pilot's in-game saved fittings over ESI. ESI exposes only a character's personal fittings, so to bring in alliance or corp fits the pilot first copies them to their Personal fittings in-game." %}
+                        </p>
+                        <button class="btn btn-secondary btn-sm" type="button" disabled>
+                            <i class="fa-solid fa-clock"></i> {% translate "Coming soon" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="fc-card{% if not fittings_available %} fc-card-disabled{% endif %}">
+                    <div class="card-body">
+                        <h6 class="mb-2"><i class="fa-solid fa-puzzle-piece me-2"></i>{% translate "Fittings plugin" %}</h6>
+                        {% if fittings_available %}
+                            <p class="small text-muted">
+                                {% translate "Bulk-import doctrines and fittings from the colcrunch Fittings plugin, with category sync and on-demand re-sync." %}
+                            </p>
+                            <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:fittings_plugin_import' %}">
+                                <i class="fa-solid fa-file-import"></i> {% translate "Import from plugin" %}
+                            </a>
+                        {% else %}
+                            <p class="small text-muted">
+                                {% translate "The optional colcrunch Fittings plugin is not installed. Install it to bulk-import its doctrines and fittings." %}
+                            </p>
+                            <button class="btn btn-secondary btn-sm" type="button" disabled>
+                                <i class="fa-solid fa-plug-circle-xmark"></i> {% translate "Not installed" %}
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if can_enforce %}
+        <div class="fc-section-head"><i class="fa-solid fa-scale-balanced"></i>{% translate "Enforcement & global settings" %}</div>
+        <div class="row row-cols-1 row-cols-md-3 g-3">
+            <div class="col">
+                <div class="fc-card">
+                    <div class="card-body">
+                        <h6 class="mb-2"><i class="fa-solid fa-scale-balanced me-2"></i>{% translate "Enforcement modes" %}</h6>
+                        <p class="small text-muted">
+                            {% translate "Site-wide handling for the checks the engine can't always verify - implants, fuel, boosters and the Frigate Escape Bay: reject, enforce by policy, warn, or ignore." %}
+                        </p>
+                        <a class="btn btn-warning btn-sm" href="{% url 'fitcheck:enforcement_settings' %}">
+                            <i class="fa-solid fa-sliders"></i> {% translate "Edit enforcement" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+{% endblock %}

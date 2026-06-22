@@ -57,6 +57,15 @@ Unreleased set contains new features, so the next release will be a minor bump.)
   selected pilot's contents once. No schema change.
 
 ### Added
+- **Settings tab.** A new **Settings** tab gathers the manager-facing
+  configuration that was scattered across other pages. It has two sections:
+  **Fittings import** (the ways to bring fittings in — manual EFT paste, the
+  colcrunch Fittings plugin, and an *in-game saved fittings (ESI)* method marked
+  *Planned*) and **Enforcement & global settings** (the site-wide enforcement
+  modes, which used to live behind a button on the Policies page). The dashboard's
+  import button and empty-state now point here. Each section is shown only to
+  managers who hold the matching permission (`manage_doctrines` for import,
+  `manage_policies` for enforcement). No schema change.
 - **FEB ship-class quick-add.** The Frigate Escape Bay "Allowed" picker on the
   fit settings page now has a companion **"Add a whole ship class"** selector:
   pick e.g. *Assault Frigate* and every frigate of that class is folded into the

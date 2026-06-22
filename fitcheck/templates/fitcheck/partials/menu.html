@@ -45,4 +45,12 @@
             </a>
         </li>
     {% endif %}
+    {% if perms.fitcheck.manage_doctrines or perms.fitcheck.manage_policies %}
+        <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'settings_home' or request.resolver_match.url_name == 'enforcement_settings' or request.resolver_match.url_name == 'fittings_plugin_import' %}active{% endif %}"
+               href="{% url 'fitcheck:settings_home' %}">
+                <i class="fa-solid fa-gear me-1"></i>{% translate "Settings" %}
+            </a>
+        </li>
+    {% endif %}
 </ul>
