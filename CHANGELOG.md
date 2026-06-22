@@ -30,6 +30,13 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 ## [Unreleased]
 
 ### Fixed
+- **Table columns no longer resize as chip/badge columns grow.** On pages with a
+  column that holds a wrapping set of chips — the policy editor's Exceptions, the
+  Fittings & Standards and stale-recheck "Doctrines" lists, a fitting's
+  Alternatives, and the Categories group lists — adding more chips used to widen
+  that column and squeeze all the others, so the layout jumped around. Those
+  tables now use a fixed column layout (a shared convention), so columns keep
+  consistent, aligned widths and the chips simply wrap to more rows.
 - **The module-policy "Add Exceptions" finder no longer hides its results.** When
   searching for a module to allow/forbid as an exception, the results list was
   clipped by the section panel, so anything past the first match — and the list's

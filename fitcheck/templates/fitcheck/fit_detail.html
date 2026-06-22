@@ -148,11 +148,14 @@
                 <span class="ms-1">{{ section.section }}</span>
             </div>
             <div class="card-body p-0">
-                <table class="table table-sm align-middle mb-0">
+                <table class="table table-sm align-middle mb-0 fc-table-fixed">
+                    <colgroup>
+                        <col style="width: 45%"><col style="width: 10%"><col style="width: 22%"><col style="width: 23%">
+                    </colgroup>
                     <tbody>
                         {% for item in section.items %}
                             <tr>
-                                <td style="width: 45%">
+                                <td>
                                     <img class="fc-module-icon" src="https://images.evetech.net/types/{{ item.module_type_id }}/icon?size=32"
                                          alt="" width="24" height="24">
                                     {{ item.module_type.name }}
@@ -163,13 +166,13 @@
                                         <i class="fa-solid fa-circle-info text-info ms-1" title="{{ item.notes }}"></i>
                                     {% endif %}
                                 </td>
-                                <td style="width: 10%">
+                                <td>
                                     &times;{{ item.quantity }}
                                     {% if item.min_quantity_pct != 100 %}
                                         <small class="text-muted">({% blocktranslate with pct=item.min_quantity_pct %}min {{ pct }}%{% endblocktranslate %})</small>
                                     {% endif %}
                                 </td>
-                                <td style="width: 22%">
+                                <td>
                                     {% if item.no_enforcement %}
                                         <span class="badge bg-secondary">{% translate "No enforcement" %}</span>
                                     {% else %}

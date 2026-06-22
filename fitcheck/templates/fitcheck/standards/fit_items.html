@@ -174,7 +174,10 @@
                 <span class="ms-1">{{ group.list.0.item.get_section_display }}</span>
             </div>
             <div class="card-body p-0">
-                <table class="table table-sm fitcheck-items align-middle mb-0">
+                <table class="table table-sm fitcheck-items align-middle mb-0 fc-table-fixed">
+                    <colgroup>
+                        <col style="width: 28%"><col style="width: 18%"><col style="width: 14%"><col style="width: 10%"><col style="width: 30%">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>{% translate "Module" %}</th>
@@ -237,7 +240,7 @@
                                         </span>
                                     {% endif %}
                                 </td>
-                                <td style="min-width: 18rem" data-exc-cell>
+                                <td data-exc-cell>
                                     {% for ov in row.overrides %}
                                         <span class="badge {% if ov.obj.mode == 'I' %}bg-success{% else %}bg-danger{% endif %} me-1 mb-1">
                                             {{ ov.obj.alt_type.name }}
