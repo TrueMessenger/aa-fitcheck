@@ -122,6 +122,21 @@ time-sensitive ESI request:
 - Controlled by the `FITCHECK_ASSET_SOURCE` setting (`auto` default / `esi` / `corptools`).
 - corptools is a soft dependency: nothing changes when it isn't installed.
 
+**corptools is an optimisation, not a requirement.** Every Fit Check feature that reads ship
+inventory works without corptools:
+
+| Path | How it works without corptools |
+|---|---|
+| Pilot self-validates ("My Ships") | Live ESI via the pilot's own fitcheck token |
+| Member inventory scan | Live ESI via **any** `esi-assets.read_assets.v1` token on the auth for that character — including tokens granted to [aa-memberaudit](https://github.com/GoosefleetEO/aa-memberaudit) or other apps; django-esi shares tokens across apps by scope |
+| ESI-saved fittings import | `esi-fittings.read_fittings.v1` — unrelated to asset read |
+| EFT paste | No ESI token required at all |
+
+A character that has **neither** a fitcheck asset token **nor** a corptools cache record is simply
+skipped in the member scan and appears in the "characters without a token" section. Encouraging
+pilots to grant the asset scope (prompted by the "My Ships" feature they already use) is the
+easiest way to expand coverage without requiring corptools.
+
 ### Review Workflow
 
 - Filterable review queue (by pilot, doctrine, verdict, status).
