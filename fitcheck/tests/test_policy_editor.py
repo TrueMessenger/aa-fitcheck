@@ -70,6 +70,9 @@ class TestFitItemsEditor(PolicyEditorTestCase):
         response = self.client.get(url)
         self.assertContains(response, "Heat Sink II")
         self.assertContains(response, "Nitrogen Isotopes")
+        # Column header is concise; the old "(Checked = Allowed)" hint is gone.
+        self.assertContains(response, "Allowed Meta Groups")
+        self.assertNotContains(response, "(Checked = Allowed)")
 
     def test_save_policy_meta_groups_and_quantity_pct(self):
         self.client.force_login(self.manager)

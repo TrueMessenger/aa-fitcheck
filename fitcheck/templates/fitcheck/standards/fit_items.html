@@ -34,6 +34,13 @@
             position: absolute; right: .55rem; top: 50%; transform: translateY(-50%);
             color: #6c757d; pointer-events: none; font-size: .85em;
         }
+        /* The "Add Exceptions" finder's floating result list (position:absolute,
+           z-index 30) must escape the section panel. base.html clips the panel
+           (.fc-finding-section { overflow:hidden }); relax it on THIS page only so
+           the list shows past the panel edge with a usable scrollbar. Round the
+           header's top corners so the panels still look clipped/rounded. */
+        .fc-finding-section { overflow: visible; }
+        .fc-finding-section-head { border-top-left-radius: .45rem; border-top-right-radius: .45rem; }
     </style>
 {% endblock %}
 
@@ -172,7 +179,7 @@
                         <tr>
                             <th>{% translate "Module" %}</th>
                             <th>{% translate "Policy" %}</th>
-                            <th>{% translate "Allowed Meta Groups (Checked = Allowed)" %}</th>
+                            <th>{% translate "Allowed Meta Groups" %}</th>
                             <th title="{% translate 'How far below the listed quantity still passes - e.g. 1000 Nanite Repair Paste at 50% passes with 500 or more. Slot modules always require the exact count. The checker validates against the rounded-up required amount.' %}">{% translate "Qty % Pass" %}</th>
                             <th title="{% translate 'Per-module include/exclude overrides - force-allow a specific module as a substitute, or forbid one the policy would otherwise accept.' %}">{% translate "Exceptions" %}</th>
                         </tr>

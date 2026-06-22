@@ -30,6 +30,12 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 ## [Unreleased]
 
 ### Fixed
+- **The module-policy "Add Exceptions" finder no longer hides its results.** When
+  searching for a module to allow/forbid as an exception, the results list was
+  clipped by the section panel, so anything past the first match — and the list's
+  scrollbar — was cut off. The list now shows in full, floating over the panel
+  edge. (The "Allowed Meta Groups" column header also drops its redundant
+  "(Checked = Allowed)" suffix.)
 - **Capital jump fuel is now counted wherever it sits.** A doctrine's fuel-bay
   requirement is now satisfied by isotopes the pilot holds in the **fuel bay, the
   cargo hold, or the fleet/freight hangar** (the last two both arrive as cargo) —
