@@ -22,21 +22,6 @@ from ..models import (
 )
 
 
-# Per-item policy fields mirrored from a DoctrineFitItem (or another
-# AssignmentItemPolicy) into an AssignmentItemPolicy snapshot. The BOM (section,
-# type, qty, charge) is denormalised separately from the source item.
-_POLICY_FIELDS = (
-    "policy",
-    "min_meta_level",
-    "allowed_meta_groups",
-    "checked_attributes",
-    "attribute_bounds",
-    "allow_mutated",
-    "min_quantity_pct",
-    "notes",
-)
-
-
 def _policy_kwargs_from(obj) -> dict:
     """Pull the policy fields off a DoctrineFitItem or AssignmentItemPolicy,
     copying the JSON containers so the snapshot never shares a mutable ref."""
