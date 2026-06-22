@@ -815,3 +815,48 @@ class FebGroupSelectorTests(ViewTestCase):
         self._post(self.bs_fit, feb_frigate_group_ids=["99999"])
         self.bs_fit.refresh_from_db()
         self.assertEqual(self.bs_fit.feb_frigate_type_ids or [], [])
+
+
+class TestSettingsHub(ViewTestCase):
+    """The Settings tab consolidates fittings-import + enforcement/global
+    settings; each section is gated by its own permission."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.policy_admin = create_user(
+            "policyadmin", permissions=["basic_access", "manage_policies"]
+        )
+
+    def test_hub_denies_user_without_manage_perms(self):
+        self.client.force_login(self.member)  # basic_access only
+        self.assertEqual(
+            self.client.get(reverse("fitcheck:settings_home")).status_code, 403
+        )
+
+    def test_hub_shows_import_section_for_doctrine_manager(self):
+        self.client.force_login(self.manager)  # manage_doctrines, not manage_policies
+        response = self.client.get(reverse("fitcheck:settings_home"))
+        self.assertEqual(response.status_code, 200)
+        # Import section + the manual (always-available) ingress method.
+        self.assertContains(response, reverse("fitcheck:standard_import"))
+        # No enforcement section without manage_policies.
+        self.assertNotContains(response, reverse("fitcheck:enforcement_settings"))
+
+    def test_hub_shows_enforcement_section_for_policy_admin(self):
+        self.client.force_login(self.policy_admin)
+        response = self.client.get(reverse("fitcheck:settings_home"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("fitcheck:enforcement_settings"))
+        # No import section without manage_doctrines.
+        self.assertNotContains(response, reverse("fitcheck:standard_import"))
+
+    def test_settings_tab_links_in_nav_for_manager(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("fitcheck:index"))
+        self.assertContains(response, reverse("fitcheck:settings_home"))
+
+    def test_settings_tab_hidden_from_plain_member(self):
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("fitcheck:index"))
+        self.assertNotContains(response, reverse("fitcheck:settings_home"))

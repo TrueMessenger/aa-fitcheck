@@ -1735,6 +1735,32 @@ def policy_list(request):
 
 
 @login_required
+def settings_home(request):
+    """Settings hub: the fittings-import ingress methods plus site-wide
+    enforcement / global settings. Each section is gated by its own permission
+    (`manage_doctrines` for import, `manage_policies` for enforcement); the tab
+    shows for anyone who can reach at least one section."""
+    from django.core.exceptions import PermissionDenied
+
+    from ..services.fittings_import import fittings_installed
+
+    can_import = request.user.has_perm("fitcheck.manage_doctrines")
+    can_enforce = request.user.has_perm("fitcheck.manage_policies")
+    if not (can_import or can_enforce):
+        raise PermissionDenied()
+    return render(
+        request,
+        "fitcheck/settings/home.html",
+        {
+            "page_title": _("Settings"),
+            "can_import": can_import,
+            "can_enforce": can_enforce,
+            "fittings_available": fittings_installed(),
+        },
+    )
+
+
+@login_required
 @permission_required("fitcheck.manage_policies")
 def enforcement_settings(request):
     """Site-wide enforcement modes for implants / FEB / fuel / boosters."""

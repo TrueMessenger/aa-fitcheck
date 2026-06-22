@@ -8,9 +8,6 @@
             {% translate "Slot-group enforcement policies. Apply them to fittings from the Fittings & Standards pages. Visible to Auth admins and plugin admins only." %}
         </div>
         <div class="ms-auto d-flex gap-2">
-            <a class="btn btn-warning btn-sm" href="{% url 'fitcheck:enforcement_settings' %}">
-                <i class="fa-solid fa-scale-balanced"></i> {% translate "Enforcement Settings" %}
-            </a>
             <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:policy_create' %}">
                 <i class="fa-solid fa-plus"></i> {% translate "New Policy" %}
             </a>

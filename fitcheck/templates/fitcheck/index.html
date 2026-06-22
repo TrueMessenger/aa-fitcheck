@@ -18,11 +18,9 @@
         </div>
         {% if perms.fitcheck.manage_doctrines %}
             <div class="ms-auto d-flex gap-2">
-                {% if fittings_available %}
-                    <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:fittings_plugin_import' %}">
-                        <i class="fa-solid fa-file-import"></i> {% translate "Import from Fittings Plugin" %}
-                    </a>
-                {% endif %}
+                <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:settings_home' %}">
+                    <i class="fa-solid fa-file-import"></i> {% translate "Import Fittings" %}
+                </a>
                 <div class="btn-group">
                     <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:doctrine_create' %}?mode=guided">
                         <i class="fa-solid fa-wand-magic-sparkles"></i> {% translate "New Doctrine" %}
@@ -52,11 +50,9 @@
             {% if perms.fitcheck.manage_doctrines %}
                 <p class="mb-3">{% translate "No doctrines yet. Import them from the Fittings plugin, or create one from scratch." %}</p>
                 <div class="d-flex gap-2 justify-content-center">
-                    {% if fittings_available %}
-                        <a class="btn btn-primary" href="{% url 'fitcheck:fittings_plugin_import' %}">
-                            <i class="fa-solid fa-file-import"></i> {% translate "Import from Fittings Plugin" %}
-                        </a>
-                    {% endif %}
+                    <a class="btn btn-primary" href="{% url 'fitcheck:settings_home' %}">
+                        <i class="fa-solid fa-file-import"></i> {% translate "Import Fittings" %}
+                    </a>
                     <a class="btn btn-primary" href="{% url 'fitcheck:doctrine_create' %}?mode=guided">
                         <i class="fa-solid fa-wand-magic-sparkles"></i> {% translate "Guided Creation" %}
                     </a>
