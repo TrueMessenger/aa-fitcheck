@@ -817,6 +817,36 @@ class FebGroupSelectorTests(ViewTestCase):
         self.assertEqual(self.bs_fit.feb_frigate_type_ids or [], [])
 
 
+class TestEsiAccessConsolidation(ViewTestCase):
+    """The per-scope token grants and the saved-fittings audit are replaced by a
+    single grant_all_esi flow; saved fittings are gone (inventory is what we audit)."""
+
+    def test_retired_token_and_saved_fittings_urls_removed(self):
+        from django.urls import NoReverseMatch
+
+        for name in [
+            "add_asset_token",
+            "add_clones_token",
+            "esi_saved_fittings",
+            "add_fittings_read_token",
+        ]:
+            with self.assertRaises(NoReverseMatch):
+                reverse(f"fitcheck:{name}")
+
+    def test_grant_all_esi_route_exists(self):
+        self.assertTrue(reverse("fitcheck:grant_all_esi"))
+
+    def test_save_to_eve_write_token_still_exists(self):
+        # Save-to-EVE keeps its targeted write-token flow.
+        self.assertTrue(reverse("fitcheck:add_fittings_write_token"))
+
+    def test_pilot_fittings_offers_connect_esi_not_saved_fittings(self):
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("fitcheck:pilot_fittings"))
+        self.assertContains(response, reverse("fitcheck:grant_all_esi"))
+        self.assertNotContains(response, "Import my saved fittings")
+
+
 class TestSettingsHub(ViewTestCase):
     """The Settings tab consolidates fittings-import + enforcement/global
     settings; each section is gated by its own permission."""

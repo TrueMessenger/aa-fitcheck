@@ -7,32 +7,23 @@
         <div class="alert alert-warning d-flex align-items-center gap-2">
             <i class="fa-solid fa-key"></i>
             <div>
-                {% translate "These characters have no asset token yet:" %}
+                {% translate "These characters need ESI access before their ships show here:" %}
                 {% for character in inventory.characters_without_token %}
                     <strong>{{ character.character_name }}</strong>{% if not forloop.last %}, {% endif %}
                 {% endfor %}
             </div>
-            <a class="btn btn-sm btn-warning ms-auto text-nowrap" href="{% url 'fitcheck:add_asset_token' %}">
-                <i class="fa-solid fa-key"></i> {% translate "Add asset token" %}
+            <a class="btn btn-sm btn-warning ms-auto text-nowrap" href="{% url 'fitcheck:grant_all_esi' %}?next=inventory">
+                <i class="fa-solid fa-key"></i> {% translate "Connect ESI access" %}
             </a>
         </div>
     {% endif %}
     <div class="alert alert-secondary d-flex align-items-center gap-2 py-2">
-        <i class="fa-solid fa-brain"></i>
+        <i class="fa-solid fa-circle-info"></i>
         <div class="small">
-            {% translate "Optional: grant the implant scope so submissions can verify the implants plugged into your active clone." %}
+            {% translate "One grant covers everything: your ship inventory, private-structure (Citadel) names with system/region, the implants in your active clone, and saving fits to EVE. Scopes you've already granted to another Auth app - or that corptools provides - are reused, so you're only asked for what's missing." %}
         </div>
-        <a class="btn btn-sm btn-secondary ms-auto text-nowrap" href="{% url 'fitcheck:add_clones_token' %}">
-            <i class="fa-solid fa-brain"></i> {% translate "Add implant scope" %}
-        </a>
-    </div>
-    <div class="alert alert-secondary d-flex align-items-center gap-2 py-2">
-        <i class="fa-solid fa-map-location-dot"></i>
-        <div class="small">
-            {% translate "Private structures (Citadels) show as an ID until you re-grant your asset token, which now also names structures and adds system/region." %}
-        </div>
-        <a class="btn btn-sm btn-secondary ms-auto text-nowrap" href="{% url 'fitcheck:add_asset_token' %}">
-            <i class="fa-solid fa-key"></i> {% translate "Re-grant asset token" %}
+        <a class="btn btn-sm btn-secondary ms-auto text-nowrap" href="{% url 'fitcheck:grant_all_esi' %}?next=inventory">
+            <i class="fa-solid fa-key"></i> {% translate "Connect / refresh ESI access" %}
         </a>
     </div>
     {% for name, reason in inventory.errors.items %}
@@ -96,9 +87,9 @@
             {% if filters.character or filters.location or filters.group or filters.q %}
                 <a class="btn btn-sm btn-secondary" href="{% url 'fitcheck:ship_inventory' %}">{% translate "Clear" %}</a>
             {% endif %}
-            <a class="btn btn-sm btn-primary ms-auto" href="{% url 'fitcheck:add_asset_token' %}"
-               title="{% translate 'Grant the assets scope for another character via EVE SSO' %}">
-                <i class="fa-solid fa-key"></i> {% translate "Add asset token" %}
+            <a class="btn btn-sm btn-primary ms-auto" href="{% url 'fitcheck:grant_all_esi' %}?next=inventory"
+               title="{% translate 'Grant all pilot ESI access for another character via EVE SSO' %}">
+                <i class="fa-solid fa-key"></i> {% translate "Connect ESI access" %}
             </a>
         </div>
     </form>
@@ -142,7 +133,7 @@
                 <div class="col-12">
                     <div class="fc-empty">
                         <i class="fa-solid fa-satellite-dish fa-2x mb-3 d-block"></i>
-                        {% translate "No ships found - adjust the filters, or add an ESI token with the assets scope." %}
+                        {% translate "No ships found - adjust the filters, or connect ESI access above." %}
                     </div>
                 </div>
             {% endfor %}

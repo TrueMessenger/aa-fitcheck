@@ -56,10 +56,9 @@ urlpatterns = [
     # Pilot Fittings tab (own submissions + ESI ship validation)
     path("pilot/", member.pilot_fittings, name="pilot_fittings"),
     path("pilot/inventory/", member.ship_inventory, name="ship_inventory"),
-    path("pilot/inventory/token/", member.add_asset_token, name="add_asset_token"),
-    path("pilot/clones-token/", member.add_clones_token, name="add_clones_token"),
-    path("pilot/esi-fittings/", member.esi_saved_fittings, name="esi_saved_fittings"),
-    path("pilot/esi-fittings/token/", member.add_fittings_read_token, name="add_fittings_read_token"),
+    # One SSO consent for every pilot ESI scope (assets/structures/implants/
+    # fittings-write), replacing the per-scope grant flows.
+    path("pilot/connect-esi/", member.grant_all_esi, name="grant_all_esi"),
     path(
         "pilot/fittings-write-token/",
         member.add_fittings_write_token,

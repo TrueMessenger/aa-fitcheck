@@ -56,6 +56,13 @@ ASSET_GRANT_SCOPES = ASSET_SCOPES + STRUCTURE_SCOPES
 FITTINGS_WRITE_SCOPES = ["esi-fittings.write_fittings.v1"]
 FITTINGS_READ_SCOPES = ["esi-fittings.read_fittings.v1"]
 CLONES_SCOPES = ["esi-clones.read_implants.v1"]
+# Every ESI scope a pilot's audit features can use, requested in ONE SSO consent
+# (see views.member.grant_all_esi) instead of one prompt per feature: assets +
+# structures (My Ships inventory & location names), implants (verify plugged-in
+# implants), and fittings-write (Save-to-EVE). Scopes already shared from another
+# Auth app or served by corptools are reused, so the grant only asks for what's
+# genuinely missing (see existing_token / get_ship_inventory).
+PILOT_GRANT_SCOPES = ASSET_GRANT_SCOPES + CLONES_SCOPES + FITTINGS_WRITE_SCOPES
 
 _NAME_CHUNK = 990  # ESI caps assets/names and universe/names around 1000 ids
 # Per-ship ceiling on dynamic-item (abyssal roll) lookups. Each is its own ESI
