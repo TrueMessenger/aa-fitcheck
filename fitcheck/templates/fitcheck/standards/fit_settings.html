@@ -6,41 +6,6 @@
 
 {% block fitcheck_css %}
     <link rel="stylesheet" href="{% static 'fitcheck/vendor/tom-select.bootstrap5.min.css' %}">
-    <style>
-        /* FEB frigate pills match the green "Save" button (btn-success).
-           Selector specificity must beat tom-select's own
-           ".ts-wrapper.multi .ts-control > div" rule. */
-        .ts-wrapper.multi .ts-control > .item,
-        .ts-wrapper.multi .ts-control > .item.active {
-            background-color: var(--bs-success);
-            color: #fff;
-            border-color: var(--bs-success);
-        }
-        .ts-wrapper.multi .ts-control > .item .remove {
-            border-left-color: rgba(255, 255, 255, 0.4);
-            color: #fff;
-        }
-        .ts-wrapper.multi .ts-control > .item .remove:hover {
-            background-color: rgba(255, 255, 255, 0.2);
-        }
-        /* The options dropdown must be readable on the dark AA theme:
-           white background, black text, green highlight on the active option. */
-        .ts-dropdown {
-            background-color: #fff;
-            color: #000;
-            border-color: #ced4da;
-        }
-        .ts-dropdown .option,
-        .ts-dropdown .no-results,
-        .ts-dropdown .optgroup-header {
-            color: #000;
-        }
-        .ts-dropdown .option.active,
-        .ts-dropdown .active {
-            background-color: var(--bs-success);
-            color: #fff;
-        }
-    </style>
 {% endblock %}
 
 {% block fitcheck_content %}

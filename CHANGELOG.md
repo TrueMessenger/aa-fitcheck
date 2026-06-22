@@ -43,6 +43,14 @@ Unreleased set contains new features, so the next release will be a minor bump.)
   as fuel) into the Fuel Bay. No schema change.
 
 ### Changed
+- **Multi-select pickers are now readable and consistently styled everywhere.**
+  The tokenized multi-select dropdowns (category group/doctrine/fitting pickers,
+  the FEB "Allowed" picker, module exception pickers) now render with a **white
+  options panel and black text** on every page — previously only the FEB picker
+  carried that styling, so other pickers showed dark, hard-to-read dropdowns on
+  the dark theme. Selected items render as **teal pills** (matching the
+  Save/confirm buttons) app-wide. The styling now lives once in the base template
+  instead of being copied per page.
 - **One-click ESI access instead of per-scope token prompts.** Pilots used to be
   asked for each ESI scope separately (assets, then implants, then re-grant for
   structure names). Now a single **Connect ESI access** button — on the Pilot
