@@ -5,11 +5,12 @@ from django.utils.translation import gettext_lazy as _
 
 from .constants import (
     EveCategoryId,
-    EveMetaGroupId,
     FEB_CAPABLE_HULL_GROUP_IDS,
     FEB_ELIGIBLE_EXCEPTION_NAMES,
     FEB_ELIGIBLE_GROUP_IDS,
     FEB_ELIGIBLE_GROUP_LABELS,
+    META_GROUP_DISPLAY_ORDER,
+    META_GROUP_LABELS,
 )
 from django.contrib.auth.models import Group
 
@@ -24,13 +25,14 @@ from .models import (
 )
 from .models.doctrine import EnforcementMode, SubstitutionPolicy
 
-META_GROUP_CHOICES = (
-    (EveMetaGroupId.TECH_I, _("Tech I")),
-    (EveMetaGroupId.TECH_II, _("Tech II")),
-    (EveMetaGroupId.STORYLINE, _("Storyline")),
-    (EveMetaGroupId.FACTION, _("Faction")),
-    (EveMetaGroupId.OFFICER, _("Officer")),
-    (EveMetaGroupId.DEADSPACE, _("Deadspace")),
+# Full static fallback list (every labelled non-abyssal meta group), derived from
+# the single source of truth in constants. The policy editor narrows this per item
+# to the groups actually possible for that item via
+# FitItemPolicyForm(possible_meta_groups_map=...).
+META_GROUP_CHOICES = tuple(
+    (gid, META_GROUP_LABELS[gid])
+    for gid in META_GROUP_DISPLAY_ORDER
+    if gid in META_GROUP_LABELS
 )
 
 
@@ -335,6 +337,28 @@ class FitItemPolicyForm(forms.ModelForm):
         widget=forms.CheckboxSelectMultiple,
         label=_("Allowed Meta Groups"),
     )
+
+    def __init__(self, *args, possible_meta_groups_map=None, **kwargs):
+        """``possible_meta_groups_map`` (type_id -> set of meta group ids actually
+        present in that item's variant family, from
+        ``substitutions.possible_meta_groups_bulk``) narrows the allow-list to the
+        groups that can really exist for this item - so a rig only offers Tech I/II,
+        ammo never offers Officer, etc. Restricting the field's choices also makes
+        the form reject an impossible group submitted via a crafted POST. When the
+        map is omitted (e.g. admin/tests) the full static list is kept (no lockout)."""
+        super().__init__(*args, **kwargs)
+        if possible_meta_groups_map is not None:
+            possible = set(
+                possible_meta_groups_map.get(
+                    getattr(self.instance, "module_type_id", None), set()
+                )
+            )
+            ordered = [g for g in META_GROUP_DISPLAY_ORDER if g in possible]
+            extra = sorted(possible.difference(META_GROUP_DISPLAY_ORDER))
+            self.fields["allowed_meta_groups"].choices = [
+                (g, META_GROUP_LABELS.get(g, _("Meta group %(id)d") % {"id": g}))
+                for g in ordered + extra
+            ]
     min_quantity_pct = forms.IntegerField(
         required=False,
         min_value=1,

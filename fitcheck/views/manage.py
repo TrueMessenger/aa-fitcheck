@@ -45,7 +45,11 @@ from ..models import (
 )
 from ..models.doctrine import POLICY_SECTIONS, SubstitutionPolicy
 from ..services.doctrine_import import DoctrineImportError, _get_or_create_eve_type, import_fit
-from ..services.substitutions import abyssal_name_for_item, rollable_attributes_for_item
+from ..services.substitutions import (
+    abyssal_name_for_item,
+    possible_meta_groups_bulk,
+    rollable_attributes_for_item,
+)
 
 
 def _bump_fit_version(fit: DoctrineFit) -> None:
@@ -400,12 +404,25 @@ def _row_overrides(item, *, assignment: bool) -> list:
 
 
 def _build_policy_row(
-    form, item, last_section, *, assignment: bool, meta_groups: dict, differs: bool = False
+    form,
+    item,
+    last_section,
+    *,
+    assignment: bool,
+    meta_groups: dict,
+    possible_map: dict | None = None,
+    differs: bool = False,
 ):
     """Shared row dict for the policy editor (source-fit and per-assignment).
     `differs` marks an assignment row whose policy has drifted from its source
     template (assignment mode only)."""
     rollable = rollable_attributes_for_item(item)
+    # No real substitutes exist when the family offers only the module's own meta
+    # group (the exact type itself is never a substitute) - surfaced as a hint.
+    meta_groups_trivial = (
+        possible_map is not None
+        and len(possible_map.get(item.module_type_id, set())) <= 1
+    )
     return {
         "form": form,
         "item": item,
@@ -414,6 +431,7 @@ def _build_policy_row(
         ),
         "is_quantity_section": item.section in LEEWAY_SECTIONS,
         "own_meta_group": meta_groups.get(item.module_type_id),
+        "meta_groups_trivial": meta_groups_trivial,
         "has_rollable": bool(rollable),
         # Selected attributes for the at-a-glance summary on the row (req: show
         # saved abyssal bounds without reopening the modal).
@@ -435,8 +453,16 @@ def fit_items(request, fit_pk: int):
         .select_related("module_type", "charge_type")
         .prefetch_related("overrides__alt_type")
     )
+    # Per-item: only the meta groups that actually exist in each module's variant
+    # family are offered (and validated) as substitution exceptions.
+    possible_map = possible_meta_groups_bulk(
+        set(queryset.values_list("module_type_id", flat=True))
+    )
+    form_kwargs = {"possible_meta_groups_map": possible_map}
     if request.method == "POST":
-        formset = FitItemPolicyFormSet(request.POST, queryset=queryset)
+        formset = FitItemPolicyFormSet(
+            request.POST, queryset=queryset, form_kwargs=form_kwargs
+        )
         if formset.is_valid():
             changed = any(form.has_changed() for form in formset.forms)
             formset.save()
@@ -453,7 +479,7 @@ def fit_items(request, fit_pk: int):
             return redirect("fitcheck:manage_fit_items", fit_pk=fit.pk)
         messages.error(request, _("Please fix the errors below."))
     else:
-        formset = FitItemPolicyFormSet(queryset=queryset)
+        formset = FitItemPolicyFormSet(queryset=queryset, form_kwargs=form_kwargs)
 
     forms_sorted = sorted(
         formset.forms, key=lambda f: SECTION_ORDER.get(f.instance.section, 99)
@@ -468,7 +494,14 @@ def fit_items(request, fit_pk: int):
     for form in forms_sorted:
         item = form.instance
         rows.append(
-            _build_policy_row(form, item, last_section, assignment=False, meta_groups=meta_groups)
+            _build_policy_row(
+                form,
+                item,
+                last_section,
+                assignment=False,
+                meta_groups=meta_groups,
+                possible_map=possible_map,
+            )
         )
         last_section = item.section
     # "Used in N doctrines" panel: each combination this fit is graded under
@@ -522,8 +555,14 @@ def assignment_items(request, assignment_pk: int):
         .select_related("module_type", "charge_type", "source_item")
         .prefetch_related("overrides__alt_type", "source_item__overrides")
     )
+    possible_map = possible_meta_groups_bulk(
+        set(queryset.values_list("module_type_id", flat=True))
+    )
+    form_kwargs = {"possible_meta_groups_map": possible_map}
     if request.method == "POST":
-        formset = AssignmentItemPolicyFormSet(request.POST, queryset=queryset)
+        formset = AssignmentItemPolicyFormSet(
+            request.POST, queryset=queryset, form_kwargs=form_kwargs
+        )
         if formset.is_valid():
             changed = any(form.has_changed() for form in formset.forms)
             formset.save()
@@ -543,7 +582,7 @@ def assignment_items(request, assignment_pk: int):
             )
         messages.error(request, _("Please fix the errors below."))
     else:
-        formset = AssignmentItemPolicyFormSet(queryset=queryset)
+        formset = AssignmentItemPolicyFormSet(queryset=queryset, form_kwargs=form_kwargs)
 
     forms_sorted = sorted(
         formset.forms, key=lambda f: SECTION_ORDER.get(f.instance.section, 99)
@@ -564,6 +603,7 @@ def assignment_items(request, assignment_pk: int):
                 last_section,
                 assignment=True,
                 meta_groups=meta_groups,
+                possible_map=possible_map,
                 differs=assignment_item_differs(item),
             )
         )

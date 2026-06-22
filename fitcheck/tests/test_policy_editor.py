@@ -4,6 +4,7 @@ from django.urls import reverse
 from ..constants import EveMetaGroupId, Section
 from ..models import DoctrineFitItem, FitItemOverride
 from ..models.doctrine import SubstitutionPolicy
+from ..services.substitutions import possible_meta_groups_for_item
 from .testdata.factories import add_item, create_doctrine, create_fit, create_user
 from .testdata.sde_fixtures import T, create_sde_testdata
 
@@ -35,11 +36,16 @@ class PolicyEditorTestCase(TestCase):
         }
         for index, item in enumerate(items):
             prefix = f"form-{index}"
+            # Mirror the browser: only the meta-group boxes actually rendered for
+            # this item (its family's possible groups) can be submitted/checked.
+            possible = possible_meta_groups_for_item(item)
             values = {
                 "id": str(item.pk),
                 "policy": item.policy,
                 "allow_mutated": "on" if item.allow_mutated else "",
-                "allowed_meta_groups": [str(g) for g in (item.allowed_meta_groups or [])],
+                "allowed_meta_groups": [
+                    str(g) for g in (item.allowed_meta_groups or []) if g in possible
+                ],
                 "min_quantity_pct": str(item.min_quantity_pct),
                 "notes": item.notes,
             }
@@ -99,10 +105,75 @@ class TestFitItemsEditor(PolicyEditorTestCase):
     def test_unchanged_save_does_not_bump_version(self):
         self.client.force_login(self.manager)
         url = reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
+        # Normalize stored meta groups to each item's possible set first (the
+        # heal-on-save state). Only then is a subsequent editor save genuinely a
+        # no-op; an un-normalized [1..6] default would heal+bump on first save.
+        for item in DoctrineFitItem.objects.filter(fit=self.fit):
+            item.allowed_meta_groups = sorted(possible_meta_groups_for_item(item))
+            item.save(update_fields=["allowed_meta_groups"])
         old_version = self.fit.version
         self.client.post(url, self._formset_data(), follow=True)
         self.fit.refresh_from_db()
         self.assertEqual(self.fit.version, old_version)
+
+    def test_editor_offers_only_possible_meta_groups(self):
+        self.client.force_login(self.manager)
+        url = reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
+        response = self.client.get(url)
+        # The Heat Sink family has Faction variants, so that checkbox is offered;
+        # no Officer/Deadspace heat sinks (nor isotopes) exist, so those labels
+        # never render on any row.
+        self.assertContains(response, "Faction")
+        self.assertNotContains(response, "Officer")
+        self.assertNotContains(response, "Deadspace")
+
+    def test_post_rejects_impossible_meta_group(self):
+        self.client.force_login(self.manager)
+        url = reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
+        data = self._formset_data(
+            {
+                self.low_item.pk: {
+                    "policy": SubstitutionPolicy.MEET_OR_BEAT,
+                    "allowed_meta_groups": [
+                        str(EveMetaGroupId.TECH_II),
+                        str(EveMetaGroupId.OFFICER),  # impossible for a heat sink
+                    ],
+                }
+            }
+        )
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, 200)  # invalid -> re-rendered
+        self.assertContains(response, "valid choice")  # Officer rejected by choices
+        self.low_item.refresh_from_db()
+        # Nothing saved: the policy change is rejected because it carried an
+        # impossible group, so the row stays at its untouched default.
+        self.assertEqual(self.low_item.policy, SubstitutionPolicy.VARIANTS)
+        self.assertEqual(sorted(self.low_item.allowed_meta_groups), [1, 2, 3, 4, 5, 6])
+
+    def test_save_heals_impossible_meta_groups(self):
+        # low_item ships with the [1..6] default (incl. impossible groups); a plain
+        # editor save drops everything outside its family's possible set.
+        self.assertEqual(sorted(self.low_item.allowed_meta_groups), [1, 2, 3, 4, 5, 6])
+        self.client.force_login(self.manager)
+        url = reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
+        self.client.post(url, self._formset_data(), follow=True)
+        self.low_item.refresh_from_db()
+        self.assertEqual(
+            set(self.low_item.allowed_meta_groups),
+            {EveMetaGroupId.TECH_I, EveMetaGroupId.TECH_II, EveMetaGroupId.FACTION},
+        )
+
+
+class TestAssignmentItemsEditor(PolicyEditorTestCase):
+    def test_assignment_editor_offers_only_possible_meta_groups(self):
+        from ..services.assignments import attach_fit_to_doctrine
+
+        assignment = attach_fit_to_doctrine(self.fit, self.doctrine, user=self.manager)
+        self.client.force_login(self.manager)
+        url = reverse("fitcheck:manage_assignment_items", args=[assignment.pk])
+        response = self.client.get(url)
+        self.assertContains(response, "Faction")
+        self.assertNotContains(response, "Officer")
 
 
 class TestOverrideEndpoints(PolicyEditorTestCase):

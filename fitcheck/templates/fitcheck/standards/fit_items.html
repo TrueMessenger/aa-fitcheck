@@ -198,6 +198,9 @@
                                 <td data-policy-cell>{{ row.form.policy }}</td>
                                 <td class="fitcheck-meta-groups" data-meta-cell>
                                     <div data-meta-groups>{{ row.form.allowed_meta_groups }}</div>
+                                    {% if row.meta_groups_trivial %}
+                                        <div class="small text-muted">{% translate "No variant substitutes exist for this module." %}</div>
+                                    {% endif %}
                                     <div class="fc-abyssal-wrap form-check" data-abyssal-wrap>
                                         {{ row.form.allow_mutated }}
                                         <label class="form-check-label" for="{{ row.form.allow_mutated.id_for_label }}">
