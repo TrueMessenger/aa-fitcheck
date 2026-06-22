@@ -80,7 +80,7 @@ class TestFitItemsEditor(PolicyEditorTestCase):
                 self.low_item.pk: {
                     "policy": SubstitutionPolicy.MEET_OR_BEAT,
                     "allowed_meta_groups": [
-                        str(EveMetaGroupId.TECH_II),
+                        str(EveMetaGroupId.TECH_I),
                         str(EveMetaGroupId.FACTION),
                     ],
                 },
@@ -94,7 +94,7 @@ class TestFitItemsEditor(PolicyEditorTestCase):
         self.assertEqual(self.low_item.policy, SubstitutionPolicy.MEET_OR_BEAT)
         self.assertEqual(
             sorted(self.low_item.allowed_meta_groups),
-            [EveMetaGroupId.TECH_II, EveMetaGroupId.FACTION],
+            [EveMetaGroupId.TECH_I, EveMetaGroupId.FACTION],
         )
         self.cargo_item.refresh_from_db()
         self.assertEqual(self.cargo_item.min_quantity_pct, 66)
@@ -120,12 +120,16 @@ class TestFitItemsEditor(PolicyEditorTestCase):
         self.client.force_login(self.manager)
         url = reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
         response = self.client.get(url)
-        # The Heat Sink family has Faction variants, so that checkbox is offered;
-        # no Officer/Deadspace heat sinks (nor isotopes) exist, so those labels
-        # never render on any row.
+        # Heat Sink II offers its substitutes' groups: Tech I + Faction. Tech II is
+        # NOT offered (the only Tech II is the item itself); Officer/Deadspace never
+        # exist. The isotope has no variants, so its row shows no checkboxes - just
+        # the "no substitutes" hint.
+        self.assertContains(response, "Tech I")
         self.assertContains(response, "Faction")
+        self.assertNotContains(response, "Tech II")
         self.assertNotContains(response, "Officer")
         self.assertNotContains(response, "Deadspace")
+        self.assertContains(response, "No variant substitutes exist")
 
     def test_post_rejects_impossible_meta_group(self):
         self.client.force_login(self.manager)
@@ -135,7 +139,7 @@ class TestFitItemsEditor(PolicyEditorTestCase):
                 self.low_item.pk: {
                     "policy": SubstitutionPolicy.MEET_OR_BEAT,
                     "allowed_meta_groups": [
-                        str(EveMetaGroupId.TECH_II),
+                        str(EveMetaGroupId.FACTION),
                         str(EveMetaGroupId.OFFICER),  # impossible for a heat sink
                     ],
                 }
@@ -160,8 +164,17 @@ class TestFitItemsEditor(PolicyEditorTestCase):
         self.low_item.refresh_from_db()
         self.assertEqual(
             set(self.low_item.allowed_meta_groups),
-            {EveMetaGroupId.TECH_I, EveMetaGroupId.TECH_II, EveMetaGroupId.FACTION},
+            {EveMetaGroupId.TECH_I, EveMetaGroupId.FACTION},
         )
+
+    def test_abyssal_checkbox_only_when_abyssal_variant_exists(self):
+        self.client.force_login(self.manager)
+        url = reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
+        # Neither the heat sink nor the isotope has an abyssal variant.
+        self.assertNotContains(self.client.get(url), "Abyssal (mutated")
+        # A Stasis Webifier does have one -> the checkbox appears.
+        add_item(self.fit, Section.MED, T.WEB_II)
+        self.assertContains(self.client.get(url), "Abyssal (mutated")
 
 
 class TestAssignmentItemsEditor(PolicyEditorTestCase):

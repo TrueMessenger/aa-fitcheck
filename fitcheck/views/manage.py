@@ -417,11 +417,11 @@ def _build_policy_row(
     `differs` marks an assignment row whose policy has drifted from its source
     template (assignment mode only)."""
     rollable = rollable_attributes_for_item(item)
-    # No real substitutes exist when the family offers only the module's own meta
-    # group (the exact type itself is never a substitute) - surfaced as a hint.
-    meta_groups_trivial = (
-        possible_map is not None
-        and len(possible_map.get(item.module_type_id, set())) <= 1
+    # No variant substitutes -> no meta-group checkboxes (the possible set is empty
+    # once the item itself is excluded). Surfaced as a hint when there is also no
+    # abyssal variant to allow.
+    meta_groups_trivial = possible_map is not None and not possible_map.get(
+        item.module_type_id
     )
     return {
         "form": form,
