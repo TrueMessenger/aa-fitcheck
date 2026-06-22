@@ -484,23 +484,6 @@ class ReviewDecisionForm(forms.Form):
     )
 
 
-class EftSubmitForm(forms.Form):
-    eft_text = forms.CharField(
-        label=_("Fit to Test (EFT Format)"),
-        widget=forms.Textarea(
-            attrs={
-                "rows": 16,
-                "placeholder": "[Hull, Fit Name]\n...",
-                "class": "form-control font-monospace",
-            }
-        ),
-        help_text=_(
-            "In game: Fitting window > hamburger menu > Copy. "
-            "Mutated modules: export from Pyfa with mutations included."
-        ),
-    )
-
-
 class EnforcementSettingsForm(forms.ModelForm):
     """Site-wide 4-mode enforcement selectors for the verification concerns."""
 

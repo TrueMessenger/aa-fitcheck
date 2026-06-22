@@ -11,6 +11,7 @@ from django.views.decorators.http import require_POST
 from ..forms import ReviewDecisionForm
 from ..models import Doctrine, FitSubmission
 from ..services.check_runner import review_submission
+from .member import _can_review
 
 
 def review_access_required(view):
@@ -19,10 +20,7 @@ def review_access_required(view):
 
     @wraps(view)
     def wrapper(request, *args, **kwargs):
-        if not (
-            request.user.has_perm("fitcheck.review_submissions")
-            or request.user.has_perm("fitcheck.secure_group_management")
-        ):
+        if not _can_review(request.user):
             raise PermissionDenied
         return view(request, *args, **kwargs)
 

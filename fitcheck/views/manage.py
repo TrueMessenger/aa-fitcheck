@@ -696,31 +696,28 @@ def module_search(request):
     return JsonResponse({"results": results, "off_slot": off_slot})
 
 
-@login_required
-@permission_required("fitcheck.manage_doctrines")
-@require_POST
-def override_add_bulk(request, item_pk: int):
-    """Create multiple FitItemOverrides at once (one mode per call). The
-    picker UI stages chips and submits the whole list with one Allow/Forbid
-    click, so we batch the writes and bump the fit version exactly once."""
-    item = get_object_or_404(
-        DoctrineFitItem.objects.select_related("fit", "module_type"), pk=item_pk
-    )
-    mode = request.POST.get("mode", FitItemOverride.Mode.INCLUDE)
-    if mode not in (FitItemOverride.Mode.INCLUDE, FitItemOverride.Mode.EXCLUDE):
+# --- shared bodies for the source-fit + per-assignment override/attr endpoints ---
+# Each twin pair below differs only in the override model, its FK field back to
+# the policy item, which fit to bump, and the redirect target; the body is shared.
+
+
+def _apply_bulk_overrides(request, item, fit, back, override_model, fk_field):
+    """Create many overrides at once (one mode per call) and bump the fit version
+    once. `override_model` is FitItemOverride or AssignmentItemOverride; `fk_field`
+    is its FK back to the policy item (``item`` / ``assignment_item``)."""
+    mode = request.POST.get("mode", override_model.Mode.INCLUDE)
+    if mode not in (override_model.Mode.INCLUDE, override_model.Mode.EXCLUDE):
         messages.error(request, _("Invalid override mode."))
-        return redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
-    raw_ids = request.POST.getlist("type_ids")
+        return back
     type_ids: list[int] = []
-    for raw in raw_ids:
+    for raw in request.POST.getlist("type_ids"):
         try:
             type_ids.append(int(raw))
         except (TypeError, ValueError):
             continue
     if not type_ids:
         messages.error(request, _("Pick at least one module from the search results."))
-        return redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
-
+        return back
     slot_kinds = SECTION_TO_SLOT_KINDS.get(item.section, ())
     sde_rows = {
         row["type_id"]: row["name"]
@@ -728,54 +725,69 @@ def override_add_bulk(request, item_pk: int):
             type_id__in=type_ids, slot_kind__in=slot_kinds, published=True
         ).values("type_id", "name")
     }
-
-    added = 0
-    skipped: list[str] = []
+    added, skipped = 0, []
     for type_id in type_ids:
         if type_id not in sde_rows:
             skipped.append(str(type_id))
             continue
-        if (
-            mode == FitItemOverride.Mode.EXCLUDE
-            and type_id == item.module_type_id
-        ):
+        if mode == override_model.Mode.EXCLUDE and type_id == item.module_type_id:
             skipped.append(sde_rows[type_id])
             continue
-        FitItemOverride.objects.update_or_create(
-            item=item,
+        override_model.objects.update_or_create(
+            **{fk_field: item},
             alt_type=_get_or_create_eve_type(type_id),
             defaults={"mode": mode},
         )
         added += 1
-
     if added:
-        _bump_fit_version(item.fit)
-        messages.success(
-            request,
-            _("Saved %(n)s override(s).") % {"n": added},
-        )
+        _bump_fit_version(fit)
+        messages.success(request, _("Saved %(n)s override(s).") % {"n": added})
     if skipped:
         messages.warning(
             request,
             _("Skipped %(n)s entr(y/ies) that didn't fit this slot or are the doctrine module itself: %(names)s.")
             % {"n": len(skipped), "names": ", ".join(skipped)},
         )
-    return redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
+    return back
 
 
-@login_required
-@permission_required("fitcheck.manage_doctrines")
-@require_POST
-def attribute_policy_save(request, item_pk: int):
-    """Save the per-attribute meet-or-beat selection for one fit item. The
+def _apply_single_override(request, item, fit, back, override_model, fk_field):
+    """Add one override from a typed module name (the OverrideAddForm flow)."""
+    form = OverrideAddForm(request.POST)
+    if form.is_valid():
+        name = form.cleaned_data["type_name"].strip()
+        sde_type = (
+            SdeType.objects.filter(name__iexact=name, published=True)
+            .order_by("type_id")
+            .first()
+        )
+        if sde_type is None:
+            messages.error(request, _("'%(name)s' is not a known type.") % {"name": name})
+        elif (
+            form.cleaned_data["mode"] == override_model.Mode.EXCLUDE
+            and sde_type.type_id == item.module_type_id
+        ):
+            messages.error(request, _("The doctrine module itself cannot be excluded."))
+        else:
+            override_model.objects.update_or_create(
+                **{fk_field: item},
+                alt_type=_get_or_create_eve_type(sde_type.type_id),
+                defaults={"mode": form.cleaned_data["mode"]},
+            )
+            _bump_fit_version(fit)
+            messages.success(request, _("Override saved: %(name)s.") % {"name": sde_type.name})
+    else:
+        messages.error(request, _("Enter a module name."))
+    return back
+
+
+def _apply_attribute_policy(request, item, fit, back):
+    """Save the per-attribute meet-or-beat selection for one policy item. The
     posted `attr_ids` become the item's explicit `checked_attributes`; attributes
     NOT listed are ignored at grading time (auto-pass). An empty selection clears
-    the list, restoring the engine's smart defaults."""
-    item = get_object_or_404(
-        DoctrineFitItem.objects.select_related("fit"), pk=item_pk
-    )
-    # Only attributes a mutaplasmid can actually roll for this module are accepted,
-    # so a stale/forged id can't smuggle an unrelated attribute into the comparison.
+    the list, restoring the engine's smart defaults. Only attributes a mutaplasmid
+    can actually roll for this module are accepted, so a stale/forged id can't
+    smuggle an unrelated attribute into the comparison."""
     candidates = {c["attr_id"]: c for c in rollable_attributes_for_item(item)}
     chosen: list[int] = []
     bounds: dict[str, dict] = {}
@@ -807,7 +819,7 @@ def attribute_policy_save(request, item_pk: int):
     item.checked_attributes = chosen
     item.attribute_bounds = bounds
     item.save(update_fields=["checked_attributes", "attribute_bounds"])
-    _bump_fit_version(item.fit)
+    _bump_fit_version(fit)
     if chosen:
         messages.success(
             request,
@@ -820,7 +832,33 @@ def attribute_policy_save(request, item_pk: int):
             _("Cleared required attributes for %(mod)s - using smart defaults.")
             % {"mod": item.module_type.name},
         )
-    return redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
+    return back
+
+
+@login_required
+@permission_required("fitcheck.manage_doctrines")
+@require_POST
+def override_add_bulk(request, item_pk: int):
+    """Create multiple FitItemOverrides at once (one mode per call). The
+    picker UI stages chips and submits the whole list with one Allow/Forbid
+    click, so we batch the writes and bump the fit version exactly once."""
+    item = get_object_or_404(
+        DoctrineFitItem.objects.select_related("fit", "module_type"), pk=item_pk
+    )
+    back = redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
+    return _apply_bulk_overrides(request, item, item.fit, back, FitItemOverride, "item")
+
+
+@login_required
+@permission_required("fitcheck.manage_doctrines")
+@require_POST
+def attribute_policy_save(request, item_pk: int):
+    """Save the per-attribute meet-or-beat selection for one fit item."""
+    item = get_object_or_404(
+        DoctrineFitItem.objects.select_related("fit"), pk=item_pk
+    )
+    back = redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
+    return _apply_attribute_policy(request, item, item.fit, back)
 
 
 @login_required
@@ -850,35 +888,8 @@ def override_add(request, item_pk: int):
     item = get_object_or_404(
         DoctrineFitItem.objects.select_related("fit", "module_type"), pk=item_pk
     )
-    form = OverrideAddForm(request.POST)
-    if form.is_valid():
-        name = form.cleaned_data["type_name"].strip()
-        sde_type = (
-            SdeType.objects.filter(name__iexact=name, published=True)
-            .order_by("type_id")
-            .first()
-        )
-        if sde_type is None:
-            messages.error(request, _("'%(name)s' is not a known type.") % {"name": name})
-        elif (
-            form.cleaned_data["mode"] == FitItemOverride.Mode.EXCLUDE
-            and sde_type.type_id == item.module_type_id
-        ):
-            messages.error(request, _("The doctrine module itself cannot be excluded."))
-        else:
-            FitItemOverride.objects.update_or_create(
-                item=item,
-                alt_type=_get_or_create_eve_type(sde_type.type_id),
-                defaults={"mode": form.cleaned_data["mode"]},
-            )
-            _bump_fit_version(item.fit)
-            messages.success(
-                request,
-                _("Override saved: %(name)s.") % {"name": sde_type.name},
-            )
-    else:
-        messages.error(request, _("Enter a module name."))
-    return redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
+    back = redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
+    return _apply_single_override(request, item, item.fit, back, FitItemOverride, "item")
 
 
 @login_required
@@ -920,50 +931,9 @@ def assignment_override_add_bulk(request, item_pk: int):
 
     item = _assignment_item(item_pk)
     back = redirect("fitcheck:manage_assignment_items", assignment_pk=item.assignment_id)
-    mode = request.POST.get("mode", AssignmentItemOverride.Mode.INCLUDE)
-    if mode not in (AssignmentItemOverride.Mode.INCLUDE, AssignmentItemOverride.Mode.EXCLUDE):
-        messages.error(request, _("Invalid override mode."))
-        return back
-    type_ids: list[int] = []
-    for raw in request.POST.getlist("type_ids"):
-        try:
-            type_ids.append(int(raw))
-        except (TypeError, ValueError):
-            continue
-    if not type_ids:
-        messages.error(request, _("Pick at least one module from the search results."))
-        return back
-    slot_kinds = SECTION_TO_SLOT_KINDS.get(item.section, ())
-    sde_rows = {
-        row["type_id"]: row["name"]
-        for row in SdeType.objects.filter(
-            type_id__in=type_ids, slot_kind__in=slot_kinds, published=True
-        ).values("type_id", "name")
-    }
-    added, skipped = 0, []
-    for type_id in type_ids:
-        if type_id not in sde_rows:
-            skipped.append(str(type_id))
-            continue
-        if mode == AssignmentItemOverride.Mode.EXCLUDE and type_id == item.module_type_id:
-            skipped.append(sde_rows[type_id])
-            continue
-        AssignmentItemOverride.objects.update_or_create(
-            assignment_item=item,
-            alt_type=_get_or_create_eve_type(type_id),
-            defaults={"mode": mode},
-        )
-        added += 1
-    if added:
-        _bump_fit_version(item.assignment.fit)
-        messages.success(request, _("Saved %(n)s override(s).") % {"n": added})
-    if skipped:
-        messages.warning(
-            request,
-            _("Skipped %(n)s entr(y/ies) that didn't fit this slot or are the doctrine module itself: %(names)s.")
-            % {"n": len(skipped), "names": ", ".join(skipped)},
-        )
-    return back
+    return _apply_bulk_overrides(
+        request, item, item.assignment.fit, back, AssignmentItemOverride, "assignment_item"
+    )
 
 
 @login_required
@@ -973,30 +943,10 @@ def assignment_override_add(request, item_pk: int):
     from ..models import AssignmentItemOverride
 
     item = _assignment_item(item_pk)
-    form = OverrideAddForm(request.POST)
-    if form.is_valid():
-        name = form.cleaned_data["type_name"].strip()
-        sde_type = (
-            SdeType.objects.filter(name__iexact=name, published=True).order_by("type_id").first()
-        )
-        if sde_type is None:
-            messages.error(request, _("'%(name)s' is not a known type.") % {"name": name})
-        elif (
-            form.cleaned_data["mode"] == AssignmentItemOverride.Mode.EXCLUDE
-            and sde_type.type_id == item.module_type_id
-        ):
-            messages.error(request, _("The doctrine module itself cannot be excluded."))
-        else:
-            AssignmentItemOverride.objects.update_or_create(
-                assignment_item=item,
-                alt_type=_get_or_create_eve_type(sde_type.type_id),
-                defaults={"mode": form.cleaned_data["mode"]},
-            )
-            _bump_fit_version(item.assignment.fit)
-            messages.success(request, _("Override saved: %(name)s.") % {"name": sde_type.name})
-    else:
-        messages.error(request, _("Enter a module name."))
-    return redirect("fitcheck:manage_assignment_items", assignment_pk=item.assignment_id)
+    back = redirect("fitcheck:manage_assignment_items", assignment_pk=item.assignment_id)
+    return _apply_single_override(
+        request, item, item.assignment.fit, back, AssignmentItemOverride, "assignment_item"
+    )
 
 
 @login_required
@@ -1021,48 +971,8 @@ def assignment_override_remove(request, override_pk: int):
 @require_POST
 def assignment_attribute_policy_save(request, item_pk: int):
     item = _assignment_item(item_pk)
-    candidates = {c["attr_id"]: c for c in rollable_attributes_for_item(item)}
-    chosen: list[int] = []
-    bounds: dict[str, dict] = {}
-    for raw in request.POST.getlist("attr_ids"):
-        try:
-            attr_id = int(raw)
-        except (TypeError, ValueError):
-            continue
-        if attr_id not in candidates or attr_id in chosen:
-            continue
-        chosen.append(attr_id)
-        cand = candidates[attr_id]
-        try:
-            lo = float(request.POST.get(f"min_{attr_id}"))
-            hi = float(request.POST.get(f"max_{attr_id}"))
-        except (TypeError, ValueError):
-            continue
-        a_min, a_max = cand.get("abyssal_min"), cand.get("abyssal_max")
-        if a_min is not None and a_max is not None:
-            lo = max(a_min, min(lo, a_max))
-            hi = max(a_min, min(hi, a_max))
-        if lo > hi:
-            lo, hi = hi, lo
-        if a_min is None or a_max is None or lo > a_min or hi < a_max:
-            bounds[str(attr_id)] = {"min": lo, "max": hi}
-    item.checked_attributes = chosen
-    item.attribute_bounds = bounds
-    item.save(update_fields=["checked_attributes", "attribute_bounds"])
-    _bump_fit_version(item.assignment.fit)
-    if chosen:
-        messages.success(
-            request,
-            _("Saved %(n)s required attribute(s) for %(mod)s.")
-            % {"n": len(chosen), "mod": item.module_type.name},
-        )
-    else:
-        messages.info(
-            request,
-            _("Cleared required attributes for %(mod)s - using smart defaults.")
-            % {"mod": item.module_type.name},
-        )
-    return redirect("fitcheck:manage_assignment_items", assignment_pk=item.assignment_id)
+    back = redirect("fitcheck:manage_assignment_items", assignment_pk=item.assignment_id)
+    return _apply_attribute_policy(request, item, item.assignment.fit, back)
 
 
 @login_required

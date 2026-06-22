@@ -15,6 +15,15 @@ def default_allowed_meta_groups() -> list[int]:
     return [1, 2, 3, 4, 5, 6]
 
 
+def _required_quantity(section, quantity: int, min_quantity_pct: int) -> int:
+    """Quantity needed to pass, after consumable leeway: consumable sections
+    below 100% apply a ``ceil(qty * pct / 100)`` floor; everything else needs the
+    full listed quantity. Shared by DoctrineFitItem and AssignmentItemPolicy."""
+    if section in LEEWAY_SECTIONS and min_quantity_pct < 100:
+        return -(-quantity * min_quantity_pct // 100)  # ceil division
+    return quantity
+
+
 class SubstitutionPolicy(models.TextChoices):
     # Labels use the Strict/Standard/Flexible vocabulary of the named
     # CompliancePolicy presets so the per-module rule reads consistently with the
@@ -416,9 +425,7 @@ class DoctrineFitItem(models.Model):
     @property
     def required_quantity(self) -> int:
         """Quantity needed to pass, after consumable leeway."""
-        if self.section in LEEWAY_SECTIONS and self.min_quantity_pct < 100:
-            return -(-self.quantity * self.min_quantity_pct // 100)  # ceil division
-        return self.quantity
+        return _required_quantity(self.section, self.quantity, self.min_quantity_pct)
 
 
 class FitAssignment(models.Model):
@@ -514,9 +521,7 @@ class AssignmentItemPolicy(models.Model):
 
     @property
     def required_quantity(self) -> int:
-        if self.section in LEEWAY_SECTIONS and self.min_quantity_pct < 100:
-            return -(-self.quantity * self.min_quantity_pct // 100)
-        return self.quantity
+        return _required_quantity(self.section, self.quantity, self.min_quantity_pct)
 
 
 class FitItemOverride(models.Model):
