@@ -43,6 +43,14 @@ Unreleased set contains new features, so the next release will be a minor bump.)
   as fuel) into the Fuel Bay. No schema change.
 
 ### Changed
+- **One-click ESI access instead of per-scope token prompts.** Pilots used to be
+  asked for each ESI scope separately (assets, then implants, then re-grant for
+  structure names). Now a single **Connect ESI access** button — on the Pilot
+  Fittings page and the My Ships inventory page — grants everything a pilot's
+  audit features use in **one SSO consent**: assets + private-structure names,
+  active-clone implants, and Save-to-EVE. Scopes the pilot already granted to
+  another Auth app, or that **corptools** supplies, are reused, so the grant only
+  asks for what's genuinely missing. No schema change.
 - **Member inventory is now select-to-audit, not audit-everything.** Opening a
   fitting's **Member Inventory** page used to fetch every in-scope pilot's entire
   asset tree and immediately grade every matching hull — writing one submission
@@ -82,6 +90,15 @@ Unreleased set contains new features, so the next release will be a minor bump.)
   doctrines"** with each copy's in-sync/differs status and re-sync; and a
   submission page gives managers an **Edit policy for this combination** jump-link
   to the exact copy that graded it. No schema change.
+
+### Removed
+- **"Import my saved fittings" (member-side saved-fittings audit).** A pilot's
+  in-game *saved fittings* are a plan, not proof of what they actually own;
+  grading them gave false assurance. The button and its page are gone — the
+  inventory-based self-audit (**Validate ships from my inventory** / My Ships) is
+  the member path, since what we audit is the pilot's real hangar. The ESI
+  saved-fittings read plumbing is retained internally for the planned admin-side
+  alliance-fittings import.
 
 ## [1.1.0] - 2026-06-18
 

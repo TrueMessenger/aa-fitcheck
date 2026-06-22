@@ -399,22 +399,28 @@ def _filtered_inventory(request):
 
 @login_required
 @permission_required("fitcheck.basic_access")
-def add_asset_token(request):
-    """Kick off the SSO flow that grants the assets scope for one character.
+def grant_all_esi(request):
+    """One SSO consent for every ESI scope a pilot's audit features use - assets +
+    structures (My Ships inventory & location names), implants (verify plugged-in
+    implants), and fittings-write (Save-to-EVE) - so a pilot grants once instead
+    of once per feature. Scopes already shared from another Auth app, or served by
+    corptools, are reused (see esi_assets.existing_token / get_ship_inventory), so
+    this only prompts for what's genuinely missing.
 
-    Bundles the read-structures scope so the inventory can also name the private
-    structures (Citadels) the pilot's ships sit in, plus their system/region."""
+    next=inventory returns to My Ships after the grant; otherwise Pilot Fittings."""
     from esi.decorators import token_required
 
-    from ..services.esi_assets import ASSET_GRANT_SCOPES
+    from ..services.esi_assets import PILOT_GRANT_SCOPES
 
-    @token_required(scopes=ASSET_GRANT_SCOPES)
+    @token_required(scopes=PILOT_GRANT_SCOPES)
     def _receive(request, token):
         messages.success(
             request,
-            _("Asset token added for %(name)s.") % {"name": token.character_name},
+            _("ESI access granted for %(name)s.") % {"name": token.character_name},
         )
-        return redirect("fitcheck:ship_inventory")
+        if request.GET.get("next") == "inventory":
+            return redirect("fitcheck:ship_inventory")
+        return redirect("fitcheck:pilot_fittings")
 
     return _receive(request)
 
@@ -441,26 +447,6 @@ def add_fittings_write_token(request):
         if next_fit and next_fit.isdigit():
             return redirect("fitcheck:fit_detail", fit_pk=int(next_fit))
         return redirect("fitcheck:index")
-
-    return _receive(request)
-
-
-@login_required
-@permission_required("fitcheck.basic_access")
-def add_clones_token(request):
-    """Kick off the SSO flow that grants the implant (clones) scope, so ESI
-    submissions can verify the pilot's plugged-in implants."""
-    from esi.decorators import token_required
-
-    from ..services.esi_assets import CLONES_SCOPES
-
-    @token_required(scopes=CLONES_SCOPES)
-    def _receive(request, token):
-        messages.success(
-            request,
-            _("Implant scope added for %(name)s.") % {"name": token.character_name},
-        )
-        return redirect("fitcheck:ship_inventory")
 
     return _receive(request)
 
@@ -570,115 +556,12 @@ def ship_inventory(request):
     )
 
 
-@login_required
-@permission_required("fitcheck.basic_access")
-def esi_saved_fittings(request):
-    """List the pilot's in-game saved fittings and submit selected ones through
-    the normal doctrine fan-out."""
-    from collections import defaultdict
-
-    from ..services.esi_assets import get_active_implants
-    from ..services.esi_fittings import fetch_saved_fittings, parsed_fit_from_saved
-
-    characters = {
-        o.character.character_id: o.character
-        for o in request.user.character_ownerships.select_related("character")
-    }
-
-    if request.method == "POST":
-        by_char: dict[int, list[int]] = defaultdict(list)
-        for selection in request.POST.getlist("fittings")[:25]:
-            try:
-                cid, fid = (int(p) for p in selection.split(":"))
-            except ValueError:
-                continue
-            by_char[cid].append(fid)
-
-        results = []
-        for cid, fids in by_char.items():
-            rows = fetch_saved_fittings(request.user, cid) or []
-            by_id = {r.get("fitting_id"): r for r in rows}
-            implants = get_active_implants(cid)
-            for fid in fids:
-                fitting = by_id.get(fid)
-                if not fitting:
-                    continue
-                parsed = parsed_fit_from_saved(fitting)
-                parsed.pilot_implant_type_ids = implants
-                submissions = validate_parsed_ship(
-                    request.user,
-                    parsed,
-                    character=characters.get(cid),
-                    eft_text=render_eft(parsed),
-                )
-                results.append(
-                    {
-                        "parsed": parsed,
-                        "ship_type_id": parsed.ship_type_id,
-                        "submissions": submissions,
-                    }
-                )
-        if results:
-            from ..tasks import notify_reviewers_new_submission
-
-            for result in results:
-                for submission in result["submissions"]:
-                    notify_reviewers_new_submission.delay(submission.pk)
-            return render(
-                request,
-                "fitcheck/inventory_results.html",
-                {"results": results, "page_title": _("Validation Results")},
-            )
-        messages.warning(request, _("No saved fittings were selected (or none matched a doctrine)."))
-        return redirect("fitcheck:esi_saved_fittings")
-
-    groups = []
-    chars_without_token = []
-    for cid, character in characters.items():
-        rows = fetch_saved_fittings(request.user, cid)
-        if rows is None:
-            chars_without_token.append(character)
-            continue
-        groups.append({
-            "character": character,
-            "fittings": [
-                {
-                    "key": f"{cid}:{r.get('fitting_id')}",
-                    "name": r.get("name") or _("Unnamed fitting"),
-                    "ship_type_id": r.get("ship_type_id"),
-                    "item_count": len(r.get("items") or []),
-                }
-                for r in rows
-            ],
-        })
-    return render(
-        request,
-        "fitcheck/saved_fittings.html",
-        {
-            "groups": groups,
-            "characters_without_token": chars_without_token,
-            "page_title": _("Saved Fittings"),
-        },
-    )
-
-
-@login_required
-@permission_required("fitcheck.basic_access")
-def add_fittings_read_token(request):
-    """SSO flow granting the fittings-read scope so saved fittings can be imported."""
-    from esi.decorators import token_required
-
-    from ..services.esi_assets import FITTINGS_READ_SCOPES
-
-    @token_required(scopes=FITTINGS_READ_SCOPES)
-    def _receive(request, token):
-        messages.success(
-            request,
-            _("Saved-fittings token added for %(name)s.") % {"name": token.character_name},
-        )
-        return redirect("fitcheck:esi_saved_fittings")
-
-    return _receive(request)
+# NOTE: the member-side "audit my saved fittings" flow was removed - a pilot's
+# saved fittings are a plan, not proof of what they own, so grading them gives
+# false assurance; the inventory-based self-audit (ship_inventory) is the real
+# member path. The ESI saved-fittings read plumbing
+# (esi_fittings.fetch_saved_fittings / parsed_fit_from_saved) is kept for the
+# planned admin-side alliance-fittings import.
 
 
 @login_required
