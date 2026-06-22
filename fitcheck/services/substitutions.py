@@ -626,17 +626,22 @@ def _families_for_type_ids(
 
 
 def possible_meta_groups_bulk(type_ids) -> dict[int, set[int]]:
-    """Map each module ``type_id`` to the set of meta-group ids that actually
-    exist in its variant family - the only meta groups worth offering as a
-    substitution allow-list. Excludes abyssal (``EveMetaGroupId.ABYSSAL``, gated
-    separately by ``allow_mutated``) and ``None`` groups. A type's own group is
-    included (it is a family member). Types absent from the SDE map to an empty set."""
+    """Map each module ``type_id`` to the meta-group ids of its *substitutes* - the
+    non-abyssal members of its variant family OTHER than the type itself. These are
+    the only meta groups worth offering as a substitution allow-list; an **empty
+    set means the item has no variant substitutes** (so the editor offers no
+    checkboxes). The type's own group is included only when a sibling shares it (a
+    same-group variant the item could be swapped for); a group whose only member is
+    the item itself is dropped, since the exact type is never its own substitute.
+    Excludes abyssal (``EveMetaGroupId.ABYSSAL``, gated by ``allow_mutated``) and
+    ``None`` groups. Types absent from the SDE map to an empty set."""
     families, parent_by_type = _families_for_type_ids({int(t) for t in type_ids})
     return {
         type_id: {
             row["meta_group_id"]
             for row in families.get(parent_id, ())
-            if row["meta_group_id"] is not None
+            if row["type_id"] != type_id
+            and row["meta_group_id"] is not None
             and row["meta_group_id"] != EveMetaGroupId.ABYSSAL
         }
         for type_id, parent_id in parent_by_type.items()
