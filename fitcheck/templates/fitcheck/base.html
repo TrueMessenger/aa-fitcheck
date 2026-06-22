@@ -108,6 +108,12 @@
             opacity: .8;
         }
         .fc-module-icon { border-radius: .25rem; vertical-align: -6px; }
+        /* Data tables whose cells hold a growing chip/badge list use fixed layout so
+           no one column can widen and squeeze the rest; pair with a per-table
+           <colgroup> for the column proportions. Long names wrap inside the fixed
+           cell instead of overflowing. */
+        .fc-table-fixed { table-layout: fixed; width: 100%; }
+        .fc-table-fixed td, .fc-table-fixed th { overflow-wrap: break-word; }
         .fc-select-card { cursor: pointer; }
         .fc-select-card input[type="checkbox"] { position: absolute; opacity: 0; }
         .fc-select-card.selected {
