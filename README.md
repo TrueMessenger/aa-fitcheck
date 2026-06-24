@@ -1,5 +1,14 @@
 # Fit Check (aa-fitcheck)
 
+[![PyPI](https://img.shields.io/pypi/v/aa-fitcheck.svg)](https://pypi.org/project/aa-fitcheck/)
+[![Downloads](https://img.shields.io/pypi/dm/aa-fitcheck.svg)](https://pypi.org/project/aa-fitcheck/)
+[![Python](https://img.shields.io/pypi/pyversions/aa-fitcheck.svg)](https://pypi.org/project/aa-fitcheck/)
+[![Alliance Auth](https://img.shields.io/badge/Alliance%20Auth-v4.0%2B-orange)](https://gitlab.com/allianceauth/allianceauth)
+[![Django](https://img.shields.io/badge/Django-4.2-0C4B33)](https://www.djangoproject.com/)
+[![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
+[![Tests](https://github.com/TrueMessenger/aa-fitcheck/actions/workflows/test.yml/badge.svg)](https://github.com/TrueMessenger/aa-fitcheck/actions/workflows/test.yml)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-261230.svg)](https://github.com/astral-sh/ruff)
+
 Doctrine ship-fit compliance for [Alliance Auth](https://gitlab.com/allianceauth/allianceauth),
 with **module substitutions as a first-class concept**.
 
@@ -9,6 +18,18 @@ A doctrine that requires a Heat Sink II can still pass when the pilot fits an Im
 Heat Sink — because the engine knows both modules belong to the same family and your policy
 allows it. Mutated/abyssal modules are compared attribute-by-attribute using EVE's own
 `highIsGood` semantics. No existing Alliance Auth plugin does this level of fit verification.
+
+## Contents
+
+- [Major Features](#major-features)
+- [Additional Features](#additional-features)
+- [Compatibility](#compatibility)
+- [Installation](#installation)
+- [Permissions](#permissions)
+- [Settings](#settings)
+- [Integration (Python API)](#integration-python-api)
+- [Roadmap](#roadmap)
+- [Development](#development)
 
 ---
 
@@ -213,6 +234,14 @@ POLICY mode defers to the per-item policy editor; the other modes override it si
   automatically when a new build ships.
 
 ---
+
+## Compatibility
+
+| Component | Supported |
+|---|---|
+| **Python** | 3.10, 3.11, 3.12 |
+| **Django** | 4.2 |
+| **Alliance Auth** | 4.0 – 5.x |
 
 ## Installation
 
