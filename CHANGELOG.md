@@ -29,6 +29,8 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-26
+
 ### Fixed
 - **Table columns no longer resize as chip/badge columns grow.** On pages with a
   column that holds a wrapping set of chips — the policy editor's Exceptions, the
