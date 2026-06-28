@@ -266,6 +266,13 @@ POLICY mode defers to the per-item policy editor; the other modes override it si
    python manage.py fitcheck_load_sde
    ```
 
+   > **Note.** On a fresh install the first `migrate` applies fitcheck's full
+   > migration history at once, so you'll see a couple dozen `Applying
+   > fitcheck.NNNN… OK` lines. That's expected — like every Django app, fitcheck
+   > replays its migrations in order on an empty database. They run in seconds
+   > against empty tables; the count just reflects the project's development
+   > history, not a problem.
+
    > **Required.** `fitcheck_load_sde` populates the local SDE mirror the
    > compliance engine grades against. Until it has run (or the step 5 task has
    > fired at least once), fit grading returns nothing and **"Validate my ships"
