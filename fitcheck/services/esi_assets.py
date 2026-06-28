@@ -363,16 +363,30 @@ def resolve_contents(
 
 
 def _build_owned_ships(
-    character_id: int, char_name: str, ships: list[dict], token, structure_tokens: list
+    character_id: int,
+    char_name: str,
+    ships: list[dict],
+    token,
+    structure_tokens: list,
+    *,
+    resolve_names: bool = True,
 ) -> list[OwnedShip]:
     """Turn a character's ship rows into OwnedShip listing entries (names +
     location). Shared by the self-inventory and member-inventory scans.
 
-    May raise on an ESI error-limit while resolving names/locations; callers
-    catch it and set `error_limited`. Location resolution walks only the ship
-    rows we hold: a docked ship (location_id is a station/structure/system)
-    resolves exactly; the rarer ship nested inside a carrier/container degrades
-    to a generic label rather than dragging in the whole tree."""
+    `resolve_names=True` (self-inventory, low N) resolves custom ship names and
+    private-structure locations live over ESI. `resolve_names=False` (the bulk
+    alliance/corp scan) makes NO live ESI calls - names come from the corptools
+    cache (if any) and locations from the StructureNameCache + already-cached
+    eveuniverse rows - because resolving Citadel names live across hundreds of
+    pilots' tokens trips ESI's error limit (see services.structure_cache).
+
+    May raise on an ESI error-limit while resolving names/locations (only when
+    `resolve_names`); callers catch it and set `error_limited`. Location
+    resolution walks only the ship rows we hold: a docked ship (location_id is a
+    station/structure/system) resolves exactly; the rarer ship nested inside a
+    carrier/container degrades to a generic label rather than dragging in the
+    whole tree."""
     by_item_id = {s["item_id"]: s for s in ships}
     type_ids = {s["type_id"] for s in ships}
     type_names = dict(
@@ -389,14 +403,16 @@ def _build_owned_ships(
             EveType.objects.filter(id__in=missing_names).values_list("id", "name")
         )
     root_ids = {_root_location(s, by_item_id) for s in ships}
-    if token is not None:
+    if resolve_names and token is not None:
         ship_names = _fetch_asset_names(token, character_id, [s["item_id"] for s in ships])
         location_details = _resolve_locations(root_ids, structure_tokens)
     else:
-        # corptools-served character: no fitcheck token to resolve ESI names/
-        # locations with. Use the cached custom ship name.
+        # No live ESI here: either the bulk member scan (resolve_names=False) or a
+        # corptools-served character with no fitcheck token. Custom ship name comes
+        # from the corptools cache when present (template falls back to the hull
+        # type name otherwise); locations come from the local caches only.
         ship_names = {s["item_id"]: s.get("name", "") for s in ships}
-        location_details = {}
+        location_details = _resolve_locations_cached(root_ids)
     out: list[OwnedShip] = []
     for ship in ships:
         root = _root_location(ship, by_item_id)
@@ -426,7 +442,6 @@ def get_inventory_for_characters(characters, hull_type_id: int | None = None) ->
     inventory = ShipInventory()
     char_by_id = {c.character_id: c for c in characters}
     tokens = tokens_by_character(char_by_id.keys())
-    structure_tokens = _structure_tokens(char_by_id.keys())
     # Empty only when no hull was given AND the SDE mirror has no ships loaded;
     # resolve_ship_list then classifies owned assets via eveuniverse. A hull-scoped
     # scan always has {hull_type_id} here, so it never needs the mirror.
@@ -452,8 +467,13 @@ def get_inventory_for_characters(characters, hull_type_id: int | None = None) ->
         if not ships:
             continue
         try:
+            # resolve_names=False: the bulk scan reads ship names/locations from
+            # local caches only (no live ESI) - resolving Citadel names live across
+            # every pilot's token is what trips the ESI error limit.
             inventory.ships.extend(
-                _build_owned_ships(character_id, char_name, ships, token, structure_tokens)
+                _build_owned_ships(
+                    character_id, char_name, ships, token, [], resolve_names=False
+                )
             )
         except Exception as exc:  # pragma: no cover - network dependent
             if is_error_limited(exc):
@@ -597,6 +617,86 @@ def _resolve_locations(root_ids: set[int], structure_tokens: list) -> dict[int, 
             name = system_name or f"Structure {loc_id}"
         out[loc_id] = {"name": name, "system": system_name, "region": region_name}
     return out
+
+
+def _resolve_locations_cached(root_ids: set[int]) -> dict[int, dict]:
+    """Local-only location resolution for the bulk member scan - NEVER calls ESI.
+
+    Private structures (Citadels, id >= 1e12) come from the StructureNameCache;
+    ids not yet cached are upserted 'pending' (the refresh_structure_names task
+    resolves them out-of-band) and shown with a neutral label meanwhile. NPC
+    stations and solar systems are read from already-cached eveuniverse rows only
+    (no get_or_create_esi) - an uncached one degrades to the system name or a bare
+    label rather than triggering a live fetch inside the request."""
+    from eveuniverse.models import EveStation
+
+    from . import structure_cache
+
+    out: dict[int, dict] = {}
+    struct_ids = {i for i in root_ids if i >= structure_cache.PRIVATE_STRUCTURE_MIN_ID}
+    cached = structure_cache.names_for_structures(struct_ids)
+    structure_cache.ensure_pending(struct_ids - set(cached))
+
+    station_ids = [i for i in root_ids if 60_000_000 <= i < 64_000_000]
+    stations = {
+        s.id: s
+        for s in EveStation.objects.filter(id__in=station_ids).only(
+            "id", "name", "eve_solar_system_id"
+        )
+    }
+
+    for loc_id in root_ids:
+        name: str | None = None
+        system_id: int | None = None
+        if loc_id >= structure_cache.PRIVATE_STRUCTURE_MIN_ID:
+            entry = cached.get(loc_id)
+            if entry:
+                name = entry["name"]
+                system_id = entry["solar_system_id"]
+        elif 60_000_000 <= loc_id < 64_000_000:
+            station = stations.get(loc_id)
+            if station is not None:
+                name, system_id = station.name, station.eve_solar_system_id
+        elif 30_000_000 <= loc_id < 33_000_000:
+            system_id = loc_id  # the asset sits directly in a solar system
+        system_name, region_name = (
+            _system_region_cached(system_id) if system_id else ("", "")
+        )
+        if not name:
+            name = system_name or f"Structure {loc_id}"
+        out[loc_id] = {"name": name, "system": system_name, "region": region_name}
+    return out
+
+
+def _system_region_cached(solar_system_id: int) -> tuple[str, str]:
+    """(system_name, region_name) from already-cached eveuniverse rows only - no
+    ESI fetch (unlike `_system_region`). Uncached system -> ('', ''); the refresh
+    task warms these as it resolves structures."""
+    if not solar_system_id:
+        return "", ""
+    from eveuniverse.models import EveSolarSystem
+
+    system = (
+        EveSolarSystem.objects.filter(id=solar_system_id)
+        .select_related("eve_constellation__eve_region")
+        .first()
+    )
+    if system is None:
+        return "", ""
+    try:
+        return system.name, system.eve_constellation.eve_region.name
+    except Exception:  # pragma: no cover - defensive on incomplete eveuniverse rows
+        return system.name, ""
+
+
+def all_structure_tokens() -> list:
+    """Every valid structure-scoped token in the system (any character/owner) -
+    the pool the structure-name refresh task draws on to resolve Citadels."""
+    from esi.models import Token
+
+    return list(
+        Token.objects.all().require_scopes(STRUCTURE_SCOPES).require_valid()
+    )
 
 
 def _root_location(asset: dict, by_item_id: dict[int, dict]) -> int:

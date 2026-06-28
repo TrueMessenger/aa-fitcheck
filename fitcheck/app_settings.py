@@ -29,3 +29,9 @@ FITCHECK_REVIEWER_DIGEST = clean_setting("FITCHECK_REVIEWER_DIGEST", False)
 
 # Contact email embedded in the ESI/SDE User-Agent header (required by CCP guidelines).
 FITCHECK_ESI_CONTACT = clean_setting("FITCHECK_ESI_CONTACT", "", required_type=str)
+
+# A cached private-structure (Citadel) name is considered stale after this many
+# seconds; the fitcheck.tasks.refresh_structure_names beat task re-resolves stale
+# rows. The default (24h) means a renamed Citadel shows the old name for at most
+# ~1 day. The member-inventory scan itself never calls ESI for these names.
+FITCHECK_STRUCTURE_CACHE_TTL = clean_setting("FITCHECK_STRUCTURE_CACHE_TTL", 86400)

@@ -19,6 +19,7 @@ from .sde import (  # noqa: F401
     SdeMutaplasmidMapping,
     SdeType,
     SdeTypeAttribute,
+    StructureNameCache,
 )
 from .submission import (  # noqa: F401
     ComplianceFinding,

@@ -87,16 +87,41 @@ class EsiRateLimitTests(TestCase):
             self.assertTrue(inv.error_limited)
             self.assertEqual(inv.ships, [])
 
-    def test_scan_aborts_when_name_resolution_hits_error_limit(self):
-        """H3: an error limit raised by the secondary name/location resolution
-        (not just the primary asset fetch) must abort the scan and surface
-        error_limited, rather than being swallowed."""
+    def test_member_scan_does_no_live_name_resolution(self):
+        """The bulk member scan no longer resolves ship names / private-structure
+        locations live (that was the ESI-error-limit storm) - it reads names from
+        the local cache instead. So an error-limit in `_fetch_asset_names` cannot
+        even occur on this path: it is never called."""
         with mock.patch.object(esi_assets, "tokens_by_character", return_value={12345: object()}), \
                 mock.patch.object(esi_assets, "_fetch_assets", return_value=ASSETS), \
-                mock.patch.object(esi_assets, "_fetch_asset_names", side_effect=_ErrorLimited()):
+                mock.patch.object(esi_assets, "_fetch_asset_names", side_effect=_ErrorLimited()) as fan, \
+                mock.patch.object(esi_assets, "_resolve_structure", side_effect=_ErrorLimited()) as rstruct:
             inv = get_inventory_for_characters([self.char], hull_type_id=T.HARBINGER)
-            self.assertTrue(inv.error_limited)
-            self.assertEqual(inv.ships, [])
+        fan.assert_not_called()
+        rstruct.assert_not_called()
+        self.assertFalse(inv.error_limited)
+        self.assertEqual(len(inv.ships), 1)
+
+    def test_self_inventory_aborts_when_name_resolution_hits_error_limit(self):
+        """H3 (now on the self-inventory path, which still resolves live, low N):
+        an error limit raised by the secondary name/location resolution must abort
+        the scan and surface error_limited, rather than being swallowed."""
+        from allianceauth.authentication.models import CharacterOwnership
+        from django.contrib.auth.models import User
+
+        owner = User.objects.create_user("scout-owner", password="x")
+        CharacterOwnership.objects.create(
+            user=owner, character=self.char, owner_hash="owner-hash-12345"
+        )
+        with mock.patch.object(
+                    esi_assets, "user_tokens_by_character",
+                    return_value=({12345: object()}, []),
+                ), \
+                mock.patch.object(esi_assets, "_fetch_assets", return_value=ASSETS), \
+                mock.patch.object(esi_assets, "_fetch_asset_names", side_effect=_ErrorLimited()):
+            inv = esi_assets.get_ship_inventory(owner)
+        self.assertTrue(inv.error_limited)
+        self.assertEqual(inv.ships, [])
 
     def _abyssal(self, n):
         from ..constants import Section

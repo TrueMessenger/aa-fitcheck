@@ -107,3 +107,43 @@ class SdeLoadRecord(models.Model):
 
     def __str__(self) -> str:
         return f"{self.sde_build} @ {self.loaded_at:%Y-%m-%d %H:%M}"
+
+
+class StructureNameCache(models.Model):
+    """Locally-cached names for private upwell structures (Citadels, id >= 1e12).
+
+    django-eveuniverse has no model for player structures and aa-corptools caches
+    only the raw ``location_id``, so we persist resolved names ourselves. The bulk
+    member-inventory scan reads ONLY this table (never ESI); the periodic
+    ``refresh_structure_names`` task fills/refreshes rows via ESI with bounded,
+    paced, negatively-cached lookups - so one inaccessible Citadel costs a couple
+    of attempts per run instead of a 403 per structure-scoped token (which was
+    what tripped ESI's error limit on an alliance-wide scan).
+
+    Row states:
+    - ``resolved_at`` NULL, ``accessible`` True  -> pending (seen by a scan, not yet resolved)
+    - ``resolved_at`` set                        -> resolved (refreshed when older than the TTL)
+    - ``accessible`` False, ``name`` NULL        -> negative-cached (retried only past backoff)
+    """
+
+    structure_id = models.BigIntegerField(primary_key=True)
+    name = models.CharField(max_length=255, null=True, blank=True)
+    solar_system_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    # NULL = never resolved (pending); set on each successful resolution.
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    # Last attempt (success OR failure); drives the negative-cache backoff.
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    fail_count = models.PositiveIntegerField(default=0)
+    # False once no available token could reach the structure; retried after backoff.
+    accessible = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "structure name cache entry"
+        verbose_name_plural = "structure name cache entries"
+        indexes = [
+            models.Index(fields=["resolved_at"]),
+            models.Index(fields=["accessible", "last_attempt_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name or 'pending'} ({self.structure_id})"

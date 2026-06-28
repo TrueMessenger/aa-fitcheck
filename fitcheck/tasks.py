@@ -112,6 +112,17 @@ def send_review_digest():
         )
 
 
+@shared_task(time_limit=1800)
+def refresh_structure_names(limit: int = None):
+    """Resolve/refresh cached private-structure (Citadel) names via ESI, paced and
+    bounded, so the member-inventory scan can read them locally without ever
+    tripping the ESI error limit. Schedule this via CELERYBEAT_SCHEDULE (e.g.
+    daily); FITCHECK_STRUCTURE_CACHE_TTL bounds how stale a name can get."""
+    from .services.structure_cache import resolve_pending_and_stale
+
+    return resolve_pending_and_stale(limit=limit)
+
+
 @shared_task(time_limit=300)
 def notify_member_decision(submission_id: int):
     submission = (
