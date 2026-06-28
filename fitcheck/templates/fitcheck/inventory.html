@@ -3,6 +3,15 @@
 {% load i18n %}
 
 {% block fitcheck_content %}
+    {% if not sde_loaded %}
+        <div class="alert alert-warning d-flex align-items-center gap-2">
+            <i class="fa-solid fa-database"></i>
+            <div>
+                {% translate "EVE game data is still loading in the background. Ship details may be incomplete until it finishes - reload this page in a minute. If it never completes, an administrator should run" %}
+                <code>python manage.py fitcheck_load_sde</code>.
+            </div>
+        </div>
+    {% endif %}
     {% if inventory.characters_without_token %}
         <div class="alert alert-warning d-flex align-items-center gap-2">
             <i class="fa-solid fa-key"></i>
@@ -35,7 +44,7 @@
             <i class="fa-solid fa-filter"></i>
             <div>
                 {% translate "Pre-filtered to" %}
-                <strong>{{ filters.type_name|default:filters.type_id }}</strong>
+                <strong>{{ filters.type_name|default:_("this hull") }}</strong>
                 {% translate "from the fitting page." %}
             </div>
             <a class="btn btn-sm btn-secondary ms-auto" href="{% url 'fitcheck:ship_inventory' %}">
@@ -133,7 +142,11 @@
                 <div class="col-12">
                     <div class="fc-empty">
                         <i class="fa-solid fa-satellite-dish fa-2x mb-3 d-block"></i>
-                        {% translate "No ships found - adjust the filters, or connect ESI access above." %}
+                        {% if filters.type_id %}
+                            {% blocktranslate with hull=filters.type_name|default:_("this hull") %}You don't own a {{ hull }} on this account - it scans only the characters under the Auth account you're logged into.{% endblocktranslate %}
+                        {% else %}
+                            {% translate "No ships found - adjust the filters, or connect ESI access above." %}
+                        {% endif %}
                     </div>
                 </div>
             {% endfor %}

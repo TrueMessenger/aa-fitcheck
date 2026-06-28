@@ -225,14 +225,63 @@ def resolve_assets(character_id: int, token=None) -> list[dict] | None:
 
 
 def _ship_type_id_set(hull_type_id: int | None = None) -> set[int]:
-    """The SHIP-category type_ids a scan should surface. Restricted to one hull
-    when `hull_type_id` is given (the doctrine case), else every ship type the
-    SDE mirror knows (a few hundred - cheap for an `__in` filter + membership
-    test)."""
-    qs = SdeType.objects.filter(category_id=EveCategoryId.SHIP)
+    """The SHIP-category type_ids a scan should pre-filter to. When `hull_type_id`
+    is given (the doctrine case) it's just that hull - no SDE mirror needed, the
+    caller already knows the type it wants. With no hull it's every ship type the
+    SDE mirror knows; that set is EMPTY until `fitcheck_load_sde` has run, which
+    the callers handle by classifying owned assets via eveuniverse instead (see
+    `ship_type_ids_among`)."""
     if hull_type_id is not None:
-        qs = qs.filter(type_id=hull_type_id)
-    return set(qs.values_list("type_id", flat=True))
+        return {hull_type_id}
+    return set(
+        SdeType.objects.filter(category_id=EveCategoryId.SHIP).values_list(
+            "type_id", flat=True
+        )
+    )
+
+
+def _eveuniverse_ship_type_ids(type_ids: set[int]) -> set[int]:
+    """Which of `type_ids` are SHIP-category, per eveuniverse, loading any unseen
+    type from ESI on demand. Lets the inventory listing work before fitcheck's own
+    SDE mirror is populated (eveuniverse is a hard dependency and already cached)."""
+    from eveuniverse.models import EveType
+
+    ships = set(
+        EveType.objects.filter(
+            id__in=type_ids, eve_group__eve_category_id=EveCategoryId.SHIP
+        ).values_list("id", flat=True)
+    )
+    seen = set(EveType.objects.filter(id__in=type_ids).values_list("id", flat=True))
+    for type_id in type_ids - seen:
+        try:
+            eve_type, _ = EveType.objects.get_or_create_esi(id=type_id)
+        except Exception:  # pragma: no cover - network dependent
+            continue
+        if eve_type.eve_group.eve_category_id == EveCategoryId.SHIP:
+            ships.add(type_id)
+    return ships
+
+
+def ship_type_ids_among(type_ids) -> set[int]:
+    """Which of `type_ids` are ships. The local SDE mirror is authoritative for
+    types it has rows for; anything the mirror doesn't know (e.g. before
+    `fitcheck_load_sde` has run) is resolved through eveuniverse. So ship listing
+    degrades gracefully on a fresh install instead of silently returning nothing."""
+    type_ids = {int(t) for t in type_ids}
+    if not type_ids:
+        return set()
+    known = set(
+        SdeType.objects.filter(type_id__in=type_ids).values_list("type_id", flat=True)
+    )
+    ships = set(
+        SdeType.objects.filter(
+            type_id__in=type_ids, category_id=EveCategoryId.SHIP
+        ).values_list("type_id", flat=True)
+    )
+    unknown = type_ids - known
+    if unknown:
+        ships |= _eveuniverse_ship_type_ids(unknown)
+    return ships
 
 
 def resolve_ship_list(character_id: int, token, ship_type_ids) -> list[dict] | None:
@@ -244,6 +293,12 @@ def resolve_ship_list(character_id: int, token, ship_type_ids) -> list[dict] | N
     (the rest is discarded, never stashed). Returns None when no source can
     supply the character, so the caller marks them ungranted."""
     from . import corptools_source
+
+    # No known ship-type whitelist (the SDE mirror has no ships loaded yet): pull
+    # every assembled (singleton) asset and classify each owned type via
+    # eveuniverse, so My Ships works before fitcheck_load_sde has run.
+    if not ship_type_ids:
+        return _resolve_ships_by_classification(character_id, token)
 
     source = _asset_source()
     if source in ("auto", "corptools"):
@@ -259,6 +314,28 @@ def resolve_ship_list(character_id: int, token, ship_type_ids) -> list[dict] | N
         a for a in assets
         if a["type_id"] in ship_type_ids and a.get("is_singleton")
     ]
+
+
+def _resolve_ships_by_classification(character_id: int, token) -> list[dict] | None:
+    """Fallback ship list when there's no SDE ship whitelist: fetch the
+    character's assembled (singleton) assets from corptools or live ESI, then keep
+    only the types eveuniverse classifies as ships. Same None-vs-empty / source
+    semantics as the whitelist path."""
+    from . import corptools_source
+
+    source = _asset_source()
+    singletons: list[dict] | None = None
+    if source in ("auto", "corptools"):
+        # ship_type_ids=None -> every singleton, no server-side type filter.
+        singletons = corptools_source.ship_assets_for_character(character_id, None)
+        if singletons is None and source == "corptools":
+            return None
+    if singletons is None:
+        if token is None:
+            return None
+        singletons = [a for a in _fetch_assets(token, character_id) if a.get("is_singleton")]
+    ship_ids = ship_type_ids_among({s["type_id"] for s in singletons})
+    return [s for s in singletons if s["type_id"] in ship_ids]
 
 
 def resolve_contents(
@@ -302,6 +379,15 @@ def _build_owned_ships(
         SdeType.objects.filter(type_id__in=type_ids).values_list("type_id", "name")
     )
     group_names = _ship_group_names(type_ids)
+    # Names for types the SDE mirror doesn't carry (e.g. before fitcheck_load_sde):
+    # _ship_group_names just loaded these into eveuniverse, so read them back.
+    missing_names = type_ids - set(type_names)
+    if missing_names:
+        from eveuniverse.models import EveType
+
+        type_names.update(
+            EveType.objects.filter(id__in=missing_names).values_list("id", "name")
+        )
     root_ids = {_root_location(s, by_item_id) for s in ships}
     if token is not None:
         ship_names = _fetch_asset_names(token, character_id, [s["item_id"] for s in ships])
@@ -341,10 +427,10 @@ def get_inventory_for_characters(characters, hull_type_id: int | None = None) ->
     char_by_id = {c.character_id: c for c in characters}
     tokens = tokens_by_character(char_by_id.keys())
     structure_tokens = _structure_tokens(char_by_id.keys())
+    # Empty only when no hull was given AND the SDE mirror has no ships loaded;
+    # resolve_ship_list then classifies owned assets via eveuniverse. A hull-scoped
+    # scan always has {hull_type_id} here, so it never needs the mirror.
     ship_type_ids = _ship_type_id_set(hull_type_id)
-    if not ship_type_ids:
-        # The hull isn't a ship type the SDE mirror knows - nothing to scan.
-        return inventory
     for character_id, character in char_by_id.items():
         token = tokens.get(character_id)
         char_name = character.character_name if character else str(character_id)

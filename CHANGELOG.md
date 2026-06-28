@@ -29,6 +29,25 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+### Fixed
+- **"Validate my ships" no longer silently shows zero ships when the static-data
+  mirror hasn't been loaded.** On a fresh install, before `fitcheck_load_sde` has
+  run (or its scheduled task has fired), the ship inventory filtered every asset
+  out and showed an empty list as if the pilot owned nothing. Now:
+  - **Ship listing falls back to eveuniverse** (a hard dependency) to classify the
+    pilot's owned ships, so My Ships / "Validate ships from my inventory" work even
+    before the local mirror is populated. Grading still uses the mirror.
+  - **The mirror self-heals:** an empty mirror triggers a one-off background load
+    (once per 10-minute window), and the My Ships / Pilot Fittings pages show a
+    "game data is still loading" notice. A Django system check (`fitcheck.W001`)
+    also warns at deploy time, and the README marks `fitcheck_load_sde` as required.
+  - **A doctrine-hull scan no longer needs the mirror at all** — it already knows
+    the hull type it's looking for.
+- **The hull pre-filter banner shows the ship name, not a raw type_id.** Clicking
+  "Validate My Ships" for a hull you don't own showed *"Pre-filtered to 12032"*;
+  it now resolves and shows the hull name (e.g. *"Pre-filtered to Nightmare"*) with
+  a clearer empty state.
+
 ## [1.2.0] - 2026-06-26
 
 ### Fixed

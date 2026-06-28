@@ -3,6 +3,15 @@
 {% load i18n %}
 
 {% block fitcheck_content %}
+    {% if not sde_loaded %}
+        <div class="alert alert-warning d-flex align-items-center gap-2">
+            <i class="fa-solid fa-database"></i>
+            <div>
+                {% translate "EVE game data is still loading in the background - ship validation won't return results until it finishes. Reload in a minute. If it never completes, an administrator should run" %}
+                <code>python manage.py fitcheck_load_sde</code>.
+            </div>
+        </div>
+    {% endif %}
     <div class="card mb-3">
         <div class="card-body d-flex flex-wrap align-items-center gap-3">
             {% if main_character %}

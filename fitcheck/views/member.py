@@ -325,6 +325,8 @@ def submit_eft(request, fit_pk: int):
 @permission_required("fitcheck.basic_access")
 def pilot_fittings(request):
     """The member's own submissions - never anyone else's."""
+    from ..services.sde_loader import ensure_sde_loading
+
     submissions = (
         FitSubmission.objects.for_user(request.user)
         .select_related("doctrine_fit", "doctrine", "ship_type", "character")
@@ -336,6 +338,7 @@ def pilot_fittings(request):
         {
             "submissions": submissions,
             "main_character": getattr(request.user.profile, "main_character", None),
+            "sde_loaded": ensure_sde_loading(),
             "page_title": _("Pilot Fittings"),
         },
     )
@@ -364,6 +367,15 @@ def _filtered_inventory(request):
             if ship.type_id == pinned_type_id:
                 pinned_type_name = ship.type_name
                 break
+        if not pinned_type_name:
+            # The pilot owns none of this hull, so the name isn't in `ships`.
+            # Resolve it (SDE -> eveuniverse -> ESI) so the alert shows the hull
+            # name, not a bare type_id.
+            from ..services.eft_parser import resolve_render_names
+
+            pinned_type_name = resolve_render_names([pinned_type_id]).get(
+                pinned_type_id, ""
+            )
         ships = [s for s in ships if s.type_id == pinned_type_id]
 
     character = request.GET.get("character", "")
@@ -543,6 +555,8 @@ def ship_inventory(request):
         messages.warning(request, _("No ships were selected."))
         return redirect("fitcheck:ship_inventory")
 
+    from ..services.sde_loader import ensure_sde_loading
+
     inventory, ships, filters = _filtered_inventory(request)
     return render(
         request,
@@ -551,6 +565,7 @@ def ship_inventory(request):
             "inventory": inventory,
             "ships": ships,
             "filters": filters,
+            "sde_loaded": ensure_sde_loading(),
             "page_title": _("My Ships"),
         },
     )

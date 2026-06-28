@@ -266,6 +266,12 @@ POLICY mode defers to the per-item policy editor; the other modes override it si
    python manage.py fitcheck_load_sde
    ```
 
+   > **Required.** `fitcheck_load_sde` populates the local SDE mirror the
+   > compliance engine grades against. Until it has run (or the step 5 task has
+   > fired at least once), fit grading returns nothing and **"Validate my ships"
+   > shows no ships** — the My Ships / Pilot Fittings pages display a warning when
+   > this data is missing.
+
 5. Add the SDE refresh task to `local.py`:
 
    ```python

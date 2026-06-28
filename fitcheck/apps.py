@@ -8,3 +8,6 @@ class FitcheckConfig(AppConfig):
     label = "fitcheck"
     verbose_name = f"Fit Check v{__version__}"
     default_auto_field = "django.db.models.AutoField"
+
+    def ready(self):
+        from . import checks  # noqa: F401  (registers system checks)

@@ -44,6 +44,38 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
+# Cache key + window guarding the one-off background auto-load, so a burst of
+# requests against an empty mirror enqueues the heavy load task only once.
+_AUTOLOAD_LOCK_KEY = "fitcheck_sde_autoload_lock"
+_AUTOLOAD_LOCK_TTL = 600
+
+
+def sde_ship_data_loaded() -> bool:
+    """True once the SDE mirror has ship rows. Until then every inventory/grading
+    path comes up empty, so views use this to warn instead of showing a blank
+    'no ships' result. Cheap indexed EXISTS."""
+    return SdeType.objects.filter(category_id=EveCategoryId.SHIP).exists()
+
+
+def ensure_sde_loading() -> bool:
+    """Return True when the SDE mirror is populated. When it isn't, kick a one-off
+    background load (`update_sde_data`, at most once per TTL window) and return
+    False, so a view can render a 'game data is loading' notice without blocking
+    on the multi-MB download."""
+    if sde_ship_data_loaded():
+        return True
+    from django.core.cache import cache
+
+    if cache.add(_AUTOLOAD_LOCK_KEY, "1", _AUTOLOAD_LOCK_TTL):
+        from ..tasks import update_sde_data
+
+        try:
+            update_sde_data.delay()
+            logger.info("SDE mirror empty; enqueued a background fitcheck_load_sde.")
+        except Exception:  # pragma: no cover - broker may be unavailable
+            logger.warning("SDE mirror empty but could not enqueue the auto-load task.")
+    return False
+
 _BATCH_SIZE = 1000
 
 _EFFECT_TO_SLOT_KIND = {
