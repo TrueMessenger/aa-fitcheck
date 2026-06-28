@@ -30,6 +30,19 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 ## [Unreleased]
 
 ### Fixed
+- **Member Inventory ("Browse Member Ships") no longer trips EVE's ESI rate limit
+  on a real alliance.** The listing phase used to resolve a private-structure
+  (Citadel) name for every ship over ESI, trying each one against *every* pilot's
+  structure token — and each "no docking access" 403 drained the shared ESI error
+  budget, so a moderate alliance scan returned only a few ships with a rate-limit
+  warning. The bulk scan now makes **no live ESI calls** for ship names or Citadel
+  locations: it reads them from a new local cache (`StructureNameCache`), and a new
+  periodic task **`fitcheck.tasks.refresh_structure_names`** resolves/refreshes those
+  names out-of-band with a bounded, paced, negatively-cached fan-out. Schedule it via
+  `CELERYBEAT_SCHEDULE` (see the README); `FITCHECK_STRUCTURE_CACHE_TTL` (default 24h)
+  caps how stale a cached name can get. Self-inventory ("My Ships", small N) is
+  unchanged and still resolves names live. Migration `0028`; deploy check
+  `fitcheck.W002` warns when the task looks unscheduled.
 - **"Validate my ships" no longer silently shows zero ships when the static-data
   mirror hasn't been loaded.** On a fresh install, before `fitcheck_load_sde` has
   run (or its scheduled task has fired), the ship inventory filtered every asset

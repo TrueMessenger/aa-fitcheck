@@ -272,12 +272,19 @@ POLICY mode defers to the per-item policy editor; the other modes override it si
    > shows no ships** — the My Ships / Pilot Fittings pages display a warning when
    > this data is missing.
 
-5. Add the SDE refresh task to `local.py`:
+5. Add the periodic tasks to `local.py`:
 
    ```python
    CELERYBEAT_SCHEDULE["fitcheck_update_sde_data"] = {
        "task": "fitcheck.tasks.update_sde_data",
        "schedule": crontab(minute="30", hour="12"),  # daily, after CCP's 11:00 downtime
+   }
+   # Resolves player-structure (Citadel) names for Member Inventory so the scan
+   # never has to call ESI for them. Daily is plenty; FITCHECK_STRUCTURE_CACHE_TTL
+   # (default 86400 = 24h) bounds how stale a cached name can get.
+   CELERYBEAT_SCHEDULE["fitcheck_refresh_structure_names"] = {
+       "task": "fitcheck.tasks.refresh_structure_names",
+       "schedule": crontab(minute="0", hour="3"),  # daily
    }
    ```
 
@@ -322,6 +329,7 @@ works normally without it — the filter simply isn't offered.
 | `FITCHECK_REVIEWER_DIGEST` | `False` | Periodic digest instead of per-submission pings (schedule `fitcheck.tasks.send_review_digest`) |
 | `FITCHECK_ESI_CONTACT` | `ESI_USER_CONTACT_EMAIL` | Contact email in the ESI User-Agent header |
 | `FITCHECK_ASSET_SOURCE` | `auto` | Where pilot/member ship inventory comes from: `auto` (corptools cache when available, else live ESI), `esi`, or `corptools` |
+| `FITCHECK_STRUCTURE_CACHE_TTL` | `86400` | Seconds before a cached player-structure (Citadel) name is re-resolved by `fitcheck.tasks.refresh_structure_names` (default 24h). The Member Inventory scan reads these names locally and never calls ESI for them. |
 
 Section-level enforcement modes (Implants, Boosters, Fuel Bay, Frigate Escape Bay) are managed
 through the in-app **Enforcement Settings** page — no `local.py` changes required.
