@@ -5,6 +5,7 @@
 
 {% block fitcheck_css %}
     <link rel="stylesheet" href="{% static 'fitcheck/vendor/coloris.min.css' %}">
+    <link rel="stylesheet" href="{% static 'fitcheck/vendor/tom-select.bootstrap5.min.css' %}">
 {% endblock %}
 
 {% block fitcheck_content %}
@@ -146,11 +147,43 @@
 
 {% block extra_javascript %}
     <script src="{% static 'fitcheck/vendor/coloris.min.js' %}"></script>
+    <script src="{% static 'fitcheck/vendor/tom-select.complete.min.js' %}"></script>
     <script>
         Coloris({ el: ".coloris", format: "hex", alpha: false, themeMode: "auto", swatches: [
             "#0d6efd", "#0dcaf0", "#198754", "#ffc107", "#dc3545", "#6c757d", "#212529",
             "#e083b0", "#43c6ac", "#b58fd6"
         ]});
+        // Category picker: coloured-pill multi-select over the doctrine's categories.
+        (function () {
+            document.querySelectorAll("select[data-category-picker]").forEach(function (el) {
+                const colors = {};
+                el.querySelectorAll("option").forEach(function (o) {
+                    colors[o.value] = { bg: o.dataset.color || "#0d6efd", fg: o.dataset.textColor || "#ffffff" };
+                });
+                function pillStyle(value) {
+                    const c = colors[value] || { bg: "#0d6efd", fg: "#ffffff" };
+                    return "background:" + c.bg + ";color:" + c.fg + ";border-color:" + c.bg;
+                }
+                const picker = new TomSelect(el, {
+                    plugins: ["remove_button"],
+                    maxOptions: 1000,
+                    hideSelected: true,
+                    closeAfterSelect: false,
+                    placeholder: "{% translate 'Search categories...' %}",
+                    render: {
+                        item: function (data, escape) {
+                            return '<div style="' + pillStyle(data.value) + '">' + escape(data.text) + '</div>';
+                        },
+                        option: function (data, escape) {
+                            return '<div class="py-1"><span class="badge" style="' + pillStyle(data.value) + '">' + escape(data.text) + '</span></div>';
+                        },
+                    },
+                });
+                picker.wrapper.classList.add("fc-category-picker");
+                el._categoryPicker = picker;
+                el._categoryColors = colors;
+            });
+        })();
         (function () {
             const isDirect = {% if mode == "direct" %}true{% else %}false{% endif %};
             // Contrast helper mirrors DoctrineTag.text_color (YIQ brightness).
@@ -212,10 +245,13 @@
                 });
                 if (resp.ok) {
                     const category = await resp.json();
-                    const div = document.createElement("div");
                     const fg = category.text_color || textColor(category.color);
-                    div.innerHTML = `<label><input type="checkbox" name="categories" value="${category.pk}" checked> <span class="badge" style="background:${category.color};color:${fg}">${category.name}</span></label>`;
-                    document.getElementById("categories-box").appendChild(div);
+                    const sel = document.querySelector("select[data-category-picker]");
+                    if (sel && sel._categoryPicker) {
+                        sel._categoryColors[String(category.pk)] = { bg: category.color, fg: fg };
+                        sel._categoryPicker.addOption({ value: String(category.pk), text: category.name });
+                        sel._categoryPicker.addItem(String(category.pk));
+                    }
                     document.getElementById("new-category-name").value = "";
                 }
             });

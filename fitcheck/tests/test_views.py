@@ -297,6 +297,48 @@ class TestManageViews(ViewTestCase):
         self.assertEqual(self.doctrine.fits.count(), 1)  # only the fixture fit
 
 
+class TestCategoryPicker(ViewTestCase):
+    """The doctrine category selector renders as a tom-select dropdown carrying each
+    category's colour (for coloured pills), not a checkbox list. The POST contract
+    (name="categories", value=pk) is unchanged so saving still works."""
+
+    def test_create_page_renders_category_picker(self):
+        DoctrineCategory.objects.create(name="Capitals", color="#ff0000")
+        self.client.force_login(self.manager)
+        resp = self.client.get(reverse("fitcheck:doctrine_create"))
+        self.assertContains(resp, 'data-category-picker')
+        self.assertContains(resp, 'data-color="#ff0000"')
+        # The categories field is no longer a checkbox list.
+        self.assertNotContains(resp, 'type="checkbox" name="categories"')
+
+    def test_edit_panel_renders_category_picker_with_assigned_selected(self):
+        cat = DoctrineCategory.objects.create(name="Home Defence", color="#198754")
+        self.doctrine.categories.add(cat)
+        self.client.force_login(self.manager)
+        resp = self.client.get(
+            reverse("fitcheck:doctrine_detail", args=[self.doctrine.pk])
+        )
+        self.assertContains(resp, 'data-category-picker')
+        self.assertContains(resp, 'data-color="#198754"')
+        # The assigned category renders pre-selected so the picker shows its pill.
+        self.assertContains(resp, f'value="{cat.pk}" selected')
+
+    def test_edit_saves_selected_categories(self):
+        keep = DoctrineCategory.objects.create(name="Keep")
+        self.client.force_login(self.manager)
+        self.client.post(
+            reverse("fitcheck:doctrine_edit", args=[self.doctrine.pk]),
+            {
+                "name": self.doctrine.name,
+                "description": "",
+                "is_active": "on",
+                "categories": [str(keep.pk)],
+            },
+            follow=True,
+        )
+        self.assertEqual(list(self.doctrine.categories.all()), [keep])
+
+
 class TestShipNameDerivation(ViewTestCase):
     """The in-game custom ship name is derived from the EFT header so reviewers
     can distinguish two same-hull submissions from one pilot."""

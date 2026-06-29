@@ -29,6 +29,14 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+### Changed
+- **Doctrine category selection is now a searchable dropdown with coloured pills**
+  instead of a long checkbox list. On the doctrine create wizard and the doctrine
+  Edit panel, each selected/assigned category renders as its own coloured pill
+  (matching the Categories tab and the rest of the app), and the dropdown options
+  show as coloured badges. Inline "Add category" adds the new category straight into
+  the picker. Reuses the bundled tom-select assets; no new dependency.
+
 ### Fixed
 - **Member Inventory ("Browse Member Ships") no longer trips EVE's ESI rate limit
   on a real alliance.** The listing phase used to resolve a private-structure

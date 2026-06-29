@@ -1,6 +1,11 @@
 {% extends "fitcheck/base.html" %}
 
 {% load i18n %}
+{% load static %}
+
+{% block fitcheck_css %}
+    <link rel="stylesheet" href="{% static 'fitcheck/vendor/tom-select.bootstrap5.min.css' %}">
+{% endblock %}
 
 {% block fitcheck_content %}
     <div class="card mb-3 overflow-hidden">
@@ -211,7 +216,40 @@
 
 {% block extra_javascript %}
     {% if can_manage %}
+        <script src="{% static 'fitcheck/vendor/tom-select.complete.min.js' %}"></script>
         <script>
+            // Category picker: coloured-pill multi-select over the doctrine's categories.
+            (function () {
+                document.querySelectorAll("select[data-category-picker]").forEach(function (el) {
+                    const colors = {};
+                    el.querySelectorAll("option").forEach(function (o) {
+                        colors[o.value] = { bg: o.dataset.color || "#0d6efd", fg: o.dataset.textColor || "#ffffff" };
+                    });
+                    function pillStyle(value) {
+                        const c = colors[value] || { bg: "#0d6efd", fg: "#ffffff" };
+                        return "background:" + c.bg + ";color:" + c.fg + ";border-color:" + c.bg;
+                    }
+                    const picker = new TomSelect(el, {
+                        plugins: ["remove_button"],
+                        maxOptions: 1000,
+                        hideSelected: true,
+                        closeAfterSelect: false,
+                        placeholder: "{% translate 'Search categories...' %}",
+                        render: {
+                            item: function (data, escape) {
+                                return '<div style="' + pillStyle(data.value) + '">' + escape(data.text) + '</div>';
+                            },
+                            option: function (data, escape) {
+                                return '<div class="py-1"><span class="badge" style="' + pillStyle(data.value) + '">' + escape(data.text) + '</span></div>';
+                            },
+                        },
+                    });
+                    picker.wrapper.classList.add("fc-category-picker");
+                    el._categoryPicker = picker;
+                    el._categoryColors = colors;
+                });
+            })();
+
             (function () {
                 const searchInput = document.getElementById("ship-search-input");
                 if (!searchInput) return;
