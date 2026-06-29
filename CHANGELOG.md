@@ -29,6 +29,8 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-29
+
 ### Changed
 - **Doctrine category selection is now a searchable dropdown with coloured pills**
   instead of a long checkbox list. On the doctrine create wizard and the doctrine
