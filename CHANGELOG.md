@@ -29,6 +29,8 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-06-29
+
 ### Added
 - **`fitcheck_inventory_doctor <character_id>` management command** — a read-only
   diagnostic that reports, per character, exactly what each layer of the My Ships
