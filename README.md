@@ -295,7 +295,15 @@ POLICY mode defers to the per-item policy editor; the other modes override it si
    }
    ```
 
-6. Restart Auth and assign permissions.
+6. Collect static files, then restart Auth and assign permissions:
+
+   ```bash
+   python manage.py collectstatic --noinput
+   ```
+
+   > **Upgrading.** Re-run `collectstatic` and restart the web workers after each
+   > `aa-fitcheck` upgrade — bundled static assets must be re-collected, or pages that
+   > use them return a 500 under Auth's manifest static storage.
 
 ### Optional: Secure Groups smart filter
 
