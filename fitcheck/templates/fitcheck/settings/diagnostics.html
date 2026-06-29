@@ -1,0 +1,142 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="fc-section-head mb-0"><i class="fa-solid fa-stethoscope"></i>{% translate "Diagnostics & health" %}</div>
+        <a class="btn btn-sm btn-secondary" href="{% url 'fitcheck:settings_home' %}">
+            <i class="fa-solid fa-arrow-left"></i> {% translate "Back to settings" %}
+        </a>
+    </div>
+    <p class="small text-muted">{% translate "Read-only. Nothing here changes data or calls ESI." %}</p>
+
+    {# --- deploy-check warnings --- #}
+    {% if health.deploy_warnings %}
+        {% for w in health.deploy_warnings %}
+            <div class="alert alert-warning">
+                <strong>{{ w.id }}</strong> — {{ w.msg }}
+                {% if w.hint %}<div class="small mt-1">{{ w.hint }}</div>{% endif %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="alert alert-success py-2">
+            <i class="fa-solid fa-circle-check me-1"></i>{% translate "All deploy checks pass." %}
+        </div>
+    {% endif %}
+
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-4">
+        <div class="col">
+            <div class="fc-card"><div class="card-body">
+                <h6 class="mb-2"><i class="fa-solid fa-circle-info me-2"></i>{% translate "Versions" %}</h6>
+                <table class="table table-sm small mb-0">
+                    <tr><td class="text-muted">{% translate "Fit Check" %}</td><td class="text-end">{{ health.fitcheck_version }}</td></tr>
+                    <tr><td class="text-muted">{% translate "corptools" %}</td>
+                        <td class="text-end">
+                            {% if health.corptools_installed %}
+                                <span class="badge bg-success">{% translate "installed" %}</span> {{ health.corptools_version|default:"?" }}
+                            {% else %}
+                                <span class="badge bg-secondary">{% translate "not installed" %}</span>
+                            {% endif %}
+                        </td></tr>
+                    <tr><td class="text-muted">{% translate "Asset source" %}</td><td class="text-end"><code>{{ health.asset_source }}</code></td></tr>
+                </table>
+            </div></div>
+        </div>
+
+        <div class="col">
+            <div class="fc-card"><div class="card-body">
+                <h6 class="mb-2"><i class="fa-solid fa-database me-2"></i>{% translate "Static data (SDE)" %}</h6>
+                <table class="table table-sm small mb-0">
+                    <tr><td class="text-muted">{% translate "Ships loaded" %}</td>
+                        <td class="text-end">{% if health.sde_loaded %}<span class="badge bg-success">{% translate "yes" %}</span>{% else %}<span class="badge bg-danger">{% translate "no" %}</span>{% endif %}</td></tr>
+                    {% if health.sde_latest %}
+                        <tr><td class="text-muted">{% translate "Build" %}</td><td class="text-end"><code>{{ health.sde_latest.sde_build }}</code></td></tr>
+                        <tr><td class="text-muted">{% translate "Loaded" %}</td><td class="text-end">{{ health.sde_latest.loaded_at|date:"Y-m-d H:i" }}</td></tr>
+                    {% endif %}
+                    <tr><td class="text-muted">{% translate "Types total" %}</td><td class="text-end">{{ health.sde_type_total }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Ships / modules / charges" %}</td>
+                        <td class="text-end">{{ health.sde_category_counts.ship }} / {{ health.sde_category_counts.module }} / {{ health.sde_category_counts.charge }}</td></tr>
+                </table>
+            </div></div>
+        </div>
+
+        <div class="col">
+            <div class="fc-card"><div class="card-body">
+                <h6 class="mb-2"><i class="fa-solid fa-building me-2"></i>{% translate "Structure name cache" %}</h6>
+                <table class="table table-sm small mb-0">
+                    <tr><td class="text-muted">{% translate "Resolved" %}</td><td class="text-end">{{ health.structure_resolved }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Pending" %}</td><td class="text-end">{{ health.structure_pending }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Inaccessible" %}</td><td class="text-end">{{ health.structure_inaccessible }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Last attempt" %}</td><td class="text-end">{{ health.structure_last_attempt|date:"Y-m-d H:i"|default:"—" }}</td></tr>
+                    <tr><td class="text-muted">{% translate "TTL (hours)" %}</td><td class="text-end">{{ health.structure_cache_ttl_hours }}</td></tr>
+                </table>
+            </div></div>
+        </div>
+
+        <div class="col">
+            <div class="fc-card"><div class="card-body">
+                <h6 class="mb-2"><i class="fa-solid fa-scale-balanced me-2"></i>{% translate "Enforcement modes" %}</h6>
+                <table class="table table-sm small mb-0">
+                    <tr><td class="text-muted">{% translate "Implants" %}</td><td class="text-end">{{ health.enforcement.get_implant_mode_display }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Fuel" %}</td><td class="text-end">{{ health.enforcement.get_fuel_mode_display }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Boosters" %}</td><td class="text-end">{{ health.enforcement.get_booster_mode_display }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Frigate Escape Bay" %}</td><td class="text-end">{{ health.enforcement.get_feb_mode_display }}</td></tr>
+                </table>
+            </div></div>
+        </div>
+
+        <div class="col">
+            <div class="fc-card"><div class="card-body">
+                <h6 class="mb-2"><i class="fa-solid fa-list-check me-2"></i>{% translate "Content & queue" %}</h6>
+                <table class="table table-sm small mb-0">
+                    <tr><td class="text-muted">{% translate "Active doctrines" %}</td><td class="text-end">{{ health.active_doctrines }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Active fits" %}</td><td class="text-end">{{ health.active_fits }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Pending submissions" %}</td><td class="text-end">{{ health.pending_submissions }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Stale pending" %}</td><td class="text-end">{{ health.stale_pending|default:"—" }}</td></tr>
+                </table>
+            </div></div>
+        </div>
+    </div>
+
+    {# --- inventory doctor --- #}
+    <div class="fc-section-head"><i class="fa-solid fa-user-astronaut"></i>{% translate "Inventory doctor" %}</div>
+    <p class="small text-muted">{% translate "Why does a character's ships show (or not) in My Ships? Reads the local DB + corptools cache only - no ESI." %}</p>
+    <div class="fc-card mb-3"><div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label small mb-1" for="doctor-character">{% translate "Character (name or id)" %}</label>
+                <input class="form-control form-control-sm" type="text" id="doctor-character" name="character"
+                       value="{{ doctor_ident|default:'' }}" placeholder="{% translate 'e.g. 95112684 or Pilot Name' %}" style="min-width: 18rem">
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-primary btn-sm" type="submit"><i class="fa-solid fa-stethoscope"></i> {% translate "Run" %}</button>
+            </div>
+        </form>
+
+        {% if doctor_not_found %}
+            <div class="alert alert-warning mt-3 mb-0">{% blocktranslate %}No character matches "{{ doctor_ident }}".{% endblocktranslate %}</div>
+        {% elif doctor %}
+            <hr>
+            <div class="fc-eyebrow">{{ doctor_character.character_name }} ({{ doctor_character.character_id }})</div>
+            <div class="alert {% if 'should list them' in doctor.verdict %}alert-success{% else %}alert-warning{% endif %} mt-2">
+                <strong>{% translate "Verdict" %}:</strong> {{ doctor.verdict }}
+            </div>
+            <table class="table table-sm small">
+                <tr><td class="text-muted" style="width: 22rem">{% translate "SDE ship types (whitelist)" %}</td><td>{{ doctor.sde_ship_types }}</td></tr>
+                <tr><td class="text-muted">{% translate "Asset source" %}</td><td><code>{{ doctor.asset_source }}</code></td></tr>
+                <tr><td class="text-muted">corptools installed</td><td>{{ doctor.corptools.installed }}{% if doctor.corptools.version %} (v{{ doctor.corptools.version }}){% endif %}</td></tr>
+                {% if doctor.corptools.installed %}
+                    <tr><td class="text-muted">CharacterAudit found</td><td>{{ doctor.corptools.audit_found }}</td></tr>
+                    <tr><td class="text-muted">assets_synced_at</td><td>{{ doctor.corptools.assets_synced_at|default:"—" }}</td></tr>
+                    <tr><td class="text-muted">{% translate "assembled (singleton) ship rows" %}</td><td>{{ doctor.corptools.ship_rows_all|default_if_none:"None (not servable)" }}</td></tr>
+                    <tr><td class="text-muted">{% translate "…of those, type in SDE set" %}</td><td>{{ doctor.corptools.ship_rows_in_sde|default_if_none:"—" }}</td></tr>
+                    <tr><td class="text-muted">{% translate "ship rows (SDE-filtered)" %}</td><td>{{ doctor.corptools.ship_rows_sde_filtered|default_if_none:"—" }}</td></tr>
+                    <tr><td class="text-muted">{% translate "sample type_ids" %}</td><td>{{ doctor.corptools.sample_type_ids }}</td></tr>
+                {% endif %}
+                <tr><td class="text-muted">{% translate "valid asset-scope token" %}</td><td>{{ doctor.token_present }}</td></tr>
+            </table>
+            <div class="small text-muted">{% translate "Live ESI is intentionally not run from this page. Use the CLI 'fitcheck_inventory_doctor <id> --esi' for a live comparison." %}</div>
+        {% endif %}
+    </div></div>
+{% endblock %}

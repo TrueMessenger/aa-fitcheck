@@ -177,6 +177,7 @@ urlpatterns = [
     path("review/<int:submission_pk>/decide/", review.decide, name="review_decide"),
     # Settings hub (fittings import + enforcement / global settings)
     path("settings/", manage.settings_home, name="settings_home"),
+    path("settings/diagnostics/", manage.diagnostics, name="diagnostics"),
     # Policy editor (plugin admins)
     path("policies/", manage.policy_list, name="policy_list"),
     path("policies/enforcement/", manage.enforcement_settings, name="enforcement_settings"),

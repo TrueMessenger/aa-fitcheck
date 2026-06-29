@@ -81,4 +81,23 @@
             </div>
         </div>
     {% endif %}
+
+    {% if can_diagnose %}
+        <div class="fc-section-head mt-4"><i class="fa-solid fa-stethoscope"></i>{% translate "Diagnostics & health" %}</div>
+        <div class="row row-cols-1 row-cols-md-3 g-3">
+            <div class="col">
+                <div class="fc-card">
+                    <div class="card-body">
+                        <h6 class="mb-2"><i class="fa-solid fa-stethoscope me-2"></i>{% translate "Diagnostics & health" %}</h6>
+                        <p class="small text-muted">
+                            {% translate "Read-only app health (static-data build & dates, corptools status, deploy-check warnings, structure cache, enforcement) and the inventory doctor - diagnose 'my ships' issues without server access." %}
+                        </p>
+                        <a class="btn btn-primary btn-sm" href="{% url 'fitcheck:diagnostics' %}">
+                            <i class="fa-solid fa-stethoscope"></i> {% translate "Open diagnostics" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
 {% endblock %}
