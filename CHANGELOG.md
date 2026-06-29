@@ -29,6 +29,20 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+### Added
+- **`fitcheck_inventory_doctor <character_id>` management command** — a read-only
+  diagnostic that reports, per character, exactly what each layer of the My Ships
+  pipeline returns (corptools detected, audit found, assets-synced time,
+  corptools ship rows with singleton/SDE-whitelist breakdown, token presence, and
+  an optional live-ESI count behind `--esi`). Makes no ESI calls by default. Aids
+  triage of "0 ships" reports without settings changes or live debugging.
+
+### Internal
+- Corptools asset-read tests now run against **real** stub models (registered
+  under app_label `corptools`) so the actual ORM filtering (`singleton` /
+  `type_id__in` / `character`) is exercised; the previous duck-typed fakes ignored
+  `filter()` kwargs and could mask query regressions.
+
 ## [1.3.0] - 2026-06-29
 
 ### Changed

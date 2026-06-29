@@ -15,6 +15,9 @@ INSTALLED_APPS += [  # noqa: F405
     # Groups smart filter (FitComplianceFilter) is exercised by the suite.
     "securegroups",
     "fitcheck",
+    # Test-only stub providing app_label "corptools" so corptools_source's real
+    # ORM reads are exercised by the suite (no real aa-corptools in dev/test).
+    "fitcheck.tests.testdata.fake_corptools.apps.FakeCorptoolsConfig",
 ]
 
 DATABASES = {
