@@ -36,6 +36,20 @@ META_GROUP_CHOICES = tuple(
 )
 
 
+class CategoryPillSelect(forms.SelectMultiple):
+    """SelectMultiple that carries each category's colours on its <option> so the
+    JS picker (tom-select) can render every selected category as its own coloured
+    pill, matching how categories show elsewhere in the app."""
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        instance = getattr(value, "instance", None)  # ModelChoiceIteratorValue.instance
+        if instance is not None:
+            option["attrs"]["data-color"] = instance.color
+            option["attrs"]["data-text-color"] = instance.text_color
+        return option
+
+
 class DoctrineForm(forms.ModelForm):
     image_type_id = forms.IntegerField(
         required=False,
@@ -49,7 +63,9 @@ class DoctrineForm(forms.ModelForm):
         widgets = {
             "description": forms.Textarea(attrs={"rows": 3, "class": "form-control"}),
             "name": forms.TextInput(attrs={"class": "form-control"}),
-            "categories": forms.CheckboxSelectMultiple,
+            "categories": CategoryPillSelect(
+                attrs={"class": "form-select", "data-category-picker": "1"}
+            ),
         }
 
     def clean_image_type_id(self):

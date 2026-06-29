@@ -220,6 +220,13 @@
         .ts-wrapper.multi .ts-control > .item .remove:hover {
             background-color: rgba(255, 255, 255, 0.2);
         }
+        /* Category picker pills carry their own category colour (inline style on the
+           item), so the remove "x" must inherit that colour instead of the teal
+           default - otherwise a white x is unreadable on light category pills. */
+        .fc-category-picker.ts-wrapper.multi .ts-control > .item .remove {
+            color: inherit;
+            border-left-color: currentColor;
+        }
         /* The options dropdown must be readable on the dark AA theme:
            white background, black text, teal highlight on the active option. */
         .ts-dropdown {
