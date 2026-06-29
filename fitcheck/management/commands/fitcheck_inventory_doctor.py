@@ -6,11 +6,13 @@ changing settings or live-debugging. Makes NO ESI calls unless --esi is given.
 
     python manage.py fitcheck_inventory_doctor 95112684
     python manage.py fitcheck_inventory_doctor "Some Character" --esi
+
+The same read-only report powers the admin Settings -> Diagnostics page.
 """
 
 from django.core.management.base import BaseCommand, CommandError
 
-from ...services import corptools_source, esi_assets
+from ...services import diagnostics
 
 
 class Command(BaseCommand):
@@ -28,87 +30,53 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        from allianceauth.eveonline.models import EveCharacter
-
-        ident = options["character"]
-        if ident.isdigit():
-            character = EveCharacter.objects.filter(character_id=int(ident)).first()
-        else:
-            character = EveCharacter.objects.filter(character_name=ident).first()
+        character = diagnostics.resolve_character(options["character"])
         if character is None:
-            raise CommandError(f"No EveCharacter matching {ident!r}.")
-        cid = character.character_id
+            raise CommandError(f"No EveCharacter matching {options['character']!r}.")
+
+        report = diagnostics.inventory_report(
+            character.character_id, with_esi=options["esi"]
+        )
+        ct = report["corptools"]
 
         def line(label, value):
             self.stdout.write(f"  {label:<34} {value}")
 
         self.stdout.write(
             self.style.MIGRATE_HEADING(
-                f"Inventory doctor: {character.character_name} ({cid})"
+                f"Inventory doctor: {character.character_name} ({character.character_id})"
             )
         )
-
-        # --- SDE ship whitelist ---
-        ship_set = esi_assets._ship_type_id_set()
-        line("SDE ship types (category 6)", len(ship_set))
+        line("SDE ship types (category 6)", report["sde_ship_types"])
+        line("FITCHECK_ASSET_SOURCE", report["asset_source"])
         self.stdout.write("")
 
-        # --- corptools cache path ---
         self.stdout.write(self.style.HTTP_INFO("corptools cache"))
-        installed = corptools_source.corptools_installed()
-        line("corptools_installed()", installed)
-        if installed:
-            audit = corptools_source._audit_for(cid)
-            line("CharacterAudit found?", audit is not None)
-            line("assets_synced_at()", corptools_source.assets_synced_at(cid))
-            all_singletons = corptools_source.ship_assets_for_character(cid, None)
-            if all_singletons is None:
+        line("corptools_installed()", ct["installed"])
+        line("corptools version", ct["version"])
+        if ct["installed"]:
+            line("CharacterAudit found?", ct["audit_found"])
+            line("assets_synced_at()", ct["assets_synced_at"])
+            if ct["ship_rows_all"] is None:
                 line("ship_assets (no type filter)", "None (not servable)")
             else:
-                line("ship_assets (no type filter)", f"{len(all_singletons)} singleton rows")
-                in_set = [s for s in all_singletons if s["type_id"] in ship_set]
-                line("  of those, type in SDE set", len(in_set))
-                sample = sorted({s["type_id"] for s in all_singletons})[:15]
-                line("  sample type_ids", sample)
-            filtered = corptools_source.ship_assets_for_character(cid, ship_set)
-            line(
-                "ship_assets (SDE-filtered)",
-                "None" if filtered is None else f"{len(filtered)} rows",
-            )
+                line("ship_assets (no type filter)", f"{ct['ship_rows_all']} singleton rows")
+                line("  of those, type in SDE set", ct["ship_rows_in_sde"])
+                line("  sample type_ids", ct["sample_type_ids"])
+            line("ship_assets (SDE-filtered)", ct["ship_rows_sde_filtered"])
         self.stdout.write("")
 
-        # --- token / live ESI path ---
         self.stdout.write(self.style.HTTP_INFO("live ESI path"))
-        token = _any_asset_token(cid)
-        line("valid asset-scope token?", token is not None)
+        line("valid asset-scope token?", report["token_present"])
         if options["esi"]:
-            if token is None:
-                line("live _fetch_assets", "skipped (no token)")
+            esi = report["esi"]
+            if esi["error"]:
+                line("live _fetch_assets", f"ERROR/skip: {esi['error']}")
             else:
-                try:
-                    assets = esi_assets._fetch_assets(token, cid)
-                    ships = [
-                        a for a in assets
-                        if a.get("type_id") in ship_set and a.get("is_singleton")
-                    ]
-                    line("live assets rows", len(assets))
-                    line("  singleton ships in SDE set", len(ships))
-                except Exception as exc:  # noqa: BLE001 - diagnostic
-                    line("live _fetch_assets", f"ERROR: {type(exc).__name__}: {exc}")
+                line("live assets rows", esi["assets"])
+                line("  singleton ships in SDE set", esi["ships"])
         else:
             line("live _fetch_assets", "skipped (pass --esi to run)")
 
         self.stdout.write("")
-        self.stdout.write(self.style.SUCCESS("Done. Paste this output for diagnosis."))
-
-
-def _any_asset_token(character_id: int):
-    """A valid asset-scope token for this character under any user (read-only)."""
-    from esi.models import Token
-
-    return (
-        Token.objects.filter(character_id=character_id)
-        .require_scopes(esi_assets.ASSET_SCOPES)
-        .require_valid()
-        .first()
-    )
+        self.stdout.write(self.style.WARNING(f"Verdict: {report['verdict']}"))

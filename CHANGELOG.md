@@ -29,6 +29,16 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+### Added
+- **Admin "Diagnostics & Health" page** (Settings tab, plugin-admin only). A
+  read-only panel showing app-critical health — Fit Check / corptools versions,
+  static-data (SDE) build, load date and type counts, live deploy-check warnings,
+  the structure-name cache, enforcement modes, and content/queue counts — plus a
+  web **inventory doctor** that explains, per character, why their ships do or
+  don't surface in My Ships. Reads the local DB + corptools cache only (no ESI),
+  so "my ships" issues can be diagnosed without server/Docker access. Shares its
+  logic with the `fitcheck_inventory_doctor` CLI command.
+
 ## [1.3.1] - 2026-06-29
 
 ### Added

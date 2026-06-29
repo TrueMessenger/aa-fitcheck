@@ -1705,9 +1705,37 @@ def settings_home(request):
             "page_title": _("Settings"),
             "can_import": can_import,
             "can_enforce": can_enforce,
+            # Diagnostics is plugin-admin only (same tier as enforcement).
+            "can_diagnose": request.user.has_perm("fitcheck.manage_policies"),
             "fittings_available": fittings_installed(),
         },
     )
+
+
+@login_required
+@permission_required("fitcheck.manage_policies")
+def diagnostics(request):
+    """Admin Diagnostics & Health page: read-only app-health stats plus the
+    inventory doctor. DB/cache only - never calls ESI (the CLI command keeps the
+    deliberate --esi mode)."""
+    from ..services import diagnostics as diag
+
+    context = {
+        "page_title": _("Diagnostics & Health"),
+        "health": diag.health_summary(),
+    }
+    ident = request.GET.get("character", "").strip()
+    if ident:
+        context["doctor_ident"] = ident
+        character = diag.resolve_character(ident)
+        if character is None:
+            context["doctor_not_found"] = True
+        else:
+            context["doctor_character"] = character
+            context["doctor"] = diag.inventory_report(
+                character.character_id, with_esi=False
+            )
+    return render(request, "fitcheck/settings/diagnostics.html", context)
 
 
 @login_required
