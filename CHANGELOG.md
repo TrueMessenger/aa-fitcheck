@@ -29,6 +29,8 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-29
+
 ### Added
 - **Admin "Diagnostics & Health" page** (Settings tab, plugin-admin only). A
   read-only panel showing app-critical health — Fit Check / corptools versions,
