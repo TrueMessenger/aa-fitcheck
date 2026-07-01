@@ -43,6 +43,11 @@ Unreleased set contains new features, so the next release will be a minor bump.)
   character's selected ships. Ship selections naming a character outside the
   requester's own Auth ownerships are now dropped outright instead of being
   looked up.
+- The doctrine fitting picker's search endpoint no longer runs one extra
+  database count per result row (the doctrine count is annotated into the
+  search query).
+- Save-to-EVE failures show a generic error message instead of echoing the
+  raw ESI exception text to the page; the detail stays in the server log.
 
 ## [1.4.0] - 2026-06-29
 

@@ -59,6 +59,17 @@ class TestFittingSearchEndpoint(TestCase):
         # @permission_required redirects unauthorised users to login.
         self.assertEqual(response.status_code, 302)
 
+    def test_doctrine_count_is_annotated_correctly(self):
+        """doctrine_count comes from a queryset annotation (one query for the
+        whole result set, not one COUNT per row) and still reports the real
+        number of doctrines each fitting belongs to."""
+        self.harb.doctrines.add(self.other_doctrine)  # now in 2 doctrines
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("fitcheck:fitting_search"))
+        counts = {r["name"]: r["doctrine_count"] for r in response.json()["results"]}
+        self.assertEqual(counts["Harb Brawl"], 2)
+        self.assertEqual(counts["Glass Cannon"], 0)
+
 
 class TestShipGroupList(TestCase):
     @classmethod

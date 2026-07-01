@@ -1494,8 +1494,11 @@ def fitting_search(request):
     hull = request.GET.get("hull", "").strip()
     exclude_doctrine = request.GET.get("exclude_doctrine", "").strip()
 
-    qs = DoctrineFit.objects.select_related("ship_type", "ship_type__eve_group").filter(
-        is_active=True
+    qs = (
+        DoctrineFit.objects.select_related("ship_type", "ship_type__eve_group")
+        .filter(is_active=True)
+        # Annotated so the result loop below doesn't run one COUNT query per fit.
+        .annotate(num_doctrines=Count("doctrines", distinct=True))
     )
     if query:
         qs = qs.filter(name__icontains=query)
@@ -1515,7 +1518,7 @@ def fitting_search(request):
             "group_name": (
                 fit.ship_type.eve_group.name if fit.ship_type.eve_group_id else ""
             ),
-            "doctrine_count": fit.doctrines.count(),
+            "doctrine_count": fit.num_doctrines,
         }
         for fit in qs.order_by("ship_type__name", "name")[:30]
     ]
