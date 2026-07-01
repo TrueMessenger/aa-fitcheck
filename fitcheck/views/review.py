@@ -11,7 +11,7 @@ from django.views.decorators.http import require_POST
 from ..forms import ReviewDecisionForm
 from ..models import Doctrine, FitSubmission
 from ..services.check_runner import review_submission
-from .member import _can_review
+from .member import _can_review, _paginate
 
 
 def review_access_required(view):
@@ -55,11 +55,17 @@ def queue(request):
     if doctrine.isdigit():
         submissions = submissions.filter(doctrine_id=doctrine)
 
+    page_obj, elided_range, querystring = _paginate(
+        request, submissions.order_by("-created_at")
+    )
     return render(
         request,
         "fitcheck/review/queue.html",
         {
-            "submissions": submissions.order_by("-created_at")[:300],
+            "submissions": page_obj,
+            "page_obj": page_obj,
+            "elided_range": elided_range,
+            "querystring": querystring,
             "status_filter": status,
             "verdict_filter": verdict,
             "pilot_filter": pilot,
