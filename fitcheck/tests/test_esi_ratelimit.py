@@ -165,3 +165,102 @@ class EsiRateLimitTests(TestCase):
         with mock.patch.object(esi_assets, "esi_client", return_value=provider):
             with self.assertRaises(_ErrorLimited):
                 _verify_mutated_items(items, rows)
+
+
+def _ship_tree(*ship_item_ids):
+    """A minimal asset tree holding the given Harbinger hulls, each with one
+    fitted Heat Sink II."""
+    rows = []
+    for i, ship_id in enumerate(ship_item_ids):
+        rows.append(
+            {"item_id": ship_id, "type_id": T.HARBINGER, "location_id": 60003760,
+             "location_flag": "Hangar", "quantity": 1, "is_singleton": True}
+        )
+        rows.append(
+            {"item_id": 9000 + i, "type_id": T.HEAT_SINK_II, "location_id": ship_id,
+             "location_flag": "LoSlot0", "quantity": 1, "is_singleton": False}
+        )
+    return rows
+
+
+class SelfAuditBatchingTests(TestCase):
+    """My Ships self-audit POST: grading several selected ships costs ONE
+    asset-tree / ship-name / implant fetch per character - never one per ship -
+    and a character_id outside the requester's ownerships is dropped before
+    any asset source (incl. the token-less corptools cache) is consulted."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from allianceauth.authentication.models import CharacterOwnership
+
+        from .testdata.factories import create_user
+
+        create_sde_testdata()
+        cls.user = create_user("selfauditor")
+        cls.char1 = cls.user.profile.main_character
+        CharacterOwnership.objects.create(
+            user=cls.user, character=cls.char1, owner_hash="hash-selfaudit-1"
+        )
+        cls.char2 = EveCharacter.objects.create(
+            character_id=77777, character_name="Alt", corporation_id=2001,
+            corporation_name="Corp", corporation_ticker="CRP", security_status=0,
+        )
+        CharacterOwnership.objects.create(
+            user=cls.user, character=cls.char2, owner_hash="hash-selfaudit-2"
+        )
+
+    def _post_selections(self, selections):
+        from django.urls import reverse
+
+        cid1 = self.char1.character_id
+        cid2 = self.char2.character_id
+        trees = {cid1: _ship_tree(11, 12), cid2: _ship_tree(21)}
+        token = object()
+        self.client.force_login(self.user)
+        with mock.patch.object(
+                    esi_assets, "user_tokens_by_character",
+                    return_value=({cid1: token, cid2: token}, []),
+                ), \
+                mock.patch.object(
+                    esi_assets, "resolve_assets",
+                    side_effect=lambda cid, tok=None: trees.get(cid),
+                ) as resolve, \
+                mock.patch.object(
+                    esi_assets, "_fetch_asset_names", return_value={}
+                ) as names, \
+                mock.patch.object(
+                    esi_assets, "get_active_implants", return_value={19540}
+                ) as implants, \
+                mock.patch.object(esi_assets, "_verify_mutated_items"), \
+                mock.patch(
+                    "fitcheck.views.member.validate_parsed_ship", return_value=[]
+                ) as validate:
+            response = self.client.post(
+                reverse("fitcheck:ship_inventory"), {"ships": selections}
+            )
+        return response, resolve, names, implants, validate
+
+    def test_one_fetch_per_character_not_per_ship(self):
+        cid1 = self.char1.character_id
+        cid2 = self.char2.character_id
+        response, resolve, names, implants, validate = self._post_selections(
+            [f"{cid1}:11", f"{cid1}:12", f"{cid2}:21"]
+        )
+        self.assertEqual(response.status_code, 200)
+        # 3 ships across 2 characters -> exactly 2 of each per-character fetch.
+        self.assertEqual(resolve.call_count, 2)
+        self.assertEqual(names.call_count, 2)
+        self.assertEqual(implants.call_count, 2)
+        self.assertEqual(validate.call_count, 3)
+        # Every graded fit carries the (once-fetched) implants.
+        for call in validate.call_args_list:
+            parsed = call.args[1]
+            self.assertEqual(parsed.pilot_implant_type_ids, {19540})
+
+    def test_unowned_character_is_dropped_without_asset_lookup(self):
+        response, resolve, names, implants, validate = self._post_selections(
+            ["99999999:11"]
+        )
+        resolve.assert_not_called()
+        implants.assert_not_called()
+        validate.assert_not_called()
