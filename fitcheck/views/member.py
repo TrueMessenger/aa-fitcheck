@@ -485,11 +485,14 @@ def save_fit_to_eve_view(request, fit_pk: int):
     except NoFittingsTokenError:
         url = reverse("fitcheck:add_fittings_write_token")
         return redirect(f"{url}?next_fit={fit.pk}")
-    except Exception as exc:
+    except Exception:
+        # Don't echo the raw exception to the page - ESI error bodies can
+        # carry operational detail. The full traceback is in the server log.
         logger.exception("Save-to-EVE failed for fit %s", fit.pk)
         messages.error(
             request,
-            _("EVE rejected the fit: %(err)s") % {"err": exc},
+            _("EVE rejected the fit. Try again in a minute; if it keeps "
+              "failing, ask an admin to check the server log."),
         )
         return redirect("fitcheck:fit_detail", fit_pk=fit.pk)
 

@@ -29,6 +29,13 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+### Fixed
+- The doctrine fitting picker's search endpoint no longer runs one extra
+  database count per result row (the doctrine count is annotated into the
+  search query).
+- Save-to-EVE failures show a generic error message instead of echoing the
+  raw ESI exception text to the page; the detail stays in the server log.
+
 ## [1.4.0] - 2026-06-29
 
 ### Added
