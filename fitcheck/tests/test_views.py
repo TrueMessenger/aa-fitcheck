@@ -447,6 +447,67 @@ class TestReviewViews(ViewTestCase):
         self.assertEqual(submission.status, FitSubmission.Status.PENDING)
 
 
+class TestSubmissionPagination(ViewTestCase):
+    """The review queue and the pilot's own history paginate instead of
+    silently truncating at a hard row cap; page links preserve active filters
+    and an out-of-range page falls back to a valid one."""
+
+    PER_PAGE = 50
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        FitSubmission.objects.bulk_create(
+            FitSubmission(
+                user=cls.member,
+                doctrine_fit=cls.fit,
+                fit_version=cls.fit.version,
+                source=FitSubmission.Source.EFT,
+                verdict=FitSubmission.Verdict.COMPLIANT,
+                status=FitSubmission.Status.PENDING,
+            )
+            for _ in range(cls.PER_PAGE + 10)
+        )
+
+    def test_queue_pages_beyond_the_first_fifty(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("fitcheck:review_queue")
+
+        first = self.client.get(url)
+        self.assertEqual(len(first.context["submissions"]), self.PER_PAGE)
+        self.assertEqual(first.context["page_obj"].paginator.count, self.PER_PAGE + 10)
+
+        second = self.client.get(url, {"page": 2})
+        self.assertEqual(len(second.context["submissions"]), 10)
+
+    def test_queue_page_links_preserve_filters(self):
+        self.client.force_login(self.reviewer)
+        response = self.client.get(
+            reverse("fitcheck:review_queue"),
+            {"status": FitSubmission.Status.PENDING, "pilot": "member"},
+        )
+        self.assertIn("pilot=member", response.context["querystring"])
+        self.assertNotIn("page=", response.context["querystring"])
+        self.assertContains(response, "pilot=member&amp;page=2")
+
+    def test_queue_out_of_range_page_falls_back(self):
+        self.client.force_login(self.reviewer)
+        response = self.client.get(reverse("fitcheck:review_queue"), {"page": 999})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["page_obj"].number, 2)
+
+    def test_pilot_history_pages_all_own_submissions(self):
+        self.client.force_login(self.member)
+        url = reverse("fitcheck:pilot_fittings")
+
+        first = self.client.get(url)
+        self.assertEqual(len(first.context["submissions"]), self.PER_PAGE)
+        self.assertEqual(first.context["page_obj"].paginator.count, self.PER_PAGE + 10)
+
+        second = self.client.get(url, {"page": 2})
+        self.assertEqual(len(second.context["submissions"]), 10)
+
+
 class TestSubmitEftDoctrineSelector(ViewTestCase):
     """The submit/test-bench page offers a doctrine selector; choosing one or
     more doctrines fans out into one submission per (fit, doctrine), each

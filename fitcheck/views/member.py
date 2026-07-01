@@ -28,6 +28,23 @@ def _can_review(user) -> bool:
     )
 
 
+def _paginate(request, queryset, per_page=50):
+    """Page a queryset plus the bits the shared pagination partial needs: the
+    Page object, an elided page range, and the current querystring minus `page`
+    (so active filters survive page navigation). Out-of-range / non-numeric
+    `page` values fall back to a valid page via `get_page`."""
+    from django.core.paginator import Paginator
+
+    paginator = Paginator(queryset, per_page)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    params = request.GET.copy()
+    params.pop("page", None)
+    elided_range = list(
+        paginator.get_elided_page_range(page_obj.number, on_each_side=2, on_ends=1)
+    )
+    return page_obj, elided_range, params.urlencode()
+
+
 def _visible_fit_or_404(request, fit_pk: int) -> DoctrineFit:
     fit = get_object_or_404(
         DoctrineFit.objects.select_related("ship_type").prefetch_related("doctrines__categories"),
@@ -330,13 +347,17 @@ def pilot_fittings(request):
     submissions = (
         FitSubmission.objects.for_user(request.user)
         .select_related("doctrine_fit", "doctrine", "ship_type", "character")
-        .order_by("-created_at")[:200]
+        .order_by("-created_at")
     )
+    page_obj, elided_range, querystring = _paginate(request, submissions)
     return render(
         request,
         "fitcheck/pilot_fittings.html",
         {
-            "submissions": submissions,
+            "submissions": page_obj,
+            "page_obj": page_obj,
+            "elided_range": elided_range,
+            "querystring": querystring,
             "main_character": getattr(request.user.profile, "main_character", None),
             "sde_loaded": ensure_sde_loading(),
             "page_title": _("Pilot Fittings"),

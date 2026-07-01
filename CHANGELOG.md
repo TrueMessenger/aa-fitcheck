@@ -29,6 +29,12 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+### Added
+- **Pagination on the review queue and the pilot's validation history.** Both
+  lists previously stopped at a silent hard cap (300 / 200 rows); they now page
+  at 50 rows with filter-preserving page links and a "Showing X–Y of Z" total,
+  so no submission is ever invisible on a large install.
+
 ## [1.4.0] - 2026-06-29
 
 ### Added
