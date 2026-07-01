@@ -28,6 +28,23 @@ def _can_review(user) -> bool:
     )
 
 
+def _paginate(request, queryset, per_page=50):
+    """Page a queryset plus the bits the shared pagination partial needs: the
+    Page object, an elided page range, and the current querystring minus `page`
+    (so active filters survive page navigation). Out-of-range / non-numeric
+    `page` values fall back to a valid page via `get_page`."""
+    from django.core.paginator import Paginator
+
+    paginator = Paginator(queryset, per_page)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    params = request.GET.copy()
+    params.pop("page", None)
+    elided_range = list(
+        paginator.get_elided_page_range(page_obj.number, on_each_side=2, on_ends=1)
+    )
+    return page_obj, elided_range, params.urlencode()
+
+
 def _visible_fit_or_404(request, fit_pk: int) -> DoctrineFit:
     fit = get_object_or_404(
         DoctrineFit.objects.select_related("ship_type").prefetch_related("doctrines__categories"),
@@ -330,13 +347,17 @@ def pilot_fittings(request):
     submissions = (
         FitSubmission.objects.for_user(request.user)
         .select_related("doctrine_fit", "doctrine", "ship_type", "character")
-        .order_by("-created_at")[:200]
+        .order_by("-created_at")
     )
+    page_obj, elided_range, querystring = _paginate(request, submissions)
     return render(
         request,
         "fitcheck/pilot_fittings.html",
         {
-            "submissions": submissions,
+            "submissions": page_obj,
+            "page_obj": page_obj,
+            "elided_range": elided_range,
+            "querystring": querystring,
             "main_character": getattr(request.user.profile, "main_character", None),
             "sde_loaded": ensure_sde_loading(),
             "page_title": _("Pilot Fittings"),
@@ -509,41 +530,76 @@ def save_fit_to_eve_view(request, fit_pk: int):
 def ship_inventory(request):
     """Pick real ships from ESI assets and validate them against the standards."""
     if request.method == "POST":
-        from ..services.esi_assets import build_parsed_fit
+        from ..services.esi_assets import (
+            build_parsed_fit,
+            get_active_implants,
+            resolve_assets,
+            ship_names_for,
+            user_tokens_by_character,
+        )
 
-        selections = request.POST.getlist("ships")
-        results = []
         characters = {
             o.character.character_id: o.character
             for o in request.user.character_ownerships.select_related("character")
         }
-        for selection in selections[:25]:
+        # Group the selected ships by character so each character's asset
+        # tree / ship names / implants are fetched ONCE, not once per ship.
+        # Only the requester's own characters are gradeable - a character_id
+        # outside their ownerships is dropped (never resolved against the
+        # corptools cache, which needs no token).
+        wanted: dict[int, list[int]] = {}
+        for selection in request.POST.getlist("ships")[:25]:
             try:
                 character_id, ship_item_id = (int(p) for p in selection.split(":"))
             except ValueError:
                 continue
-            parsed = build_parsed_fit(
-                request.user, character_id, ship_item_id, fetch_implants=True
-            )
-            if parsed is None:
-                messages.error(
-                    request,
-                    _("Ship %(id)s could not be read from ESI.") % {"id": ship_item_id},
-                )
+            if character_id not in characters:
                 continue
-            submissions = validate_parsed_ship(
-                request.user,
-                parsed,
-                character=characters.get(character_id),
-                eft_text=render_eft(parsed),
+            wanted.setdefault(character_id, []).append(ship_item_id)
+
+        results = []
+        tokens, _missing = user_tokens_by_character(request.user)
+        for character_id, ship_item_ids in wanted.items():
+            token = tokens.get(character_id)
+            assets = resolve_assets(character_id, token)
+            names = (
+                ship_names_for(token, character_id, ship_item_ids) if assets else {}
             )
-            results.append(
-                {
-                    "parsed": parsed,
-                    "ship_type_id": parsed.ship_type_id,
-                    "submissions": submissions,
-                }
-            )
+            implants = get_active_implants(character_id) if assets else None
+            for ship_item_id in ship_item_ids:
+                parsed = (
+                    build_parsed_fit(
+                        request.user,
+                        character_id,
+                        ship_item_id,
+                        assets=assets,
+                        token=token,
+                        asset_names=names,
+                        implant_type_ids=implants,
+                    )
+                    if assets is not None
+                    else None
+                )
+                if parsed is None:
+                    messages.error(
+                        request,
+                        _("Ship %(id)s could not be read from ESI.")
+                        % {"id": ship_item_id},
+                    )
+                    continue
+                submissions = validate_parsed_ship(
+                    request.user,
+                    parsed,
+                    character=characters.get(character_id),
+                    eft_text=render_eft(parsed),
+                )
+                results.append(
+                    {
+                        "parsed": parsed,
+                        "ship_type_id": parsed.ship_type_id,
+                        "submissions": submissions,
+                    }
+                )
         if results:
             from ..tasks import notify_reviewers_new_submission
 

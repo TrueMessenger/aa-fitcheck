@@ -262,6 +262,15 @@ def _eveuniverse_ship_type_ids(type_ids: set[int]) -> set[int]:
     return ships
 
 
+def ship_names_for(token, character_id: int, item_ids: list[int]) -> dict[int, str]:
+    """Bulk custom-name lookup for the given asset item_ids ({} without a
+    token). Lets a caller grading several of one character's ships resolve all
+    their names in one ESI round-trip instead of one per ship."""
+    if token is None or not item_ids:
+        return {}
+    return _fetch_asset_names(token, character_id, item_ids)
+
+
 def ship_type_ids_among(type_ids) -> set[int]:
     """Which of `type_ids` are ships. The local SDE mirror is authoritative for
     types it has rows for; anything the mirror doesn't know (e.g. before
@@ -881,6 +890,11 @@ def get_active_implants(character_id: int) -> set[int] | None:
     return {int(r) for r in rows}
 
 
+# Sentinel: distinguishes "caller did not pre-fetch implants" from a
+# pre-fetched result that is legitimately None (no clones-scoped token).
+_IMPLANTS_UNFETCHED = object()
+
+
 def build_parsed_fit(
     user,
     character_id: int,
@@ -889,13 +903,19 @@ def build_parsed_fit(
     assets: list[dict] | None = None,
     token=None,
     fit_name: str | None = None,
+    asset_names: dict[int, str] | None = None,
     fetch_implants: bool = False,
+    implant_type_ids=_IMPLANTS_UNFETCHED,
 ) -> ParsedFit | None:
     """Rebuild a ship's fitted state from the owner's asset tree.
 
     A bulk scan that already fetched the character's assets (and token, and ship
     name) passes them in so this does NOT re-fetch the whole asset tree per ship
-    - the single biggest ESI-call saving on an alliance-wide scan."""
+    - the single biggest ESI-call saving on an alliance-wide scan. A caller
+    grading several of one character's ships likewise passes `asset_names`
+    (one `ship_names_for` call) and `implant_type_ids` (one `get_active_implants`
+    call - implants are per-character, not per-ship) to avoid one ESI call per
+    ship for each."""
     if token is None:
         tokens, _missing = user_tokens_by_character(user)
         token = tokens.get(character_id)
@@ -930,17 +950,24 @@ def build_parsed_fit(
         )
 
     if fit_name is None:
-        if token is not None:
-            ship_names = _fetch_asset_names(token, character_id, [ship_item_id])
-            fit_name = ship_names.get(ship_item_id, f"Ship {ship_item_id}")
-        else:
-            # corptools-served: fall back to the cached custom ship name.
+        if asset_names is not None:
+            fit_name = asset_names.get(ship_item_id)
+        elif token is not None:
+            names = _fetch_asset_names(token, character_id, [ship_item_id])
+            fit_name = names.get(ship_item_id)
+        if fit_name is None:
+            # corptools-served / unnamed: fall back to the cached custom ship
+            # name, then a generic placeholder.
             fit_name = ship.get("name") or f"Ship {ship_item_id}"
+    if implant_type_ids is _IMPLANTS_UNFETCHED:
+        implant_type_ids = (
+            get_active_implants(character_id) if fetch_implants else None
+        )
     return ParsedFit(
         ship_type_id=ship["type_id"],
         fit_name=fit_name,
         items=items,
         frigate_escape_bay_type_id=feb_type_id,
         source_ship_item_id=ship_item_id,
-        pilot_implant_type_ids=get_active_implants(character_id) if fetch_implants else None,
+        pilot_implant_type_ids=implant_type_ids,
     )
