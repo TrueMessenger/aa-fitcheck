@@ -35,6 +35,15 @@ Unreleased set contains new features, so the next release will be a minor bump.)
   at 50 rows with filter-preserving page links and a "Showing X–Y of Z" total,
   so no submission is ever invisible on a large install.
 
+### Fixed
+- **My Ships self-audit no longer re-fetches per ship.** Grading several
+  selected ships used to pull the character's entire ESI asset tree, the ship
+  names, and the active-clone implants once **per ship** (up to 25× each);
+  they are now fetched once **per character** and shared across that
+  character's selected ships. Ship selections naming a character outside the
+  requester's own Auth ownerships are now dropped outright instead of being
+  looked up.
+
 ## [1.4.0] - 2026-06-29
 
 ### Added
