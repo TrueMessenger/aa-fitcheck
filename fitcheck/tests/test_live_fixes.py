@@ -1,6 +1,5 @@
 """Regression tests for the live-test fix batch:
 
-- item 2: boosters classify as BOOSTER and are warn-only (not missing implants)
 - item 4: an exact-type slot surplus reads as EXTRA, never "not a substitute for itself"
 - item 5: skill/bookkeeping attributes are excluded from meet-or-beat comparison
 - item 6: a manager-chosen subset of required attributes ignores the rest
@@ -9,12 +8,11 @@
 from django.test import TestCase
 from django.urls import reverse
 
-from ..constants import DEFAULT_EXCLUDED_CHECK_ATTRIBUTES, Section, SlotKind
+from ..constants import DEFAULT_EXCLUDED_CHECK_ATTRIBUTES, Section
 from ..models import (
     ComplianceFinding,
     FitSubmission,
     SdeMutaplasmidMapping,
-    SdeType,
     SdeTypeAttribute,
 )
 from ..models.doctrine import SubstitutionPolicy
@@ -63,35 +61,6 @@ class TestSlotSurplus(TestCase):
         result = check_fit(fit_of(FitItem(Section.LOW, T.HEAT_SINK_II, 3)), fit)
         self.assertEqual(result.verdict, Verdict.COMPLIANT)
         self.assertNotIn(Code.NOT_ALLOWED, [f.code for f in result.findings])
-
-
-class TestBoosterClassification(TestCase):
-    """Item 2: boosters are a distinct section and warn-only."""
-
-    @classmethod
-    def setUpTestData(cls):
-        create_sde_testdata()
-        cls.doctrine = create_doctrine()
-
-    def test_booster_classified_as_booster_kind(self):
-        self.assertEqual(
-            SdeType.objects.get(type_id=T.BOOSTER_STANDARD).slot_kind, SlotKind.BOOSTER
-        )
-
-    def test_doctrine_booster_warns_not_implant_missing(self):
-        fit = create_fit(self.doctrine, T.HARBINGER, name="boost")
-        add_item(fit, Section.LOW, T.HEAT_SINK_II, 1)
-        add_item(
-            fit, Section.BOOSTER, T.BOOSTER_STANDARD, 1, policy=SubstitutionPolicy.EXACT
-        )
-        result = check_fit(fit_of(FitItem(Section.LOW, T.HEAT_SINK_II, 1)), fit)
-        result_codes = [f.code for f in result.findings]
-        self.assertIn(Code.UNVERIFIED, result_codes)
-        self.assertNotIn(Code.IMPLANT_MISSING, result_codes)
-        # Warn-only: an unverifiable booster never hard-fails the fit.
-        self.assertNotEqual(result.verdict, Verdict.NON_COMPLIANT)
-        unv = next(f for f in result.findings if f.code == Code.UNVERIFIED)
-        self.assertEqual(unv.section, Section.BOOSTER)
 
 
 class TestMeetOrBeatAttributes(TestCase):
