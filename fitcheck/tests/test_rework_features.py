@@ -356,33 +356,8 @@ class TestSavedFittingsIntake(TestCase):
 
 
 class TestLocationResolution(TestCase):
-    """_resolve_locations classifies ids and resolves name/system/region."""
-
-    def test_structure_and_system_resolve(self):
-        from unittest.mock import patch
-        from ..services import esi_assets
-
-        with patch.object(esi_assets, "_resolve_structure",
-                          return_value=("Test Citadel", 30000142)), \
-             patch.object(esi_assets, "_system_region",
-                          return_value=("Jita", "The Forge")):
-            out = esi_assets._resolve_locations({1_038_000_000_000, 30000142}, ["tok"])
-        self.assertEqual(out[1_038_000_000_000]["name"], "Test Citadel")
-        self.assertEqual(out[1_038_000_000_000]["system"], "Jita")
-        self.assertEqual(out[1_038_000_000_000]["region"], "The Forge")
-        # A bare solar-system location takes the system name as its label.
-        self.assertEqual(out[30000142]["name"], "Jita")
-        self.assertEqual(out[30000142]["region"], "The Forge")
-
-    def test_unresolvable_structure_falls_back_to_id(self):
-        from unittest.mock import patch
-        from ..services import esi_assets
-
-        with patch.object(esi_assets, "_resolve_structure", return_value=(None, None)), \
-             patch.object(esi_assets, "_system_region", return_value=("", "")):
-            out = esi_assets._resolve_locations({1_038_000_000_001}, [])
-        self.assertEqual(out[1_038_000_000_001]["name"], "Structure 1038000000001")
-        self.assertEqual(out[1_038_000_000_001]["system"], "")
+    """_resolve_structure (used by the out-of-band refresh task only - inventory
+    listings read locations from the StructureNameCache, never live)."""
 
     def test_resolve_structure_uses_single_object_result(self):
         """GetUniverseStructuresStructureId returns ONE object, so _resolve_structure
