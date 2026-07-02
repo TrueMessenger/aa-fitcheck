@@ -25,9 +25,18 @@ A bump resets the lower fields (a minor bump sets patch to 0; a major bump sets
 minor and patch to 0). At release: scan everything under Unreleased, pick the
 single highest applicable level, bump once, move the Unreleased entries under
 the new version heading with the date, and tag the commit to match. (The current
-Unreleased set contains new features, so the next release will be a minor bump.)
+Unreleased set contains fixes only, so the next release will be a patch bump.)
 
 ## [Unreleased]
+
+### Fixed
+- **"Connect ESI access" buttons and the grant banner now appear only when a
+  character actually needs them.** My Ships and Pilot Fittings previously showed
+  the connect/refresh prompts unconditionally — even when every character on the
+  account already held all required scopes (e.g. granted through a full-scope
+  Auth login or another app; tokens are shared). The UI is now hidden once all
+  owned characters have a valid token carrying the full pilot scope set, and
+  reappears if a character or scope is missing or a token expires.
 
 ## [1.5.0] - 2026-07-02
 

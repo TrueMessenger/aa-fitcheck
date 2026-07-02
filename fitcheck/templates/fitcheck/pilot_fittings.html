@@ -25,9 +25,11 @@
                 </div>
             </div>
             <div class="ms-auto d-flex flex-wrap gap-2">
-                <a class="btn btn-secondary" href="{% url 'fitcheck:grant_all_esi' %}">
-                    <i class="fa-solid fa-key"></i> {% translate "Connect ESI access" %}
-                </a>
+                {% if characters_missing_esi %}
+                    <a class="btn btn-secondary" href="{% url 'fitcheck:grant_all_esi' %}">
+                        <i class="fa-solid fa-key"></i> {% translate "Connect ESI access" %}
+                    </a>
+                {% endif %}
                 <a class="btn btn-primary" href="{% url 'fitcheck:ship_inventory' %}">
                     <i class="fa-solid fa-rocket"></i> {% translate "Validate ships from my inventory" %}
                 </a>

@@ -196,6 +196,31 @@ def existing_token(user, character_id: int, scopes):
     )
 
 
+def characters_missing_pilot_scopes(user) -> list:
+    """Owned characters lacking a single valid token carrying every scope in
+    PILOT_GRANT_SCOPES (the grant_all_esi consent set). Tokens granted to any
+    other Auth app count - the Token table is shared. Must mirror the
+    single-token semantics of @token_required(scopes=PILOT_GRANT_SCOPES):
+    scopes spread across several tokens still count as missing, because the
+    grant view would re-prompt for them. Drives whether the "Connect ESI
+    access" UI is shown at all."""
+    from esi.models import Token
+
+    ownerships = list(user.character_ownerships.select_related("character"))
+    if not ownerships:
+        return []
+    char_ids = [o.character.character_id for o in ownerships]
+    covered = set(
+        Token.objects.filter(user=user, character_id__in=char_ids)
+        .require_scopes(PILOT_GRANT_SCOPES)
+        .require_valid()
+        .values_list("character_id", flat=True)
+    )
+    return [
+        o.character for o in ownerships if o.character.character_id not in covered
+    ]
+
+
 def _asset_source() -> str:
     """Where the asset tree comes from: 'auto' (corptools cache when synced,
     else live ESI - the default), 'esi' (always live), or 'corptools'

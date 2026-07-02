@@ -342,6 +342,7 @@ def submit_eft(request, fit_pk: int):
 @permission_required("fitcheck.basic_access")
 def pilot_fittings(request):
     """The member's own submissions - never anyone else's."""
+    from ..services.esi_assets import characters_missing_pilot_scopes
     from ..services.sde_loader import ensure_sde_loading
 
     submissions = (
@@ -360,6 +361,7 @@ def pilot_fittings(request):
             "querystring": querystring,
             "main_character": getattr(request.user.profile, "main_character", None),
             "sde_loaded": ensure_sde_loading(),
+            "characters_missing_esi": characters_missing_pilot_scopes(request.user),
             "page_title": _("Pilot Fittings"),
         },
     )
@@ -614,6 +616,7 @@ def ship_inventory(request):
         messages.warning(request, _("No ships were selected."))
         return redirect("fitcheck:ship_inventory")
 
+    from ..services.esi_assets import characters_missing_pilot_scopes
     from ..services.sde_loader import ensure_sde_loading
 
     inventory, ships, filters = _filtered_inventory(request)
@@ -625,6 +628,7 @@ def ship_inventory(request):
             "ships": ships,
             "filters": filters,
             "sde_loaded": ensure_sde_loading(),
+            "characters_missing_esi": characters_missing_pilot_scopes(request.user),
             "page_title": _("My Ships"),
         },
     )
