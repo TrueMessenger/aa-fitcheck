@@ -25,9 +25,19 @@ A bump resets the lower fields (a minor bump sets patch to 0; a major bump sets
 minor and patch to 0). At release: scan everything under Unreleased, pick the
 single highest applicable level, bump once, move the Unreleased entries under
 the new version heading with the date, and tag the commit to match. (The current
-Unreleased set contains fixes only, so the next release will be a patch bump.)
+Unreleased set contains fixes and the removal of a non-functional setting, so
+the next release will be a patch bump.)
 
 ## [Unreleased]
+
+### Removed
+- **The non-functional "Min Meta" input on the slot-group policy editor**, along
+  with the underlying `min_meta_level` fields (migration 0029). The numeric
+  meta-level floor was superseded by the explicit meta-group allow-list before
+  1.0; the grading engine never read the value, so the input silently did
+  nothing. Meta-based substitution control lives in the per-item "Allowed Meta
+  Groups" checkboxes; "Equal to or greater" continues to compare dogma
+  attributes within the allowed groups.
 
 ### Fixed
 - **"Connect ESI access" buttons and the grant banner now appear only when a

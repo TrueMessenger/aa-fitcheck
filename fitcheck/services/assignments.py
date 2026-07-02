@@ -27,7 +27,6 @@ def _policy_kwargs_from(obj) -> dict:
     copying the JSON containers so the snapshot never shares a mutable ref."""
     return {
         "policy": obj.policy,
-        "min_meta_level": obj.min_meta_level,
         "allowed_meta_groups": list(obj.allowed_meta_groups or []),
         "checked_attributes": list(obj.checked_attributes or []),
         "attribute_bounds": dict(obj.attribute_bounds or {}),
@@ -170,7 +169,6 @@ def _comparable_policy(obj) -> tuple:
     kw = _policy_kwargs_from(obj)
     return (
         kw["policy"],
-        kw["min_meta_level"],
         tuple(sorted(kw["allowed_meta_groups"])),
         tuple(sorted(kw["checked_attributes"])),
         tuple(sorted(kw["attribute_bounds"].items(), key=lambda kv: kv[0])),

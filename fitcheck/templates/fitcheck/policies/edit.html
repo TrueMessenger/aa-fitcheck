@@ -42,7 +42,6 @@
                                 <tr>
                                     <th>{% translate "Slot Group" %}</th>
                                     <th>{% translate "Enforcement" %}</th>
-                                    <th title="{% translate 'Meta enforcement only: substitutes need at least this meta level' %}">{% translate "Min Meta" %}</th>
                                     <th title="{% translate 'Equal-or-greater only: allow abyssal modules with qualifying rolls' %}">{% translate "Abyssal" %}</th>
                                     <th title="{% translate 'Consumable bays only: pass at this percent of the listed quantity' %}">{% translate "Qty %" %}</th>
                                 </tr>
@@ -55,7 +54,6 @@
                                             {{ row.label }}
                                         </td>
                                         <td>{{ row.form.enforcement }}</td>
-                                        <td>{{ row.form.min_meta_level }}</td>
                                         <td class="text-center">{{ row.form.allow_mutated }}</td>
                                         <td>
                                             {% if row.is_quantity %}

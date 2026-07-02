@@ -11,7 +11,7 @@ from ..models.doctrine import ENFORCEMENT_TO_POLICY, EnforcementMode
 
 # Pre-built policies seeded by migration 0022 (is_builtin=True). Pure data so the
 # migration can consume it with historical model classes. Each rule: (enforcement,
-# allow_mutated, min_quantity_pct); min_meta_level is left at "each module's own".
+# allow_mutated, min_quantity_pct).
 # Sections not listed for a policy are "not overridden". Module slot groups share
 # one rule; consumable bays carry the qty% leeway.
 _MODULE_SECTIONS = (
@@ -36,7 +36,6 @@ def _rules(module, drone, cargo, fuel, booster) -> dict:
 def _rule(enforcement, allow_mutated, qty) -> dict:
     return {
         "enforcement": enforcement,
-        "min_meta_level": None,
         "allow_mutated": allow_mutated,
         "min_quantity_pct": qty,
     }
@@ -112,8 +111,6 @@ def apply_policy_to_fit(fit: DoctrineFit, policy: CompliancePolicy) -> int:
     updated = 0
     for rule in policy.rules.all():
         fields = {"policy": ENFORCEMENT_TO_POLICY[rule.enforcement]}
-        if rule.enforcement == EnforcementMode.META:
-            fields["min_meta_level"] = rule.min_meta_level
         if rule.enforcement == EnforcementMode.GTE:
             fields["allow_mutated"] = rule.allow_mutated
         if rule.section in LEEWAY_SECTIONS:

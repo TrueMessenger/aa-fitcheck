@@ -650,7 +650,6 @@ class TestPolicyEditorViews(ViewTestCase):
             "MED-enforcement": "GE",
             "MED-allow_mutated": "on",
             "LOW-enforcement": "ME",
-            "LOW-min_meta_level": "5",
             "CARGO-enforcement": "AN",
             "CARGO-min_quantity_pct": "66",
         }
@@ -663,7 +662,7 @@ class TestPolicyEditorViews(ViewTestCase):
         rules = {rule.section: rule for rule in policy.rules.all()}
         self.assertEqual(set(rules), {"HIGH", "MED", "LOW", "CARGO"})
         self.assertEqual(rules["HIGH"].enforcement, "EX")
-        self.assertEqual(rules["LOW"].min_meta_level, 5)
+        self.assertEqual(rules["LOW"].enforcement, "ME")
         self.assertEqual(rules["CARGO"].enforcement, "AN")
 
 

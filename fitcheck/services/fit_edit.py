@@ -34,7 +34,6 @@ from .fit_data import ParsedFit
 # (the BOM itself) and charge (re-derived from the new EFT).
 POLICY_FIELDS = (
     "policy",
-    "min_meta_level",
     "allowed_meta_groups",
     "checked_attributes",
     "attribute_bounds",
