@@ -28,6 +28,13 @@ the new version heading with the date, and tag the commit to match. (The current
 Unreleased set contains fixes and the removal of a non-functional setting, so
 the next release will be a patch bump.)
 
+Pushing the `vX.Y.Z` tag triggers `publish.yml`, which builds and uploads to
+PyPI — it does **not** create a GitHub Release. After the tag lands, also run
+`gh release create vX.Y.Z --notes-file <path>` (notes = that version's
+CHANGELOG section) so the GitHub Releases page — a separate feature from git
+tags — stays in sync with PyPI instead of silently freezing at whichever
+version last got one.
+
 ## [Unreleased]
 
 ### Removed
