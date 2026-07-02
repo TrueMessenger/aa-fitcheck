@@ -1,0 +1,100 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+{% load fitcheck_extras %}
+
+{% block fitcheck_content %}
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="fc-section-head mb-0"><i class="fa-solid fa-chart-line"></i>{% translate "Compliance reports" %}</div>
+        <a class="btn btn-sm btn-primary"
+           href="{% url 'fitcheck:reports_overview_csv' %}{% if request.GET.category %}?category={{ request.GET.category }}{% endif %}">
+            <i class="fa-solid fa-file-csv"></i> {% translate "Export CSV" %}
+        </a>
+    </div>
+    <p class="small text-muted">
+        {% translate "Figures come from the daily compliance snapshot; each row shows a doctrine's target audience and how it splits by compliance state." %}
+    </p>
+
+    <div class="fc-toolbar mb-3">
+        <div class="d-flex flex-wrap gap-1 align-items-center">
+            <a class="fc-chip {% if not active_category %}active{% endif %}" href="{% url 'fitcheck:reports_overview' %}">
+                {% translate "All" %}
+            </a>
+            {% for category in categories %}
+                <a class="fc-chip {% if active_category.pk == category.pk %}active{% endif %}"
+                   href="{% url 'fitcheck:reports_overview' %}?category={{ category.pk }}">
+                    <span class="badge p-1" style="background:{{ category.color }};width:.6rem;height:.6rem"></span>
+                    {{ category.name }}
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% if rows and not has_snapshots %}
+        <div class="alert alert-warning">
+            {% translate "No compliance snapshots have been recorded yet. Schedule fitcheck.tasks.take_compliance_snapshots (see the README) or take one now from Settings > Diagnostics & health - trend history cannot be backfilled." %}
+        </div>
+    {% endif %}
+
+    {% if rows %}
+        <table class="table table-hover fc-table-fixed align-middle">
+            <colgroup>
+                <col style="width: 26%"><col style="width: 16%"><col style="width: 10%">
+                <col style="width: 10%"><col style="width: 10%"><col style="width: 10%">
+                <col style="width: 10%"><col style="width: 8%">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>{% translate "Doctrine" %}</th>
+                    <th>{% translate "Trend (14d)" %}</th>
+                    <th class="text-end">{% translate "Audience" %}</th>
+                    <th class="text-end">{% translate "Compliant" %}</th>
+                    <th class="text-end">{% translate "Subs" %}</th>
+                    <th class="text-end">{% translate "Non-compliant" %}</th>
+                    <th class="text-end">{% translate "No submission" %}</th>
+                    <th class="text-end">{% translate "Ready" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'fitcheck:reports_drilldown' row.doctrine.pk %}">{{ row.doctrine.name }}</a>
+                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                {% for category in row.doctrine.categories.all %}
+                                    <span class="badge" style="background:{{ category.color }};color:{{ category.text_color }}">{{ category.name }}</span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                        <td>
+                            {% if row.latest %}
+                                {% sparkline row.trend %}
+                                {% if row.delta and row.delta > 0 %}
+                                    <span class="small text-success">&#9650; {{ row.delta }}</span>
+                                {% elif row.delta and row.delta < 0 %}
+                                    <span class="small text-danger">&#9660; {{ row.delta }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="small text-muted">{% translate "No snapshot yet" %}</span>
+                            {% endif %}
+                        </td>
+                        {% if row.latest %}
+                            <td class="text-end">{{ row.latest.audience_count }}</td>
+                            <td class="text-end">{{ row.latest.compliant_count }}</td>
+                            <td class="text-end">{{ row.latest.compliant_subs_count }}</td>
+                            <td class="text-end">{{ row.latest.non_compliant_count }}</td>
+                            <td class="text-end">{{ row.latest.no_submission_count }}</td>
+                            <td class="text-end fw-bold">{{ row.ready_pct }}%</td>
+                        {% else %}
+                            <td class="text-end text-muted" colspan="6">—</td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="alert alert-info">
+            {% translate "No active doctrines match this filter." %}
+        </div>
+    {% endif %}
+{% endblock %}

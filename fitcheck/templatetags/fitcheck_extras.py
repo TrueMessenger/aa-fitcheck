@@ -1,8 +1,31 @@
 """Template filters for fitcheck."""
 
 from django import template
+from django.utils.html import format_html
 
 register = template.Library()
+
+
+@register.simple_tag
+def sparkline(values, width=120, height=28):
+    """Inline SVG sparkline for a list of 0-100 values (empty-safe). Strokes
+    with ``currentColor`` so it follows the surrounding text/theme colour."""
+    from ..services.charts import sparkline_points
+
+    points = sparkline_points(list(values or []), width=width, height=height)
+    if not points:
+        return ""
+    return format_html(
+        '<svg viewBox="0 0 {} {}" width="{}" height="{}" aria-hidden="true" '
+        'style="vertical-align: middle">'
+        '<polyline points="{}" fill="none" stroke="currentColor" '
+        'stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+        width,
+        height,
+        width,
+        height,
+        points,
+    )
 
 
 @register.filter

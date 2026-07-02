@@ -1,0 +1,158 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <div>
+            <div class="fc-section-head mb-1"><i class="fa-solid fa-chart-line"></i>{{ doctrine.name }}</div>
+            <div class="d-flex flex-wrap gap-1">
+                {% for category in doctrine.categories.all %}
+                    <span class="badge" style="background:{{ category.color }};color:{{ category.text_color }}">{{ category.name }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-primary" href="{% url 'fitcheck:reports_drilldown_csv' doctrine.pk %}{% if querystring %}?{{ querystring }}{% endif %}">
+                <i class="fa-solid fa-file-csv"></i> {% translate "Export CSV" %}
+            </a>
+            <a class="btn btn-sm btn-secondary" href="{% url 'fitcheck:reports_overview' %}">
+                <i class="fa-solid fa-arrow-left"></i> {% translate "Back to overview" %}
+            </a>
+        </div>
+    </div>
+
+    <div class="fc-section-head mt-3"><i class="fa-solid fa-arrow-trend-up"></i>{% translate "Compliance trend" %}</div>
+    <div class="fc-card mb-4"><div class="card-body">
+        {% if chart %}
+            {% include "fitcheck/reports/partials/trend_chart.html" %}
+        {% else %}
+            <p class="small text-muted mb-0">
+                {% translate "Not enough snapshot history to chart yet - the trend appears once the daily snapshot task has run at least twice." %}
+            </p>
+        {% endif %}
+    </div></div>
+
+    <div class="fc-section-head"><i class="fa-solid fa-users"></i>{% translate "Members" %} <span class="text-muted small">({{ total_members }})</span></div>
+    <div class="d-flex flex-wrap gap-1 align-items-center mb-2">
+        <a class="fc-chip {% if not active_state %}active{% endif %}"
+           href="{% url 'fitcheck:reports_drilldown' doctrine.pk %}{% if query %}?q={{ query|urlencode }}{% endif %}">
+            {% translate "All" %} ({{ total_members }})
+        </a>
+        {% for state, label in state_labels.items %}
+            <a class="fc-chip {% if active_state == state %}active{% endif %}"
+               href="{% url 'fitcheck:reports_drilldown' doctrine.pk %}?state={{ state }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">
+                {{ label }} ({% for s, n in counts.items %}{% if s == state %}{{ n }}{% endif %}{% endfor %})
+            </a>
+        {% endfor %}
+        <form method="get" class="ms-auto d-flex gap-2">
+            {% if active_state %}<input type="hidden" name="state" value="{{ active_state }}">{% endif %}
+            <input class="form-control form-control-sm" type="text" name="q" value="{{ query }}"
+                   placeholder="{% translate 'Search character…' %}" style="width: 14rem">
+            <button class="btn btn-sm btn-primary" type="submit"><i class="fa-solid fa-magnifying-glass"></i></button>
+        </form>
+    </div>
+
+    <table class="table table-hover fc-table-fixed align-middle">
+        <colgroup>
+            <col style="width: 30%"><col style="width: 18%"><col style="width: 28%"><col style="width: 24%">
+        </colgroup>
+        <thead>
+            <tr>
+                <th>{% translate "Character" %}</th>
+                <th>{% translate "State" %}</th>
+                <th>{% translate "Fit" %}</th>
+                <th>{% translate "Last submission" %}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in page_obj %}
+                <tr>
+                    <td>{{ row.character_name }}</td>
+                    <td>
+                        {% if row.state == "compliant" %}<span class="badge bg-success">{% translate "Compliant" %}</span>
+                        {% elif row.state == "subs" %}<span class="badge bg-info">{% translate "Compliant (subs)" %}</span>
+                        {% elif row.state == "non_compliant" %}<span class="badge bg-danger">{% translate "Non-compliant" %}</span>
+                        {% else %}<span class="badge bg-secondary">{% translate "No submission" %}</span>{% endif %}
+                    </td>
+                    <td>{% if row.submission %}{{ row.submission.doctrine_fit.name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                    <td>
+                        {% if row.submission %}
+                            <a href="{% url 'fitcheck:submission_detail' row.submission.pk %}">{{ row.submission.created_at|date:"Y-m-d H:i" }}</a>
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4" class="text-muted">{% translate "No members match this filter." %}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% include "fitcheck/partials/pagination.html" %}
+
+    <div class="fc-section-head mt-4"><i class="fa-solid fa-triangle-exclamation"></i>{% translate "Failure analytics" %}</div>
+    <p class="small text-muted">
+        {% translate "Counted over each pilot's latest submission per fit, so frequent resubmitters are not over-weighted." %}
+        {% if analytics.window_days %}
+            {% blocktranslate with days=analytics.window_days %}Only submissions from the last {{ days }} days are considered.{% endblocktranslate %}
+        {% endif %}
+        ({{ analytics.submissions_considered }} {% translate "submissions considered" %})
+    </p>
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="fc-card h-100"><div class="card-body">
+                <h6 class="mb-2">{% translate "Top failing modules" %}</h6>
+                {% if analytics.top_failures %}
+                    <table class="table table-sm small mb-0">
+                        <thead><tr>
+                            <th>{% translate "Module" %}</th>
+                            <th class="text-end">{% translate "Missing" %}</th>
+                            <th class="text-end">{% translate "Not allowed" %}</th>
+                            <th class="text-end">{% translate "Qty short" %}</th>
+                            <th class="text-end">{% translate "Pilots" %}</th>
+                        </tr></thead>
+                        <tbody>
+                            {% for f in analytics.top_failures %}
+                                <tr>
+                                    <td>{{ f.name }}</td>
+                                    <td class="text-end">{{ f.missing|default:0 }}</td>
+                                    <td class="text-end">{{ f.not_allowed|default:0 }}</td>
+                                    <td class="text-end">{{ f.qty_short|default:0 }}</td>
+                                    <td class="text-end">{{ f.pilots }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="small text-muted mb-0">{% translate "No failures recorded - nothing to fix." %}</p>
+                {% endif %}
+            </div></div>
+        </div>
+        <div class="col-md-6">
+            <div class="fc-card h-100"><div class="card-body">
+                <h6 class="mb-2">{% translate "Most-used substitutions" %}</h6>
+                {% if analytics.top_substitutions %}
+                    <table class="table table-sm small mb-0">
+                        <thead><tr>
+                            <th>{% translate "Doctrine module" %}</th>
+                            <th>{% translate "Substituted with" %}</th>
+                            <th class="text-end">{% translate "Times" %}</th>
+                            <th class="text-end">{% translate "Pilots" %}</th>
+                        </tr></thead>
+                        <tbody>
+                            {% for s in analytics.top_substitutions %}
+                                <tr>
+                                    <td>{{ s.expected_type__name }}</td>
+                                    <td>{{ s.actual_type__name }}</td>
+                                    <td class="text-end">{{ s.occurrences }}</td>
+                                    <td class="text-end">{{ s.pilots }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="small text-muted mb-0">{% translate "No substitutions recorded." %}</p>
+                {% endif %}
+            </div></div>
+        </div>
+    </div>
+{% endblock %}

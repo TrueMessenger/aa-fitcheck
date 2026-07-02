@@ -37,6 +37,22 @@ version last got one.
 
 ## [Unreleased]
 
+### Added
+- **Reports tab** (gated by the `view_compliance_reports` permission, which now
+  does something): an org-wide **compliance overview** — every active doctrine's
+  audience size, compliant / substitute / non-compliant / never-submitted split,
+  ready-%, and a 14-day sparkline, filterable by category — and a per-doctrine
+  **drill-down** with a member-by-member readiness list (state filter, name
+  search, pagination), a compliance **trend chart** rendered from the snapshot
+  history (inline SVG, no new assets), and **CSV exports** on both pages that
+  honour the active filters.
+- **Failure and substitution analytics** on the doctrine drill-down: the top
+  failing modules (missing / not allowed / quantity short, with distinct pilot
+  counts) and the most-used substitutions. Counted over each pilot's latest
+  submission per fit so frequent resubmitters aren't over-weighted; the new
+  `FITCHECK_REPORT_ANALYTICS_WINDOW_DAYS` setting (default 90, `0` = unlimited)
+  bounds how far back submissions are considered.
+
 ## [1.6.0] - 2026-07-02
 
 ### Added

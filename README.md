@@ -97,6 +97,25 @@ A fit can belong to several doctrines, each with its own independent policy rule
 Pilots validate their ships directly from their hangar without pasting any text. ESI-sourced
 submissions carry the real asset `item_id` so the engine always re-pulls current data on re-check.
 
+### Compliance Reports
+
+A **Reports** tab (gated by `view_compliance_reports`) turns the daily compliance snapshots
+into leadership-facing answers:
+
+- **Overview** — every active doctrine with its target-audience size, compliant /
+  substitute / non-compliant / never-submitted split, ready-%, and a 14-day sparkline.
+  Filterable by category; exportable as CSV.
+- **Doctrine drill-down** — who exactly is ready: a member-by-member readiness list
+  (filterable by state, name-searchable, paginated), a compliance trend chart built from
+  snapshot history, and a CSV export that honours the active filters.
+- **Failure analytics** — the top failing modules (missing / not allowed / quantity short)
+  and the most-used substitutions per doctrine, counted over **each pilot's latest
+  submission per fit** so frequent resubmitters aren't over-weighted
+  (`FITCHECK_REPORT_ANALYTICS_WINDOW_DAYS` bounds the window, default 90 days).
+
+Trend data comes from the `take_compliance_snapshots` beat task (Installation step 5) —
+schedule it from day one, since history cannot be backfilled.
+
 ### Proactive Member Fit Checks
 
 Fleet leadership can scan hangars before a fleet forms rather than waiting for pilots to submit:
@@ -336,7 +355,7 @@ works normally without it — the filter simply isn't offered.
 | `fitcheck.review_submissions` | Review queue, approve/reject any submission |
 | `fitcheck.secure_group_management` | Review and approve submissions only — cannot edit doctrines or standards |
 | `fitcheck.manage_policies` | Create/edit named compliance policies |
-| `fitcheck.view_compliance_reports` | Org-wide compliance reports (planned) |
+| `fitcheck.view_compliance_reports` | The Reports tab: org-wide compliance overview, per-doctrine readiness drill-down, failure analytics, CSV exports |
 | `fitcheck.view_member_inventory` | Browse alliance-wide members' ships and run proactive fit checks |
 | `fitcheck.view_own_corp_inventory` | Browse own corporation members' ships (corp-scoped proactive checks) |
 
@@ -352,6 +371,7 @@ works normally without it — the filter simply isn't offered.
 | `FITCHECK_ESI_CONTACT` | `ESI_USER_CONTACT_EMAIL` | Contact email in the ESI User-Agent header |
 | `FITCHECK_ASSET_SOURCE` | `auto` | Where pilot/member ship inventory comes from: `auto` (corptools cache when available, else live ESI), `esi`, or `corptools` |
 | `FITCHECK_STRUCTURE_CACHE_TTL` | `86400` | Seconds before a cached player-structure (Citadel) name is re-resolved by `fitcheck.tasks.refresh_structure_names` (default 24h). The Member Inventory scan reads these names locally and never calls ESI for them. |
+| `FITCHECK_REPORT_ANALYTICS_WINDOW_DAYS` | `90` | The Reports failure/substitution analytics only consider each pilot's latest submission per fit made within this many days. `0` = no time limit. |
 | `FITCHECK_SNAPSHOT_RETENTION_DAYS` | `365` | Days of compliance-snapshot history (daily per-doctrine aggregates for trend reporting) the `take_compliance_snapshots` task keeps; older rows are pruned after each run. `0` keeps everything. The **Diagnostics & Health** page shows collection stats and offers run-now / purge controls, so no database access is ever needed to manage this data. |
 
 Section-level enforcement modes (Implants, Boosters, Fuel Bay, Frigate Escape Bay) are managed
@@ -404,8 +424,8 @@ priority, not pinned to specific version numbers (those are assigned at release)
 
 | Milestone | Scope |
 |-----------|-------|
-| **Shipped** | Full substitution engine with bipartite matching; abyssal/mutated modules; per-doctrine policy snapshots; pre-built and custom named compliance policies (with disable/enable); ESI inventory validation; ESI saved-fittings intake (check fits saved in EVE's Fittings panel without an EFT paste); implant, booster, fuel bay, and Frigate Escape Bay verification (implants/boosters carried as cargo or fleet-hangar refit pass); category-driven visibility with group gating; proactive alliance/corp member checks; colcrunch `fittings` import and re-sync; pilot QoL tools (Save-to-EVE, Copy Buy All, Copy as EFT); submission-detail review with a per-section captured-loadout panel; review workflow with audit log and notifications; cross-plugin compliance Python API; optional Secure Groups smart filter; optional corptools asset read-through; colcrunch category sync; GitHub Actions CI (py3.10–3.12) |
-| **Next** | Compliance reports + CSV export (`view_compliance_reports`); i18n pass |
+| **Shipped** | Full substitution engine with bipartite matching; abyssal/mutated modules; per-doctrine policy snapshots; pre-built and custom named compliance policies (with disable/enable); ESI inventory validation; ESI saved-fittings intake (check fits saved in EVE's Fittings panel without an EFT paste); implant, booster, fuel bay, and Frigate Escape Bay verification (implants/boosters carried as cargo or fleet-hangar refit pass); category-driven visibility with group gating; proactive alliance/corp member checks; colcrunch `fittings` import and re-sync; pilot QoL tools (Save-to-EVE, Copy Buy All, Copy as EFT); submission-detail review with a per-section captured-loadout panel; review workflow with audit log and notifications; cross-plugin compliance Python API; optional Secure Groups smart filter; optional corptools asset read-through; colcrunch category sync; GitHub Actions CI (py3.10–3.12); compliance snapshot collection with diagnostics controls; Reports tab (readiness overview + drill-down, trend charts, failure analytics, CSV export) |
+| **Next** | i18n pass |
 | **Later** | Corporation-role internal audits (corp members with the right EVE roles audit ships in corp hangars against doctrines, no approval flow); [aa-srp](https://apps.allianceauth.org/apps/detail/aa-srp) integration (compare a loss's killmail fit to doctrines/fits/substitutions during SRP review); bulk "audit all my fits" for pilots; per-doctrine reviewer scoping; override-chip allow/forbid toggle |
 
 This table is the high-level summary; the **itemized backlog** (features, bugs, cosmetic

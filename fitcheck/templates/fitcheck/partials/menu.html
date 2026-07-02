@@ -29,6 +29,14 @@
             </a>
         </li>
     {% endif %}
+    {% if perms.fitcheck.view_compliance_reports %}
+        <li class="nav-item">
+            <a class="nav-link {% if 'reports' in request.resolver_match.url_name %}active{% endif %}"
+               href="{% url 'fitcheck:reports_overview' %}">
+                <i class="fa-solid fa-chart-line me-1"></i>{% translate "Reports" %}
+            </a>
+        </li>
+    {% endif %}
     {% if perms.fitcheck.manage_doctrines %}
         <li class="nav-item">
             <a class="nav-link {% if 'categor' in request.resolver_match.url_name %}active{% endif %}"
