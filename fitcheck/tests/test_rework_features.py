@@ -23,18 +23,10 @@ class TestAnyEnforcement(TestCase):
         cls.doctrine = create_doctrine()
         cls.fit = create_fit(cls.doctrine, T.HARBINGER)
 
-    def test_any_policy_accepts_any_module_and_never_misses(self):
-        add_item(self.fit, Section.LOW, T.HEAT_SINK_II, 2, policy=SubstitutionPolicy.ANY)
-        # Pilot fits something entirely different in the lows.
-        result = check_fit(
-            parse_eft("[Harbinger, X]\nCap Recharger II\n"), self.fit
-        )
-        self.assertEqual(result.verdict, FitSubmission.Verdict.COMPLIANT)
-        # And an empty ship also passes - no enforcement means never missing.
-        result = check_fit(parse_eft("[Harbinger, X]\n"), self.fit)
-        self.assertEqual(result.verdict, FitSubmission.Verdict.COMPLIANT)
-
     def test_any_policy_skips_quantity_sections(self):
+        # Slot-section ANY semantics (foreign module passes, never MISSING) are
+        # covered in test_compliance_engine (TestNoEnforcementFinding,
+        # TestCargoRefitFallback); the quantity-section ANY skip lives only here.
         add_item(self.fit, Section.DRONE_BAY, T.HOBGOBLIN_II, 5, policy=SubstitutionPolicy.ANY)
         result = check_fit(parse_eft("[Harbinger, X]\n"), self.fit)
         self.assertEqual(result.verdict, FitSubmission.Verdict.COMPLIANT)
