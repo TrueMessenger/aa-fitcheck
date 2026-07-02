@@ -1,3 +1,5 @@
+from unittest import mock
+
 from django.test import TestCase
 
 from ..constants import SlotKind
@@ -134,6 +136,79 @@ class TestSdeLoader(TestCase):
         self.assertEqual(
             SdeMutaplasmidMapping.objects.filter(abyssal_type_id=47702).count(), 2
         )
+
+
+class TestUpsertPortability(TestCase):
+    """The loader's two upserts must adapt to the database backend:
+    Postgres/SQLite require naming the unique target (`unique_fields`), while
+    MySQL/MariaDB raise NotSupportedError if it is passed - which made every
+    scheduled `update_sde_data` run crash on a MariaDB-backed install."""
+
+    def _patched_flag(self, value):
+        from django.db import connection
+
+        return mock.patch.object(
+            connection.features, "supports_update_conflicts_with_target", value
+        )
+
+    def test_upsert_kwargs_name_the_target_when_supported(self):
+        from ..services.sde_loader import _upsert_kwargs
+
+        with self._patched_flag(True):
+            kwargs = _upsert_kwargs(["type_id"], ["name"])
+        self.assertTrue(kwargs["update_conflicts"])
+        self.assertEqual(kwargs["update_fields"], ["name"])
+        self.assertEqual(kwargs["unique_fields"], ["type_id"])
+
+    def test_upsert_kwargs_omit_the_target_on_mysql_family(self):
+        from ..services.sde_loader import _upsert_kwargs
+
+        with self._patched_flag(False):
+            kwargs = _upsert_kwargs(["type_id"], ["name"])
+        self.assertTrue(kwargs["update_conflicts"])
+        self.assertEqual(kwargs["update_fields"], ["name"])
+        self.assertNotIn("unique_fields", kwargs)
+
+    def test_loader_never_passes_unique_fields_on_mysql_family(self):
+        """Call-level regression: with a MySQL-family backend, NEITHER loader
+        upsert receives `unique_fields` (the exact kwargs that raised
+        NotSupportedError on the live MariaDB install). The wrappers capture
+        what the loader passed, then re-add the target and run the REAL insert
+        - SQLite (which runs this suite) has the opposite requirement, and the
+        load must still complete so downstream FK rows stay valid."""
+
+        def _capturing(manager, pk_field, store):
+            real = manager.bulk_create
+
+            def wrapper(objs, **kwargs):
+                store.append(dict(kwargs))
+                if kwargs.get("update_conflicts") and "unique_fields" not in kwargs:
+                    kwargs["unique_fields"] = [pk_field]
+                # Run the real insert under SQLite's true capabilities - the
+                # MySQL-family flag stays patched only for the code under test.
+                with self._patched_flag(True):
+                    return real(objs, **kwargs)
+
+            return wrapper
+
+        attr_calls: list[dict] = []
+        type_calls: list[dict] = []
+        with self._patched_flag(False), \
+                mock.patch.object(
+                    SdeAttribute.objects, "bulk_create",
+                    side_effect=_capturing(SdeAttribute.objects, "attribute_id", attr_calls),
+                ), \
+                mock.patch.object(
+                    SdeType.objects, "bulk_create",
+                    side_effect=_capturing(SdeType.objects, "type_id", type_calls),
+                ):
+            _load()
+        for calls in (attr_calls, type_calls):
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(calls[0]["update_conflicts"])
+            self.assertNotIn("unique_fields", calls[0])
+        # The load itself completed normally.
+        self.assertEqual(SdeType.objects.count(), 5)
 
 
 class TestBoosterClassification(TestCase):

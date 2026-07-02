@@ -275,6 +275,22 @@ def _resection_fuel_items() -> None:
         ).update(section=Section.FUEL_BAY)
 
 
+def _upsert_kwargs(unique_fields: list[str], update_fields: list[str]) -> dict:
+    """bulk_create upsert options, portable across database backends.
+
+    Postgres/SQLite require naming the unique target (`unique_fields`);
+    MySQL/MariaDB forbid it - their ON DUPLICATE KEY UPDATE always keys on any
+    unique index, and Django raises NotSupportedError if `unique_fields` is
+    passed. Omitting it there is behaviour-identical for our tables, where the
+    target is the primary key and only unique constraint."""
+    from django.db import connection
+
+    kwargs: dict = {"update_conflicts": True, "update_fields": update_fields}
+    if connection.features.supports_update_conflicts_with_target:
+        kwargs["unique_fields"] = unique_fields
+    return kwargs
+
+
 @transaction.atomic
 def load_from_data(
     *,
@@ -306,10 +322,11 @@ def load_from_data(
         )
     SdeAttribute.objects.bulk_create(
         attribute_objs,
-        update_conflicts=True,
-        unique_fields=["attribute_id"],
-        update_fields=["name", "display_name", "high_is_good", "unit_name", "published"],
         batch_size=_BATCH_SIZE,
+        **_upsert_kwargs(
+            ["attribute_id"],
+            ["name", "display_name", "high_is_good", "unit_name", "published"],
+        ),
     )
 
     # Pass 1: types in our categories.
@@ -391,20 +408,21 @@ def load_from_data(
 
     SdeType.objects.bulk_create(
         list(type_rows.values()),
-        update_conflicts=True,
-        unique_fields=["type_id"],
-        update_fields=[
-            "name",
-            "group_id",
-            "category_id",
-            "variation_parent_type_id",
-            "meta_group_id",
-            "meta_level",
-            "market_group_id",
-            "slot_kind",
-            "published",
-        ],
         batch_size=_BATCH_SIZE,
+        **_upsert_kwargs(
+            ["type_id"],
+            [
+                "name",
+                "group_id",
+                "category_id",
+                "variation_parent_type_id",
+                "meta_group_id",
+                "meta_level",
+                "market_group_id",
+                "slot_kind",
+                "published",
+            ],
+        ),
     )
     SdeType.objects.exclude(type_id__in=type_rows.keys()).delete()
 
