@@ -293,6 +293,13 @@ POLICY mode defers to the per-item policy editor; the other modes override it si
        "task": "fitcheck.tasks.refresh_structure_names",
        "schedule": crontab(minute="0", hour="3"),  # daily
    }
+   # Records daily per-doctrine compliance aggregates for trend reporting.
+   # History cannot be backfilled, so schedule this from day one;
+   # FITCHECK_SNAPSHOT_RETENTION_DAYS bounds how much is kept (default 365).
+   CELERYBEAT_SCHEDULE["fitcheck_take_compliance_snapshots"] = {
+       "task": "fitcheck.tasks.take_compliance_snapshots",
+       "schedule": crontab(minute="15", hour="2"),  # daily
+   }
    ```
 
 6. Collect static files, then restart Auth and assign permissions:
@@ -345,6 +352,7 @@ works normally without it — the filter simply isn't offered.
 | `FITCHECK_ESI_CONTACT` | `ESI_USER_CONTACT_EMAIL` | Contact email in the ESI User-Agent header |
 | `FITCHECK_ASSET_SOURCE` | `auto` | Where pilot/member ship inventory comes from: `auto` (corptools cache when available, else live ESI), `esi`, or `corptools` |
 | `FITCHECK_STRUCTURE_CACHE_TTL` | `86400` | Seconds before a cached player-structure (Citadel) name is re-resolved by `fitcheck.tasks.refresh_structure_names` (default 24h). The Member Inventory scan reads these names locally and never calls ESI for them. |
+| `FITCHECK_SNAPSHOT_RETENTION_DAYS` | `365` | Days of compliance-snapshot history (daily per-doctrine aggregates for trend reporting) the `take_compliance_snapshots` task keeps; older rows are pruned after each run. `0` keeps everything. The **Diagnostics & Health** page shows collection stats and offers run-now / purge controls, so no database access is ever needed to manage this data. |
 
 Section-level enforcement modes (Implants, Boosters, Fuel Bay, Frigate Escape Bay) are managed
 through the in-app **Enforcement Settings** page — no `local.py` changes required.

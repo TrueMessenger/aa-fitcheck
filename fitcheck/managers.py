@@ -11,6 +11,17 @@ def _is_manager(user) -> bool:
     )
 
 
+def category_admits(selected_ids: set, required_ids: set, user_group_ids: set) -> bool:
+    """The Selected (OR) / Required (AND) admission rule for one category:
+    no groups at all = public; else admitted by holding any selected group OR
+    all required groups."""
+    return (
+        (not selected_ids and not required_ids)
+        or bool(selected_ids & user_group_ids)
+        or (bool(required_ids) and required_ids <= user_group_ids)
+    )
+
+
 def visible_category_ids(user) -> list[int]:
     """Ids of DoctrineCategory rows that admit `user` by the Selected (OR) /
     Required (AND) group rules. Computed in Python - the category set is small
@@ -23,7 +34,7 @@ def visible_category_ids(user) -> list[int]:
     for cat in cats:
         sel = {g.id for g in cat.selected_groups.all()}
         req = {g.id for g in cat.required_groups.all()}
-        if (not sel and not req) or (sel & group_ids) or (req and req <= group_ids):
+        if category_admits(sel, req, group_ids):
             out.append(cat.pk)
     return out
 

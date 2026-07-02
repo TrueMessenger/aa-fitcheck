@@ -178,6 +178,16 @@ urlpatterns = [
     # Settings hub (fittings import + enforcement / global settings)
     path("settings/", manage.settings_home, name="settings_home"),
     path("settings/diagnostics/", manage.diagnostics, name="diagnostics"),
+    path(
+        "settings/diagnostics/snapshots/run/",
+        manage.snapshot_run_now,
+        name="snapshot_run_now",
+    ),
+    path(
+        "settings/diagnostics/snapshots/purge/",
+        manage.snapshot_purge,
+        name="snapshot_purge",
+    ),
     # Policy editor (plugin admins)
     path("policies/", manage.policy_list, name="policy_list"),
     path("policies/enforcement/", manage.enforcement_settings, name="enforcement_settings"),

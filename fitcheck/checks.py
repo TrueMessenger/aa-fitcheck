@@ -73,3 +73,52 @@ def structure_name_task_check(app_configs, **kwargs):
             )
         ]
     return []
+
+
+@register()
+def snapshot_task_check(app_configs, **kwargs):
+    """Warn when compliance-snapshot collection looks unscheduled or stalled:
+    the plugin is in real use (active doctrines with submissions) but no
+    snapshot row has been written recently. Trend history cannot be backfilled,
+    so every unscheduled day is reporting data lost. Quiet during tests and
+    pre-migrate; self-clears once the task runs."""
+    import datetime as dt
+
+    from django.utils import timezone
+
+    if "test" in sys.argv:
+        return []
+    try:
+        from .models import ComplianceSnapshot, Doctrine, FitSubmission
+
+        in_use = (
+            Doctrine.objects.filter(is_active=True).exists()
+            and FitSubmission.objects.exists()
+        )
+        newest = (
+            ComplianceSnapshot.objects.order_by("-date")
+            .values_list("date", flat=True)
+            .first()
+        )
+    except Exception:
+        # Table not created yet (pre-migrate / collectstatic / first boot).
+        return []
+    if not in_use:
+        return []
+    if newest is not None and newest >= timezone.now().date() - dt.timedelta(days=3):
+        return []
+    return [
+        Warning(
+            "fitcheck's compliance-snapshot task has "
+            + ("never run" if newest is None else f"not run since {newest}")
+            + " - compliance reports will have no trend history for this period "
+            "(it cannot be backfilled).",
+            hint=(
+                "Schedule `fitcheck.tasks.take_compliance_snapshots` via "
+                "CELERYBEAT_SCHEDULE (daily), or trigger it from Settings > "
+                "Diagnostics & health. FITCHECK_SNAPSHOT_RETENTION_DAYS bounds "
+                "how much history is kept (default 365; 0 = keep forever)."
+            ),
+            id="fitcheck.W003",
+        )
+    ]

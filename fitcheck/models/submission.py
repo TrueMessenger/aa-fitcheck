@@ -85,6 +85,7 @@ class FitSubmission(models.Model):
         indexes = [
             models.Index(fields=["user", "-created_at"]),
             models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["status", "verdict", "-created_at"]),
             models.Index(fields=["doctrine_fit", "status"]),
             models.Index(fields=["doctrine", "status"]),
         ]
