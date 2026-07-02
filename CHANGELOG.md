@@ -29,6 +29,8 @@ Unreleased set contains new features, so the next release will be a minor bump.)
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-02
+
 ### Added
 - **Pagination on the review queue and the pilot's validation history.** Both
   lists previously stopped at a silent hard cap (300 / 200 rows); they now page
