@@ -28,9 +28,10 @@ from . import api
 logger = logging.getLogger(__name__)
 
 
-def _basic_access_users():
+def basic_access_users():
     """Active users holding fitcheck.basic_access (directly, via group, or via
-    state), with their group ids prefetched for the admission test."""
+    state), with their group ids prefetched for the admission test. Shared by
+    the snapshot task and the Reports drill-down."""
     from django.contrib.auth.models import Permission
 
     from app_utils.django import users_with_permission
@@ -45,9 +46,9 @@ def _basic_access_users():
     )
 
 
-def _audience_for(doctrine: Doctrine, users, group_ids_by_user: dict) -> list:
+def audience_for(doctrine: Doctrine, users, group_ids_by_user: dict) -> list:
     """The subset of ``users`` the doctrine's categories admit. No categories =
-    everyone (public)."""
+    everyone (public). Shared by the snapshot task and the Reports drill-down."""
     categories = list(doctrine.categories.all())
     if not categories:
         return list(users)
@@ -72,7 +73,7 @@ def take_snapshots(snapshot_date: dt.date | None = None) -> dict:
     (default today). Re-running on the same day updates rows in place, so the
     ad-hoc "Run now" control never duplicates or errors. Returns a summary dict."""
     snapshot_date = snapshot_date or timezone.now().date()
-    users = list(_basic_access_users())
+    users = list(basic_access_users())
     group_ids_by_user = {u.pk: {g.id for g in u.groups.all()} for u in users}
 
     doctrines = Doctrine.objects.filter(is_active=True).prefetch_related(
@@ -80,7 +81,7 @@ def take_snapshots(snapshot_date: dt.date | None = None) -> dict:
     )
     written = 0
     for doctrine in doctrines:
-        audience = _audience_for(doctrine, users, group_ids_by_user)
+        audience = audience_for(doctrine, users, group_ids_by_user)
         audience_ids = {u.pk for u in audience}
         counts = {"compliant": 0, "compliant_subs": 0}
         for result in api.iter_user_compliance(audience, doctrine=doctrine):

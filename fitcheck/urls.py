@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import manage, member, review
+from .views import manage, member, reports, review
 
 app_name = "fitcheck"
 
@@ -175,6 +175,15 @@ urlpatterns = [
         name="review_submissions_delete_bulk",
     ),
     path("review/<int:submission_pk>/decide/", review.decide, name="review_decide"),
+    # Reports tab (org-wide compliance, gated view_compliance_reports)
+    path("reports/", reports.overview, name="reports_overview"),
+    path("reports/export/", reports.overview_csv, name="reports_overview_csv"),
+    path("reports/<int:doctrine_pk>/", reports.drilldown, name="reports_drilldown"),
+    path(
+        "reports/<int:doctrine_pk>/export/",
+        reports.drilldown_csv,
+        name="reports_drilldown_csv",
+    ),
     # Settings hub (fittings import + enforcement / global settings)
     path("settings/", manage.settings_home, name="settings_home"),
     path("settings/diagnostics/", manage.diagnostics, name="diagnostics"),
