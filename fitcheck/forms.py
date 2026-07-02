@@ -455,18 +455,6 @@ class PolicySlotRuleForm(forms.Form):
         choices=[("", _("Not overridden"))] + list(EnforcementMode.choices),
         widget=forms.Select(attrs={"class": "form-select form-select-sm"}),
     )
-    min_meta_level = forms.IntegerField(
-        required=False,
-        min_value=0,
-        max_value=14,
-        widget=forms.NumberInput(
-            attrs={
-                "class": "form-control form-control-sm",
-                "placeholder": _("module's own"),
-                "style": "width: 7em",
-            }
-        ),
-    )
     allow_mutated = forms.BooleanField(
         required=False,
         initial=True,

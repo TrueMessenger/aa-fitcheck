@@ -305,7 +305,6 @@ class TestAssignmentItemsView(TestCase):
                 "form-MAX_NUM_FORMS": "1000",
                 "form-0-id": str(policy.pk),
                 "form-0-policy": SubstitutionPolicy.EXACT,
-                "form-0-min_meta_level": "",
                 "form-0-allow_mutated": "on",
                 "form-0-min_quantity_pct": "100",
                 "form-0-notes": "",

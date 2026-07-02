@@ -153,7 +153,7 @@ def resolve_allowed_bulk(
     `items` may be DoctrineFitItem (legacy fit-defaults path) or
     AssignmentItemPolicy (per-(doctrine, fit) snapshot path). Both expose the
     same attribute surface: section/module_type_id/quantity/charge_type_id/
-    policy/min_meta_level/allowed_meta_groups/checked_attributes/allow_mutated/
+    policy/allowed_meta_groups/checked_attributes/allow_mutated/
     min_quantity_pct/notes, plus a unique `.pk`.
 
     `overrides_by_item`, if provided, replaces the FitItemOverride lookup -
@@ -174,7 +174,7 @@ def resolve_allowed_bulk(
     family_rows = list(
         SdeType.objects.filter(
             variation_parent_type_id__in=parent_ids, published=True
-        ).values("type_id", "name", "variation_parent_type_id", "meta_group_id", "meta_level")
+        ).values("type_id", "name", "variation_parent_type_id", "meta_group_id")
     )
     families: dict[int, list[dict]] = defaultdict(list)
     for row in family_rows:
@@ -415,7 +415,7 @@ def candidate_attributes_for_item(item) -> list[dict]:
     family = list(
         SdeType.objects.filter(
             variation_parent_type_id=parent_id, published=True
-        ).values("type_id", "name", "meta_group_id", "meta_level")
+        ).values("type_id", "name", "meta_group_id")
     )
     family_type_ids = {row["type_id"] for row in family} or {sde.type_id}
 

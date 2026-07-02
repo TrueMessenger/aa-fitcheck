@@ -355,7 +355,7 @@ class TestQuantitySections(EngineTestCase):
         fit = self.make_fit()
         add_item(
             fit, Section.DRONE_BAY, T.HOBGOBLIN_I, 5,
-            policy=SubstitutionPolicy.VARIANTS, min_meta_level=0,
+            policy=SubstitutionPolicy.VARIANTS,
         )
         upgraded = check_fit(
             fit_of(FitItem(Section.DRONE_BAY, T.HOBGOBLIN_II, 5)), fit

@@ -1801,7 +1801,6 @@ def policy_edit(request, policy_pk: int | None = None):
                     policy=obj,
                     section=section,
                     enforcement=data["enforcement"],
-                    min_meta_level=data.get("min_meta_level"),
                     allow_mutated=data.get("allow_mutated", True),
                     min_quantity_pct=data.get("min_quantity_pct") or 100,
                 )
@@ -1816,7 +1815,6 @@ def policy_edit(request, policy_pk: int | None = None):
             initial = (
                 {
                     "enforcement": rule.enforcement,
-                    "min_meta_level": rule.min_meta_level,
                     "allow_mutated": rule.allow_mutated,
                     "min_quantity_pct": rule.min_quantity_pct,
                 }

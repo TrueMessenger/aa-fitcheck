@@ -237,12 +237,6 @@ class PolicySlotRule(models.Model):
     enforcement = models.CharField(
         max_length=2, choices=EnforcementMode.choices, default=EnforcementMode.META
     )
-    min_meta_level = models.PositiveSmallIntegerField(
-        null=True,
-        blank=True,
-        help_text="Meta enforcement: substitutes need at least this meta level. "
-        "Empty = each module's own level.",
-    )
     allow_mutated = models.BooleanField(
         default=True,
         help_text="Equal-or-greater: allow abyssal/mutated modules whose rolls qualify.",
@@ -377,11 +371,6 @@ class DoctrineFitItem(models.Model):
         "eveuniverse.EveType", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     policy = models.CharField(max_length=2, choices=SubstitutionPolicy.choices)
-    min_meta_level = models.PositiveSmallIntegerField(
-        null=True,
-        blank=True,
-        help_text="Substitutes need at least this meta level. Empty = this module's own level.",
-    )
     allowed_meta_groups = models.JSONField(
         default=default_allowed_meta_groups,
         blank=True,
@@ -495,7 +484,6 @@ class AssignmentItemPolicy(models.Model):
         related_name="+",
     )
     policy = models.CharField(max_length=2, choices=SubstitutionPolicy.choices)
-    min_meta_level = models.PositiveSmallIntegerField(null=True, blank=True)
     allowed_meta_groups = models.JSONField(default=default_allowed_meta_groups, blank=True)
     checked_attributes = models.JSONField(default=list, blank=True)
     attribute_bounds = models.JSONField(default=dict, blank=True)

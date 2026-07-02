@@ -49,7 +49,6 @@ class ManualRecheckCase(TestCase):
             values = {
                 "id": str(item.pk),
                 "policy": item.policy,
-                "min_meta_level": "" if item.min_meta_level is None else item.min_meta_level,
                 "allow_mutated": "on" if item.allow_mutated else "",
                 "min_quantity_pct": str(item.min_quantity_pct),
                 "notes": item.notes,
@@ -116,7 +115,7 @@ class TestAutoRecheckRemoved(ManualRecheckCase):
         self.client.post(
             reverse("fitcheck:manage_fit_items", args=[self.fit.pk]),
             self._formset_data(
-                {self.low_item.pk: {"min_meta_level": "5"}}
+                {self.low_item.pk: {"min_quantity_pct": "50"}}
             ),
         )
         from ..models import FitSubmission
