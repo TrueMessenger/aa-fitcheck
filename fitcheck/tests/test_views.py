@@ -960,10 +960,110 @@ class TestEsiAccessConsolidation(ViewTestCase):
         self.assertTrue(reverse("fitcheck:add_fittings_write_token"))
 
     def test_pilot_fittings_offers_connect_esi_not_saved_fittings(self):
+        # The connect button shows only for characters missing scopes, so the
+        # member needs an ownership (create_user only sets a main character).
+        from allianceauth.authentication.models import CharacterOwnership
+
+        CharacterOwnership.objects.create(
+            user=self.member,
+            character=self.member.profile.main_character,
+            owner_hash="esi-consolidation-hash",
+        )
         self.client.force_login(self.member)
         response = self.client.get(reverse("fitcheck:pilot_fittings"))
         self.assertContains(response, reverse("fitcheck:grant_all_esi"))
         self.assertNotContains(response, "Import my saved fittings")
+
+
+class TestConnectEsiVisibility(ViewTestCase):
+    """The Connect ESI buttons and the 'one grant covers everything' banner
+    render only when an owned character is missing a PILOT_GRANT_SCOPES token;
+    fully-granted accounts (e.g. full-scope Auth logins) see neither."""
+
+    def setUp(self):
+        from allianceauth.authentication.models import CharacterOwnership
+
+        self.character = self.member.profile.main_character
+        # AA reconciles ownership on esi Token saves by owner_hash, so the
+        # ownership and any token we mint must share the same hash.
+        self.owner_hash = f"visibility-hash-{self.character.character_id}"
+        CharacterOwnership.objects.create(
+            user=self.member, character=self.character, owner_hash=self.owner_hash
+        )
+
+    def _grant(self, scopes):
+        """A valid token for the member's character carrying `scopes`."""
+        from esi.models import Scope, Token
+
+        token = Token.objects.create(
+            user=self.member,
+            character_id=self.character.character_id,
+            character_name=self.character.character_name,
+            access_token="access",
+            character_owner_hash=self.owner_hash,
+        )
+        for name in scopes:
+            scope, _ = Scope.objects.get_or_create(name=name)
+            token.scopes.add(scope)
+        return token
+
+    def _empty_inventory(self):
+        from unittest.mock import patch
+
+        from ..services.esi_assets import ShipInventory
+
+        return patch(
+            "fitcheck.services.esi_assets.get_ship_inventory",
+            return_value=ShipInventory(),
+        )
+
+    def test_helper_flags_missing_and_partial_scopes(self):
+        from ..services.esi_assets import (
+            ASSET_SCOPES,
+            PILOT_GRANT_SCOPES,
+            characters_missing_pilot_scopes,
+        )
+
+        # No token at all -> missing.
+        missing = characters_missing_pilot_scopes(self.member)
+        self.assertEqual(
+            [c.character_id for c in missing], [self.character.character_id]
+        )
+
+        # Asset scope alone is not the full consent set -> still missing.
+        self._grant(ASSET_SCOPES)
+        self.assertTrue(characters_missing_pilot_scopes(self.member))
+
+        # A single token carrying every scope -> nothing missing.
+        self._grant(PILOT_GRANT_SCOPES)
+        self.assertEqual(characters_missing_pilot_scopes(self.member), [])
+
+    def test_buttons_shown_when_scopes_missing(self):
+        self.client.force_login(self.member)
+        grant_url = reverse("fitcheck:grant_all_esi")
+
+        response = self.client.get(reverse("fitcheck:pilot_fittings"))
+        self.assertContains(response, grant_url)
+
+        with self._empty_inventory():
+            response = self.client.get(reverse("fitcheck:ship_inventory"))
+        self.assertContains(response, grant_url)
+        self.assertContains(response, "One grant covers everything")
+
+    def test_buttons_hidden_when_fully_granted(self):
+        from ..services.esi_assets import PILOT_GRANT_SCOPES
+
+        self._grant(PILOT_GRANT_SCOPES)
+        self.client.force_login(self.member)
+        grant_url = reverse("fitcheck:grant_all_esi")
+
+        response = self.client.get(reverse("fitcheck:pilot_fittings"))
+        self.assertNotContains(response, grant_url)
+
+        with self._empty_inventory():
+            response = self.client.get(reverse("fitcheck:ship_inventory"))
+        self.assertNotContains(response, grant_url)
+        self.assertNotContains(response, "One grant covers everything")
 
 
 class TestSettingsHub(ViewTestCase):
