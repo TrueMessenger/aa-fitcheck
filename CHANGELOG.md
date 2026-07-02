@@ -48,6 +48,11 @@ Unreleased set contains new features, so the next release will be a minor bump.)
   search query).
 - Save-to-EVE failures show a generic error message instead of echoing the
   raw ESI exception text to the page; the detail stays in the server log.
+- **Static-data (SDE) loading works on MySQL/MariaDB.** `fitcheck_load_sde` and
+  the scheduled `update_sde_data` task crashed with `NotSupportedError` on
+  MySQL/MariaDB-backed installs — those backends reject naming the unique
+  target in a bulk upsert, which Postgres/SQLite require. The loader now adapts
+  to the backend's capabilities; behaviour is unchanged everywhere.
 - **My Ships no longer shows an empty list for pilots with many ships docked in
   private structures (Citadels).** The listing used to resolve each Citadel's
   name live, trying every structure-scoped token — and every "no docking
