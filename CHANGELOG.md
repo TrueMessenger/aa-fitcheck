@@ -37,6 +37,8 @@ version last got one.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-02
+
 ### Added
 - **Reports tab** (gated by the `view_compliance_reports` permission, which now
   does something): an org-wide **compliance overview** — every active doctrine's
