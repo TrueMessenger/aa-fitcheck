@@ -37,6 +37,8 @@ version last got one.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-02
+
 ### Added
 - **Compliance snapshot collection for trend reporting** (migration 0030). A new
   daily beat task, `fitcheck.tasks.take_compliance_snapshots`, records one
