@@ -1718,9 +1718,10 @@ def settings_home(request):
 @login_required
 @permission_required("fitcheck.manage_policies")
 def diagnostics(request):
-    """Admin Diagnostics & Health page: read-only app-health stats plus the
-    inventory doctor. DB/cache only - never calls ESI (the CLI command keeps the
-    deliberate --esi mode)."""
+    """Admin Diagnostics & Health page: app-health stats, the inventory doctor,
+    and the reporting-data controls (snapshot run-now / purge). Reads are
+    DB/cache only - never calls ESI (the CLI command keeps the deliberate
+    --esi mode)."""
     from ..services import diagnostics as diag
 
     context = {
@@ -1739,6 +1740,59 @@ def diagnostics(request):
                 character.character_id, with_esi=False
             )
     return render(request, "fitcheck/settings/diagnostics.html", context)
+
+
+@login_required
+@permission_required("fitcheck.manage_policies")
+@require_POST
+def snapshot_run_now(request):
+    """Ad-hoc compliance-snapshot run: enqueue the beat task once. A same-day
+    re-run updates today's rows in place, so this is always safe to press."""
+    from ..tasks import take_compliance_snapshots
+
+    take_compliance_snapshots.delay()
+    messages.info(
+        request,
+        _(
+            "Compliance snapshot queued. Today's rows will appear (or refresh) "
+            "once the worker has processed it - reload this page in a minute."
+        ),
+    )
+    return redirect("fitcheck:diagnostics")
+
+
+@login_required
+@permission_required("fitcheck.manage_policies")
+@require_POST
+def snapshot_purge(request):
+    """Purge collected snapshot rows without database access: keep the most
+    recent N days (blank = delete everything). Snapshot data is derived and
+    safe to delete; purging only shortens the available trend history."""
+    from ..services.snapshots import purge_snapshots
+
+    raw = (request.POST.get("keep_days") or "").strip()
+    keep_days = None
+    if raw:
+        try:
+            keep_days = int(raw)
+        except ValueError:
+            keep_days = -1
+        if keep_days < 0:
+            messages.error(request, _("Days to keep must be a whole number (or blank for all)."))
+            return redirect("fitcheck:diagnostics")
+    deleted = purge_snapshots(older_than_days=keep_days)
+    if keep_days is None:
+        messages.success(
+            request,
+            _("Purged all compliance-snapshot rows (%(n)d deleted).") % {"n": deleted},
+        )
+    else:
+        messages.success(
+            request,
+            _("Purged %(n)d snapshot row(s) older than %(d)d days.")
+            % {"n": deleted, "d": keep_days},
+        )
+    return redirect("fitcheck:diagnostics")
 
 
 @login_required

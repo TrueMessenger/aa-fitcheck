@@ -30,6 +30,12 @@ FITCHECK_REVIEWER_DIGEST = clean_setting("FITCHECK_REVIEWER_DIGEST", False)
 # Contact email embedded in the ESI/SDE User-Agent header (required by CCP guidelines).
 FITCHECK_ESI_CONTACT = clean_setting("FITCHECK_ESI_CONTACT", "", required_type=str)
 
+# Days of compliance-snapshot history the fitcheck.tasks.take_compliance_snapshots
+# beat task keeps; older rows are pruned automatically after each run. 0 disables
+# the auto-prune (keep forever). The Diagnostics page offers manual purge controls
+# either way.
+FITCHECK_SNAPSHOT_RETENTION_DAYS = clean_setting("FITCHECK_SNAPSHOT_RETENTION_DAYS", 365)
+
 # A cached private-structure (Citadel) name is considered stale after this many
 # seconds; the fitcheck.tasks.refresh_structure_names beat task re-resolves stale
 # rows. The default (24h) means a renamed Citadel shows the old name for at most

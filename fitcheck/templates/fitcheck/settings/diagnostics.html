@@ -9,7 +9,7 @@
             <i class="fa-solid fa-arrow-left"></i> {% translate "Back to settings" %}
         </a>
     </div>
-    <p class="small text-muted">{% translate "Read-only. Nothing here changes data or calls ESI." %}</p>
+    <p class="small text-muted">{% translate "Health stats are read-only and nothing on this page calls ESI. The reporting-data controls below affect only Fit Check's own collected snapshot rows." %}</p>
 
     {# --- deploy-check warnings --- #}
     {% if health.deploy_warnings %}
@@ -88,6 +88,23 @@
 
         <div class="col">
             <div class="fc-card"><div class="card-body">
+                <h6 class="mb-2"><i class="fa-solid fa-chart-line me-2"></i>{% translate "Reporting data (snapshots)" %}</h6>
+                <table class="table table-sm small mb-0">
+                    <tr><td class="text-muted">{% translate "Snapshot rows" %}</td><td class="text-end">{{ health.snapshot_total }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Doctrines covered" %}</td><td class="text-end">{{ health.snapshot_doctrines }}</td></tr>
+                    <tr><td class="text-muted">{% translate "History" %}</td>
+                        <td class="text-end">{% if health.snapshot_oldest %}{{ health.snapshot_oldest|date:"Y-m-d" }} → {{ health.snapshot_newest|date:"Y-m-d" }}{% else %}—{% endif %}</td></tr>
+                    <tr><td class="text-muted">{% translate "Last taken" %}</td><td class="text-end">{{ health.snapshot_last_taken|date:"Y-m-d H:i"|default:"—" }}</td></tr>
+                    <tr><td class="text-muted">{% translate "Retention (days)" %}</td>
+                        <td class="text-end">{% if health.snapshot_retention_days %}{{ health.snapshot_retention_days }}{% else %}{% translate "keep forever" %}{% endif %}</td></tr>
+                    <tr><td class="text-muted">{% translate "Beat task scheduled" %}</td>
+                        <td class="text-end">{% if health.snapshot_task_scheduled %}<span class="badge bg-success">{% translate "yes" %}</span>{% else %}<span class="badge bg-warning text-dark">{% translate "not found" %}</span>{% endif %}</td></tr>
+                </table>
+            </div></div>
+        </div>
+
+        <div class="col">
+            <div class="fc-card"><div class="card-body">
                 <h6 class="mb-2"><i class="fa-solid fa-list-check me-2"></i>{% translate "Content & queue" %}</h6>
                 <table class="table table-sm small mb-0">
                     <tr><td class="text-muted">{% translate "Active doctrines" %}</td><td class="text-end">{{ health.active_doctrines }}</td></tr>
@@ -98,6 +115,52 @@
             </div></div>
         </div>
     </div>
+
+    {# --- reporting data controls --- #}
+    <div class="fc-section-head"><i class="fa-solid fa-chart-line"></i>{% translate "Reporting data controls" %}</div>
+    <p class="small text-muted">
+        {% translate "Compliance snapshots are derived reporting rows (per-doctrine daily aggregates for trend reports). They are safe to purge - deleting them only shortens the available trend history; current compliance state is unaffected. No database access needed." %}
+    </p>
+    <div class="fc-card mb-4"><div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-auto">
+                <form method="post" action="{% url 'fitcheck:snapshot_run_now' %}">
+                    {% csrf_token %}
+                    <button class="btn btn-primary btn-sm" type="submit">
+                        <i class="fa-solid fa-camera"></i> {% translate "Take snapshot now" %}
+                    </button>
+                </form>
+                <div class="small text-muted mt-1">{% translate "Queues one ad-hoc run; a same-day re-run refreshes today's rows." %}</div>
+            </div>
+            <div class="col-auto border-start ps-3">
+                <form method="post" action="{% url 'fitcheck:snapshot_purge' %}" class="row g-2 align-items-end"
+                      onsubmit="return confirm('{% translate 'Purge snapshot rows older than the kept window? This cannot be undone.' %}');">
+                    {% csrf_token %}
+                    <div class="col-auto">
+                        <label class="form-label small mb-1" for="snap-keep-days">{% translate "Days to keep" %}</label>
+                        <input class="form-control form-control-sm" type="number" min="0" id="snap-keep-days"
+                               name="keep_days" value="{{ health.snapshot_retention_days|default:365 }}" style="width: 7rem" required>
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-danger btn-sm" type="submit">
+                            <i class="fa-solid fa-broom"></i> {% translate "Purge older rows" %}
+                        </button>
+                    </div>
+                </form>
+                <div class="small text-muted mt-1">{% translate "Deletes rows older than the kept window." %}</div>
+            </div>
+            <div class="col-auto border-start ps-3">
+                <form method="post" action="{% url 'fitcheck:snapshot_purge' %}"
+                      onsubmit="return confirm('{% translate 'Delete ALL collected snapshot rows? Trend history cannot be rebuilt.' %}');">
+                    {% csrf_token %}
+                    <button class="btn btn-danger btn-sm" type="submit">
+                        <i class="fa-solid fa-trash"></i> {% translate "Purge all" %}
+                    </button>
+                </form>
+                <div class="small text-muted mt-1">{% translate "Truncates the snapshot table." %}</div>
+            </div>
+        </div>
+    </div></div>
 
     {# --- inventory doctor --- #}
     <div class="fc-section-head"><i class="fa-solid fa-user-astronaut"></i>{% translate "Inventory doctor" %}</div>

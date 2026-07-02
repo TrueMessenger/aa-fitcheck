@@ -37,6 +37,25 @@ version last got one.
 
 ## [Unreleased]
 
+### Added
+- **Compliance snapshot collection for trend reporting** (migration 0030). A new
+  daily beat task, `fitcheck.tasks.take_compliance_snapshots`, records one
+  aggregate row per active doctrine per day — audience size and how it splits
+  into compliant / compliant-via-substitutes / non-compliant / never-submitted —
+  over the doctrine's target audience (basic-access holders admitted by its
+  categories). Trend history cannot be backfilled, so schedule the task from day
+  one (deploy check `fitcheck.W003` warns when collection looks unscheduled or
+  stalled). The **Diagnostics & Health** page gains a reporting-data panel
+  (row counts, covered doctrines, history range, last run, schedule status) and
+  operator controls — take a snapshot now, purge rows older than a chosen
+  window, or purge everything — so the collected data can be managed entirely
+  without database access. `FITCHECK_SNAPSHOT_RETENTION_DAYS` (default 365,
+  `0` = keep forever) auto-prunes after each run.
+- **Composite review-queue index.** `FitSubmission` gains an index on
+  (status, verdict, created_at), matching the review queue's combined
+  status + verdict filter so it no longer scans within the status slice on
+  large installs.
+
 ### Removed
 - **The non-functional "Min Meta" input on the slot-group policy editor**, along
   with the underlying `min_meta_level` fields (migration 0029). The numeric

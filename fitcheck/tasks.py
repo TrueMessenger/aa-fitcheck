@@ -123,6 +123,23 @@ def refresh_structure_names(limit: int = None):
     return resolve_pending_and_stale(limit=limit)
 
 
+@shared_task(time_limit=1800)
+def take_compliance_snapshots():
+    """Daily: record per-doctrine compliance aggregates so reports can chart
+    trends (history cannot be backfilled). Schedule via CELERYBEAT_SCHEDULE;
+    FITCHECK_SNAPSHOT_RETENTION_DAYS bounds how much history is kept. Safe to
+    run ad hoc — a same-day re-run updates the day's rows in place."""
+    from .app_settings import FITCHECK_SNAPSHOT_RETENTION_DAYS
+    from .services.snapshots import purge_snapshots, take_snapshots
+
+    result = take_snapshots()
+    if FITCHECK_SNAPSHOT_RETENTION_DAYS > 0:
+        result["pruned"] = purge_snapshots(
+            older_than_days=FITCHECK_SNAPSHOT_RETENTION_DAYS
+        )
+    return result
+
+
 @shared_task(time_limit=300)
 def notify_member_decision(submission_id: int):
     submission = (

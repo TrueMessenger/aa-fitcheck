@@ -153,9 +153,13 @@ def health_summary() -> dict:
     """App-critical baseline status for the admin health panel. Read-only; no
     network (does not check the remote SDE build)."""
     from .. import __version__, checks
-    from ..app_settings import FITCHECK_STRUCTURE_CACHE_TTL
+    from ..app_settings import (
+        FITCHECK_SNAPSHOT_RETENTION_DAYS,
+        FITCHECK_STRUCTURE_CACHE_TTL,
+    )
     from ..constants import EveCategoryId
     from ..models import (
+        ComplianceSnapshot,
         Doctrine,
         DoctrineFit,
         EnforcementSettings,
@@ -174,7 +178,11 @@ def health_summary() -> dict:
 
     deploy_warnings = [
         {"id": w.id, "msg": w.msg, "hint": w.hint}
-        for w in (checks.sde_mirror_loaded_check(None) + checks.structure_name_task_check(None))
+        for w in (
+            checks.sde_mirror_loaded_check(None)
+            + checks.structure_name_task_check(None)
+            + checks.snapshot_task_check(None)
+        )
     ]
 
     last_structure_attempt = (
@@ -195,8 +203,26 @@ def health_summary() -> dict:
     except Exception:  # pragma: no cover - schema guard
         stale_pending = None
 
+    from django.conf import settings as django_settings
+    from django.db.models import Max, Min
+
+    snapshot_agg = ComplianceSnapshot.objects.aggregate(
+        oldest=Min("date"), newest=Max("date"), last_taken=Max("taken_at")
+    )
+    snapshot_scheduled = any(
+        entry.get("task") == "fitcheck.tasks.take_compliance_snapshots"
+        for entry in getattr(django_settings, "CELERYBEAT_SCHEDULE", {}).values()
+    )
+
     return {
         "fitcheck_version": __version__,
+        "snapshot_total": ComplianceSnapshot.objects.count(),
+        "snapshot_doctrines": ComplianceSnapshot.objects.values("doctrine").distinct().count(),
+        "snapshot_oldest": snapshot_agg["oldest"],
+        "snapshot_newest": snapshot_agg["newest"],
+        "snapshot_last_taken": snapshot_agg["last_taken"],
+        "snapshot_retention_days": FITCHECK_SNAPSHOT_RETENTION_DAYS,
+        "snapshot_task_scheduled": snapshot_scheduled,
         "corptools_installed": corptools_source.corptools_installed(),
         "corptools_version": corptools_version(),
         "asset_source": esi_assets._asset_source(),
