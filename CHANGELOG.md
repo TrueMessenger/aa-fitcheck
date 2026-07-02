@@ -48,6 +48,18 @@ Unreleased set contains new features, so the next release will be a minor bump.)
   search query).
 - Save-to-EVE failures show a generic error message instead of echoing the
   raw ESI exception text to the page; the detail stays in the server log.
+- **My Ships no longer shows an empty list for pilots with many ships docked in
+  private structures (Citadels).** The listing used to resolve each Citadel's
+  name live, trying every structure-scoped token — and every "no docking
+  access" response counted against EVE's shared API error budget, so a pilot
+  with a large fleet spread across inaccessible Citadels tripped the rate limit
+  and the whole scan aborted to a blank page (even with corptools serving the
+  assets perfectly). Structure locations now always come from the local
+  structure-name cache (like the bulk member scan since 1.3.0), with unseen
+  Citadels queued for the out-of-band `refresh_structure_names` task; only the
+  cheap batched custom-ship-name lookup stays live. A scan interrupted by the
+  rate limit now also shows a clear warning banner instead of silently
+  rendering an empty page.
 
 ## [1.4.0] - 2026-06-29
 

@@ -198,6 +198,22 @@ class TestInventoryHullPrefilter(ViewTestCase):
         self.assertContains(response, "Harbinger")
         self.assertContains(response, "Oracle")
 
+    def test_error_limited_scan_shows_a_banner_not_a_silent_empty_page(self):
+        """#39 visibility fix: an inventory scan cut short by ESI's error limit
+        must say so on the page instead of rendering a bare empty list."""
+        from unittest.mock import patch
+
+        from ..services.esi_assets import ShipInventory
+
+        inv = ShipInventory()
+        inv.error_limited = True
+        self.client.force_login(self.member)
+        with patch(
+            "fitcheck.services.esi_assets.get_ship_inventory", return_value=inv
+        ):
+            response = self.client.get(reverse("fitcheck:ship_inventory"))
+        self.assertContains(response, "rate limit interrupted")
+
     def test_fit_detail_validate_button_includes_type_id(self):
         """The button on a fitting page must encode ?type_id= so the link
         actually pre-filters."""

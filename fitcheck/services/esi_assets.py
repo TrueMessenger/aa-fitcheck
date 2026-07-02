@@ -376,26 +376,25 @@ def _build_owned_ships(
     char_name: str,
     ships: list[dict],
     token,
-    structure_tokens: list,
     *,
     resolve_names: bool = True,
 ) -> list[OwnedShip]:
     """Turn a character's ship rows into OwnedShip listing entries (names +
     location). Shared by the self-inventory and member-inventory scans.
 
-    `resolve_names=True` (self-inventory, low N) resolves custom ship names and
-    private-structure locations live over ESI. `resolve_names=False` (the bulk
-    alliance/corp scan) makes NO live ESI calls - names come from the corptools
-    cache (if any) and locations from the StructureNameCache + already-cached
-    eveuniverse rows - because resolving Citadel names live across hundreds of
-    pilots' tokens trips ESI's error limit (see services.structure_cache).
+    Locations ALWAYS come from the local caches (StructureNameCache +
+    already-cached eveuniverse rows) - NEVER a live per-structure lookup inside
+    a request. The old live path tried every structure-scoped token against
+    every Citadel; for a nullsec pilot with hundreds of ships docked across
+    inaccessible Citadels, the 403s tripped ESI's error limit and My Ships
+    aborted to an empty page even though the asset source was healthy (issue
+    #39 - the self-inventory twin of the member-scan storm fixed in #34).
+    Unseen Citadels are upserted 'pending'; the refresh_structure_names task
+    fills them in out-of-band.
 
-    May raise on an ESI error-limit while resolving names/locations (only when
-    `resolve_names`); callers catch it and set `error_limited`. Location
-    resolution walks only the ship rows we hold: a docked ship (location_id is a
-    station/structure/system) resolves exactly; the rarer ship nested inside a
-    carrier/container degrades to a generic label rather than dragging in the
-    whole tree."""
+    `resolve_names=True` (self-inventory, needs a token) still fetches custom
+    ship names live - one cheap batched call per character. May raise on an ESI
+    error-limit from that call; callers catch it and set `error_limited`."""
     by_item_id = {s["item_id"]: s for s in ships}
     type_ids = {s["type_id"] for s in ships}
     type_names = dict(
@@ -414,14 +413,12 @@ def _build_owned_ships(
     root_ids = {_root_location(s, by_item_id) for s in ships}
     if resolve_names and token is not None:
         ship_names = _fetch_asset_names(token, character_id, [s["item_id"] for s in ships])
-        location_details = _resolve_locations(root_ids, structure_tokens)
     else:
-        # No live ESI here: either the bulk member scan (resolve_names=False) or a
-        # corptools-served character with no fitcheck token. Custom ship name comes
-        # from the corptools cache when present (template falls back to the hull
-        # type name otherwise); locations come from the local caches only.
+        # Bulk member scan, or a corptools-served character with no fitcheck
+        # token: custom ship name comes from the corptools cache when present
+        # (template falls back to the hull type name otherwise).
         ship_names = {s["item_id"]: s.get("name", "") for s in ships}
-        location_details = _resolve_locations_cached(root_ids)
+    location_details = _resolve_locations_cached(root_ids)
     out: list[OwnedShip] = []
     for ship in ships:
         root = _root_location(ship, by_item_id)
@@ -481,7 +478,7 @@ def get_inventory_for_characters(characters, hull_type_id: int | None = None) ->
             # every pilot's token is what trips the ESI error limit.
             inventory.ships.extend(
                 _build_owned_ships(
-                    character_id, char_name, ships, token, [], resolve_names=False
+                    character_id, char_name, ships, token, resolve_names=False
                 )
             )
         except Exception as exc:  # pragma: no cover - network dependent
@@ -550,20 +547,6 @@ def _resolve_public_names(ids: set[int]) -> dict[int, str]:
     return resolved
 
 
-def _structure_tokens(character_ids) -> list:
-    """Valid structure-scoped tokens for the given characters (any owner)."""
-    from esi.models import Token
-
-    char_ids = [c for c in character_ids if c]
-    if not char_ids:
-        return []
-    return list(
-        Token.objects.filter(character_id__in=char_ids)
-        .require_scopes(STRUCTURE_SCOPES)
-        .require_valid()
-    )
-
-
 def _resolve_structure(structure_id: int, tokens: list) -> tuple[str | None, int | None]:
     """(name, solar_system_id) for a private structure, or (None, None) when no
     token resolves it (no structure scope, or no docking access -> 403)."""
@@ -597,39 +580,9 @@ def _system_region(solar_system_id: int) -> tuple[str, str]:
         return "", ""
 
 
-def _resolve_locations(root_ids: set[int], structure_tokens: list) -> dict[int, dict]:
-    """Map each root location id to {name, system, region}.
-
-    NPC stations and solar systems resolve via eveuniverse (no token needed);
-    private structures (Citadels, id >= 1e12) need a structure-scoped token and
-    docking access, falling back to the bare id when unavailable."""
-    from eveuniverse.models import EveStation
-
-    out: dict[int, dict] = {}
-    for loc_id in root_ids:
-        name: str | None = None
-        system_id: int | None = None
-        if loc_id >= 10**12:
-            name, system_id = _resolve_structure(loc_id, structure_tokens)
-        elif 60_000_000 <= loc_id < 64_000_000:
-            try:
-                station, _ = EveStation.objects.get_or_create_esi(id=loc_id)
-                name, system_id = station.name, station.eve_solar_system_id
-            except Exception as exc:  # pragma: no cover - network dependent
-                if is_error_limited(exc):
-                    raise
-                pass
-        elif 30_000_000 <= loc_id < 33_000_000:
-            system_id = loc_id  # the asset sits directly in a solar system
-        system_name, region_name = _system_region(system_id) if system_id else ("", "")
-        if name is None:
-            name = system_name or f"Structure {loc_id}"
-        out[loc_id] = {"name": name, "system": system_name, "region": region_name}
-    return out
-
-
 def _resolve_locations_cached(root_ids: set[int]) -> dict[int, dict]:
-    """Local-only location resolution for the bulk member scan - NEVER calls ESI.
+    """Local-only location resolution for every inventory listing (self AND
+    bulk member scan) - NEVER calls ESI.
 
     Private structures (Citadels, id >= 1e12) come from the StructureNameCache;
     ids not yet cached are upserted 'pending' (the refresh_structure_names task
@@ -727,7 +680,6 @@ def get_ship_inventory(user) -> ShipInventory:
         o.character.character_id: o.character
         for o in user.character_ownerships.select_related("character")
     }
-    structure_tokens = _structure_tokens(characters.keys())
     ship_type_ids = _ship_type_id_set()
 
     for character_id, character in characters.items():
@@ -751,7 +703,7 @@ def get_ship_inventory(user) -> ShipInventory:
             continue
         try:
             inventory.ships.extend(
-                _build_owned_ships(character_id, char_name, ships, token, structure_tokens)
+                _build_owned_ships(character_id, char_name, ships, token)
             )
         except Exception as exc:  # pragma: no cover - network dependent
             if is_error_limited(exc):

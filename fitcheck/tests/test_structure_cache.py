@@ -131,18 +131,16 @@ class BuildOwnedShipsTests(TestCase):
         token = mock.Mock()
         with mock.patch.object(esi_assets, "_fetch_asset_names") as fan, \
              mock.patch.object(esi_assets, "_resolve_structure") as rstruct, \
-             mock.patch.object(esi_assets, "_resolve_locations") as rloc, \
              mock.patch.object(
                  esi_assets, "_ship_group_names",
                  return_value={T.HARBINGER: "Battlecruiser"},
              ):
             out = esi_assets._build_owned_ships(
-                777, "Cap", [_ship_row()], token, [token], resolve_names=False
+                777, "Cap", [_ship_row()], token, resolve_names=False
             )
         # No live ESI for names or private-structure locations.
         fan.assert_not_called()
         rstruct.assert_not_called()
-        rloc.assert_not_called()
         self.assertEqual(out[0].ship_name, "")  # template falls back to type name
         self.assertEqual(out[0].location_name, f"Structure {STRUCT}")
         # The unseen structure was queued for the refresh task.
@@ -164,32 +162,35 @@ class BuildOwnedShipsTests(TestCase):
                  return_value={T.HARBINGER: "Battlecruiser"},
              ):
             out = esi_assets._build_owned_ships(
-                777, "Cap", [_ship_row()], token, [token], resolve_names=False
+                777, "Cap", [_ship_row()], token, resolve_names=False
             )
         fan.assert_not_called()
         rstruct.assert_not_called()
         self.assertEqual(out[0].location_name, "Sotiyo")
 
-    def test_resolve_names_true_uses_live_resolution(self):
+    def test_resolve_names_true_fetches_names_live_but_locations_cached(self):
+        """Self-inventory (#39): custom ship names still come from one live
+        batched call, but locations ALWAYS come from the StructureNameCache -
+        the live per-Citadel lookup is gone entirely."""
+        StructureNameCache.objects.create(
+            structure_id=STRUCT, name="Sotiyo", resolved_at=timezone.now()
+        )
         token = mock.Mock()
         with mock.patch.object(
                  esi_assets, "_fetch_asset_names", return_value={5000: "Live Name"}
              ) as fan, \
-             mock.patch.object(
-                 esi_assets, "_resolve_locations",
-                 return_value={STRUCT: {"name": "Live Citadel", "system": "S", "region": "R"}},
-             ) as rloc, \
+             mock.patch.object(esi_assets, "_resolve_structure") as rstruct, \
              mock.patch.object(
                  esi_assets, "_ship_group_names",
                  return_value={T.HARBINGER: "Battlecruiser"},
              ):
             out = esi_assets._build_owned_ships(
-                777, "Cap", [_ship_row()], token, [token], resolve_names=True
+                777, "Cap", [_ship_row()], token, resolve_names=True
             )
         fan.assert_called_once()
-        rloc.assert_called_once()
+        rstruct.assert_not_called()
         self.assertEqual(out[0].ship_name, "Live Name")
-        self.assertEqual(out[0].location_name, "Live Citadel")
+        self.assertEqual(out[0].location_name, "Sotiyo")
 
     def test_system_region_cached_never_fetches(self):
         # An uncached system resolves to ("", "") rather than triggering an ESI load.
@@ -229,14 +230,12 @@ class MemberScanNoEsiTests(TestCase):
                  return_value={T.HARBINGER: "Battlecruiser"},
              ), \
              mock.patch.object(esi_assets, "_fetch_asset_names") as fan, \
-             mock.patch.object(esi_assets, "_resolve_structure") as rstruct, \
-             mock.patch.object(esi_assets, "_resolve_locations") as rloc:
+             mock.patch.object(esi_assets, "_resolve_structure") as rstruct:
             inventory = esi_assets.get_inventory_for_characters(
                 [char], hull_type_id=T.HARBINGER
             )
         fan.assert_not_called()
         rstruct.assert_not_called()
-        rloc.assert_not_called()
         self.assertFalse(inventory.error_limited)
         self.assertEqual([s.type_id for s in inventory.ships], [T.HARBINGER, T.HARBINGER])
         self.assertEqual(

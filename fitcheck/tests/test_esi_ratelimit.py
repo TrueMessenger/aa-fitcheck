@@ -57,8 +57,7 @@ class EsiRateLimitTests(TestCase):
         token = object()
         with mock.patch.object(esi_assets, "tokens_by_character", return_value={12345: token}), \
                 mock.patch.object(esi_assets, "_fetch_assets", return_value=ASSETS) as fetch, \
-                mock.patch.object(esi_assets, "_fetch_asset_names", return_value={1: "My Harb"}), \
-                mock.patch.object(esi_assets, "_resolve_locations", return_value={}):
+                mock.patch.object(esi_assets, "_fetch_asset_names", return_value={1: "My Harb"}):
             inv = get_inventory_for_characters([self.char], hull_type_id=T.HARBINGER)
         self.assertEqual(len(inv.ships), 1)
         self.assertEqual(fetch.call_count, 1)  # one fetch to list
@@ -103,9 +102,9 @@ class EsiRateLimitTests(TestCase):
         self.assertEqual(len(inv.ships), 1)
 
     def test_self_inventory_aborts_when_name_resolution_hits_error_limit(self):
-        """H3 (now on the self-inventory path, which still resolves live, low N):
-        an error limit raised by the secondary name/location resolution must abort
-        the scan and surface error_limited, rather than being swallowed."""
+        """H3: an error limit raised by the (only remaining live) batched
+        ship-name fetch must abort the scan and surface error_limited, rather
+        than being swallowed. Locations never resolve live any more (#39)."""
         from allianceauth.authentication.models import CharacterOwnership
         from django.contrib.auth.models import User
 
@@ -264,3 +263,59 @@ class SelfAuditBatchingTests(TestCase):
         resolve.assert_not_called()
         implants.assert_not_called()
         validate.assert_not_called()
+
+
+class SelfInventoryCitadelStormTests(TestCase):
+    """Issue #39: a corptools-served pilot with many ships docked across
+    private Citadels must get a FULL My Ships listing with ZERO live structure
+    lookups. The old code resolved each Citadel live against every
+    structure-scoped token; the 403s from inaccessible structures tripped
+    ESI's error limit and the scan aborted to an empty page even though the
+    asset source was perfectly healthy."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from allianceauth.authentication.models import CharacterOwnership
+        from django.contrib.auth.models import User
+
+        create_sde_testdata()
+        cls.char = EveCharacter.objects.create(
+            character_id=95001, character_name="Nullsec Cap", corporation_id=2001,
+            corporation_name="Corp", corporation_ticker="CRP", security_status=0,
+        )
+        cls.owner = User.objects.create_user("nullsec-owner", password="x")
+        CharacterOwnership.objects.create(
+            user=cls.owner, character=cls.char, owner_hash="hash-95001"
+        )
+
+    def test_citadel_docked_fleet_lists_fully_without_live_structure_calls(self):
+        from ..models import StructureNameCache
+
+        # 40 assembled ships, each docked in a DIFFERENT private Citadel.
+        ships = [
+            {"item_id": 5000 + i, "type_id": T.HARBINGER,
+             "location_id": 1_038_000_000_000 + i, "location_flag": "Hangar",
+             "quantity": 1, "is_singleton": True, "name": f"Harb {i}"}
+            for i in range(40)
+        ]
+        with mock.patch.object(
+                    esi_assets, "user_tokens_by_character",
+                    return_value=({95001: object()}, []),
+                ), \
+                mock.patch.object(
+                    esi_assets, "resolve_ship_list", return_value=ships
+                ), \
+                mock.patch.object(
+                    esi_assets, "_fetch_asset_names", return_value={}
+                ), \
+                mock.patch.object(
+                    esi_assets, "_resolve_structure", side_effect=_ErrorLimited()
+                ) as rstruct:
+            inv = esi_assets.get_ship_inventory(self.owner)
+        rstruct.assert_not_called()
+        self.assertFalse(inv.error_limited)
+        self.assertEqual(len(inv.ships), 40)
+        # Every unseen Citadel was queued for the out-of-band refresh task.
+        self.assertEqual(
+            StructureNameCache.objects.filter(resolved_at__isnull=True).count(), 40
+        )

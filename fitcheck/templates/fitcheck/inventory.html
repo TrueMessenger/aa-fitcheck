@@ -35,6 +35,14 @@
             <i class="fa-solid fa-key"></i> {% translate "Connect / refresh ESI access" %}
         </a>
     </div>
+    {% if inventory.error_limited %}
+        <div class="alert alert-danger d-flex align-items-center gap-2">
+            <i class="fa-solid fa-gauge-high"></i>
+            <div>
+                {% translate "EVE's API rate limit interrupted this scan, so the list below is incomplete (possibly empty). Wait a minute and reload." %}
+            </div>
+        </div>
+    {% endif %}
     {% for name, reason in inventory.errors.items %}
         <div class="alert alert-danger">{{ name }}: {{ reason }}</div>
     {% endfor %}
