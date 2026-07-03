@@ -1035,7 +1035,10 @@ def doctrine_edit(request, doctrine_pk: int):
     else:
         for fieldname, errors in form.errors.items():
             for error in errors:
-                messages.error(request, f"{fieldname}: {error}")
+                messages.error(
+                    request,
+                    _("%(field)s: %(error)s") % {"field": fieldname, "error": error},
+                )
     return redirect("fitcheck:doctrine_detail", doctrine_pk=doctrine.pk)
 
 

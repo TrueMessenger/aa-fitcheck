@@ -2,6 +2,8 @@ import logging
 
 from celery import shared_task
 
+from django.utils.translation import gettext, ngettext
+
 from allianceauth.notifications import notify
 
 from .app_settings import FITCHECK_NOTIFY_REVIEWERS, FITCHECK_REVIEWER_DIGEST
@@ -57,12 +59,16 @@ def recheck_pending_submissions(fit_id: int):
         if submission.verdict != old_verdict:
             notify(
                 submission.user,
-                title=f"Fit Check: verdict changed for {fit.name}",
-                message=(
-                    f"The doctrine fit '{fit}' was updated and your pending submission "
-                    f"#{submission.pk} was re-checked. New verdict: "
-                    f"{submission.get_verdict_display()}."
-                ),
+                title=gettext("Fit Check: verdict changed for %(fit)s") % {"fit": fit.name},
+                message=gettext(
+                    "The doctrine fit '%(fit)s' was updated and your pending submission "
+                    "#%(id)s was re-checked. New verdict: %(verdict)s."
+                )
+                % {
+                    "fit": fit,
+                    "id": submission.pk,
+                    "verdict": submission.get_verdict_display(),
+                },
                 level="warning",
             )
 
@@ -81,11 +87,13 @@ def notify_reviewers_new_submission(submission_id: int):
     for reviewer in _reviewers():
         notify(
             reviewer,
-            title="Fit Check: new submission to review",
-            message=(
-                f"{submission.user} submitted a fit for '{submission.doctrine_fit}' "
-                f"({submission.get_verdict_display()})."
-            ),
+            title=gettext("Fit Check: new submission to review"),
+            message=gettext("%(user)s submitted a fit for '%(fit)s' (%(verdict)s).")
+            % {
+                "user": submission.user,
+                "fit": submission.doctrine_fit,
+                "verdict": submission.get_verdict_display(),
+            },
             level="info",
         )
 
@@ -106,8 +114,14 @@ def send_review_digest():
     for reviewer in _reviewers():
         notify(
             reviewer,
-            title=f"Fit Check: {total} submission{'s' if total != 1 else ''} awaiting review",
-            message=f"Pending submissions by doctrine fit:\n{breakdown}",
+            title=ngettext(
+                "Fit Check: %(total)d submission awaiting review",
+                "Fit Check: %(total)d submissions awaiting review",
+                total,
+            )
+            % {"total": total},
+            message=gettext("Pending submissions by doctrine fit:\n%(breakdown)s")
+            % {"breakdown": breakdown},
             level="info",
         )
 
@@ -150,13 +164,31 @@ def notify_member_decision(submission_id: int):
     if submission is None or not submission.reviewed_by:
         return
     approved = submission.status == FitSubmission.Status.APPROVED
+    if approved:
+        title = gettext("Fit Check: submission approved")
+        body = gettext(
+            "Your submission #%(id)s for '%(fit)s' was approved by %(reviewer)s."
+        ) % {
+            "id": submission.pk,
+            "fit": submission.doctrine_fit,
+            "reviewer": submission.reviewed_by,
+        }
+    else:
+        title = gettext("Fit Check: submission rejected")
+        body = gettext(
+            "Your submission #%(id)s for '%(fit)s' was rejected by %(reviewer)s."
+        ) % {
+            "id": submission.pk,
+            "fit": submission.doctrine_fit,
+            "reviewer": submission.reviewed_by,
+        }
+    if submission.review_comment:
+        body += "\n\n" + gettext("Comment: %(comment)s") % {
+            "comment": submission.review_comment
+        }
     notify(
         submission.user,
-        title=f"Fit Check: submission {'approved' if approved else 'rejected'}",
-        message=(
-            f"Your submission #{submission.pk} for '{submission.doctrine_fit}' was "
-            f"{'approved' if approved else 'rejected'} by {submission.reviewed_by}."
-            + (f"\n\nComment: {submission.review_comment}" if submission.review_comment else "")
-        ),
+        title=title,
+        message=body,
         level="success" if approved else "danger",
     )
