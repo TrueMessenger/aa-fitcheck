@@ -38,6 +38,10 @@ version last got one.
 ## [Unreleased]
 
 ### Added
+- A `fitcheck.signals.compliance_changed` Django signal fires on first grading, re-check,
+  and reviewer decision, carrying the submission, user, fit/doctrine, old→new verdict and
+  status, and the acting user — so other plugins can react to compliance changes without
+  polling the Python API. Documented in the README Integration section (#68).
 - Sandbox check on the "Test a Fit" bench: a **Check only (don't save)** button grades an
   EFT paste and shows the full findings without creating a submission — nothing lands in
   the review queue or audit log. Ideal for theorycrafting and pre-purchase checks (#66).

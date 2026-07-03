@@ -409,6 +409,27 @@ for result in api.iter_user_compliance(users, doctrine=doctrine):
 Target a `doctrine=` (compliant with *any* fit graded under it), a `fit=` (that specific
 fitting standard), or both.
 
+### Signals
+
+The API above is pull-only. For plugins that want to react as compliance changes happen
+(notification bots, custom dashboards), fitcheck also fires a Django signal,
+`fitcheck.signals.compliance_changed`, whenever a submission's state moves: on first grading,
+on a re-check, and on a reviewer decision.
+
+Receivers get `sender` (the `FitSubmission` class), `submission`, `user`, `fit`, `doctrine`
+(`None` for source-defaults grading), `old_verdict`/`new_verdict`, `old_status`/`new_status`
+(both `old_*` are `None` on first grading), and `actor` (who caused the change; may be `None`
+for automated re-checks).
+
+```python
+from django.dispatch import receiver
+from fitcheck.signals import compliance_changed
+
+@receiver(compliance_changed)
+def on_compliance_changed(sender, submission, user, new_verdict, old_verdict, **kwargs):
+    ...
+```
+
 ### Secure Groups
 
 With the optional `securegroups` extra installed (see Installation), a **Smart Filter: Fit
