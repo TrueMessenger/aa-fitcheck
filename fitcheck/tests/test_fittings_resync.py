@@ -276,6 +276,24 @@ class TestResyncDoctrineFromPlugin(TestCase):
         self.assertEqual(oracle.source_plugin_pk, 502)
         self.assertIn(self.doctrine, oracle.doctrines.all())
 
+    def test_resync_view_surfaces_slot_lint_for_refreshed_fit(self):
+        """The resync view runs the slot lint against fits it touched. The
+        Harbinger fixture has 6 low slots; the plugin swap to 7 Heat Sinks
+        should surface a prefixed warning without blocking the resync."""
+        v2_fit = FakeFitting(
+            pk=501, name="Plugin Harb", ship_type_id=T.HARBINGER,
+            items=[FakeItem(T.HEAT_SINK_II, f"LoSlot{i}") for i in range(7)],
+        )
+        v2_doctrine = FakeDoctrine(pk=42, name="Plugin Armor", fittings=[v2_fit])
+        self.client.force_login(self.user)
+        with _patched_fittings([v2_doctrine]):
+            response = self.client.post(
+                reverse("fitcheck:doctrine_resync_from_plugin", args=[self.doctrine.pk]),
+                follow=True,
+            )
+        self.assertContains(response, "Plugin Harb:")
+        self.assertContains(response, "check the import for typos")
+
 
 class TestResyncErrorPaths(TestCase):
     @classmethod

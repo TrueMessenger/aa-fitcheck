@@ -32,6 +32,7 @@ from ..constants import (
     ICE_PRODUCT_GROUP_ID,
     LOADED_CATEGORY_IDS,
     Section,
+    SHIP_SLOT_ATTRIBUTE_IDS,
     SlotKind,
 )
 from ..models import (
@@ -374,10 +375,18 @@ def load_from_data(
                 and sde_type.category_id == EveCategoryId.IMPLANT
             ):
                 sde_type.slot_kind = SlotKind.BOOSTER
+            # Ship types carry hundreds of dogma attributes (fitting-window
+            # bonuses, drone bandwidth, agility, ...) that nothing here reads,
+            # so most are dropped to keep the mirror compact. The slot-layout
+            # attributes are the exception: they power the import-time slot
+            # lint (fit_lint.py), so those specific ids are kept for ships too.
             if (
-                sde_type.category_id != EveCategoryId.SHIP
-                and attr_id in known_attribute_ids
+                attr_id in known_attribute_ids
                 and value is not None
+                and (
+                    sde_type.category_id != EveCategoryId.SHIP
+                    or attr_id in SHIP_SLOT_ATTRIBUTE_IDS
+                )
             ):
                 attr_value_objs.append(
                     SdeTypeAttribute(

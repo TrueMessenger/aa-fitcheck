@@ -217,6 +217,11 @@ matters); bay and cargo sections require "at least N":
 Loaded charges are pooled into cargo on both sides: a doctrine specifying "4 Artillery Cannons
 needing 4 crystals" passes whether the crystals are loaded or in the hold.
 
+Imports are sanity-linted against the hull: importing or updating a fitting standard warns when
+the fit exceeds the hull's slot layout (nine low-slot modules on a six-low hull is almost always
+a mangled paste — caught before pilots grade against it). Warn-only, nothing is rejected;
+Strategic Cruisers are exempt since their layout comes from subsystems.
+
 ### Policy Editor
 
 No Django admin needed for day-to-day policy tuning:

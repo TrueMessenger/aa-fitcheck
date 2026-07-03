@@ -37,6 +37,15 @@ version last got one.
 
 ## [Unreleased]
 
+### Added
+- Import-time slot lint: importing, updating, or re-syncing a fitting standard now warns when
+  the fit exceeds the hull's slot layout (e.g. nine low-slot modules on a six-low hull) —
+  warn-only, nothing is rejected; Strategic Cruisers are exempt (subsystem-modified layouts).
+  Powered by hull slot/hardpoint attributes now kept in the local SDE mirror. **Upgrade note:**
+  run `python manage.py fitcheck_load_sde --force` once after upgrading to populate the hull
+  attributes and activate the lint immediately — otherwise it stays silently dormant until
+  CCP's next build triggers the daily SDE reload (#67).
+
 ## [1.8.0] - 2026-07-03
 
 **Upgrade notes:** run `python manage.py migrate` (new migration `0031` — staleness version
