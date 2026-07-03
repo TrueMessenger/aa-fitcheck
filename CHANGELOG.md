@@ -37,6 +37,13 @@ version last got one.
 
 ## [Unreleased]
 
+### Added
+- Pilots are now notified when "Recheck Stale" re-grades their stale submission — including
+  a compact old→new module diff when the fit's BOM changed — and holders of approved
+  submissions are warned once per fit version that the fit moved on (never re-graded). The
+  submission page shows the same diff on stale submissions. Toggle with
+  `FITCHECK_NOTIFY_PILOTS_STALE` (#62).
+
 ### Changed
 - Internationalization pass: task notification texts (reviewer alerts, review digest,
   decision and re-check notices) are now translation-wrapped, the app-level `locale/`

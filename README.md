@@ -368,6 +368,7 @@ works normally without it — the filter simply isn't offered.
 | `FITCHECK_SDE_SOURCE_URL` | Official CCP JSONL bundle | Static-data archive URL |
 | `FITCHECK_NOTIFY_REVIEWERS` | `True` | Notify reviewers on new submissions |
 | `FITCHECK_REVIEWER_DIGEST` | `False` | Periodic digest instead of per-submission pings (schedule `fitcheck.tasks.send_review_digest`) |
+| `FITCHECK_NOTIFY_PILOTS_STALE` | `True` | When "Recheck Stale" re-grades stale submissions, notify the affected pilots (with an old-to-new module diff when the fit's BOM changed) and warn approved-submission holders that the fit moved on |
 | `FITCHECK_ESI_CONTACT` | `ESI_USER_CONTACT_EMAIL` | Contact email in the ESI User-Agent header |
 | `FITCHECK_ASSET_SOURCE` | `auto` | Where pilot/member ship inventory comes from: `auto` (corptools cache when available, else live ESI), `esi`, or `corptools` |
 | `FITCHECK_STRUCTURE_CACHE_TTL` | `86400` | Seconds before a cached player-structure (Citadel) name is re-resolved by `fitcheck.tasks.refresh_structure_names` (default 24h). The Member Inventory scan reads these names locally and never calls ESI for them. |

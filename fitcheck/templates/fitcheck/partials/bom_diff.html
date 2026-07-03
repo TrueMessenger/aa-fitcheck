@@ -1,0 +1,50 @@
+{% load i18n %}
+{% comment %}
+Old->new module diff for a stale submission. Rendered only when an archived
+BOM covers the submission's fit_version (policy-only staleness has no diff);
+the caller passes `stale_diff` (services.fit_diff.BomDiff) in the context.
+{% endcomment %}
+{% if stale_diff and not stale_diff.is_empty %}
+    <div class="alert alert-warning py-2">
+        <details>
+            <summary style="cursor: pointer;">
+                <strong>{% translate "The fit changed after this submission was graded" %}</strong>
+                <small class="text-muted ms-1">
+                    (v{{ stale_diff.old_version }} &rarr; v{{ stale_diff.new_version }})
+                </small>
+            </summary>
+            <ul class="list-unstyled mb-0 mt-2">
+                {% for row in stale_diff.added %}
+                    <li>
+                        <span class="badge bg-success">+</span>
+                        {{ row.new_qty }}&times; {{ row.name }}
+                        <small class="text-muted">({{ row.section_label }})</small>
+                    </li>
+                {% endfor %}
+                {% for row in stale_diff.removed %}
+                    <li>
+                        <span class="badge bg-danger">&minus;</span>
+                        {{ row.old_qty }}&times; {{ row.name }}
+                        <small class="text-muted">({{ row.section_label }})</small>
+                    </li>
+                {% endfor %}
+                {% for row in stale_diff.changed %}
+                    <li>
+                        <span class="badge bg-warning text-dark">~</span>
+                        {{ row.name }}
+                        {% if row.old_qty is not None or row.new_qty is not None %}
+                            {{ row.old_qty }} &rarr; {{ row.new_qty }}
+                        {% endif %}
+                        {% if row.old_charge or row.new_charge %}
+                            <small>
+                                {% translate "loaded charge:" %}
+                                {{ row.old_charge|default:"&mdash;" }} &rarr; {{ row.new_charge|default:"&mdash;" }}
+                            </small>
+                        {% endif %}
+                        <small class="text-muted">({{ row.section_label }})</small>
+                    </li>
+                {% endfor %}
+            </ul>
+        </details>
+    </div>
+{% endif %}

@@ -6,7 +6,11 @@ from django.utils.translation import gettext, ngettext
 
 from allianceauth.notifications import notify
 
-from .app_settings import FITCHECK_NOTIFY_REVIEWERS, FITCHECK_REVIEWER_DIGEST
+from .app_settings import (
+    FITCHECK_NOTIFY_PILOTS_STALE,
+    FITCHECK_NOTIFY_REVIEWERS,
+    FITCHECK_REVIEWER_DIGEST,
+)
 from .models import DoctrineFit, FitSubmission
 
 
@@ -45,18 +49,130 @@ def run_compliance_check(submission_id: int):
         recheck_submission(submission)
 
 
+def _diff_block(diff) -> str:
+    """Plain-text "what changed" appendix for a stale notification. A missing
+    or empty diff means the module list is unchanged - the staleness came from
+    policy edits, which the archive-based diff cannot describe."""
+    if diff is None or diff.is_empty:
+        return "\n\n" + gettext(
+            "The fit's policy rules changed (module list unchanged)."
+        )
+    lines = []
+    for row in diff.added:
+        lines.append(
+            gettext("+ %(qty)sx %(name)s (%(section)s)")
+            % {"qty": row.new_qty, "name": row.name, "section": row.section_label}
+        )
+    for row in diff.removed:
+        lines.append(
+            gettext("- %(qty)sx %(name)s (%(section)s)")
+            % {"qty": row.old_qty, "name": row.name, "section": row.section_label}
+        )
+    for row in diff.changed:
+        if row.old_qty is not None or row.new_qty is not None:
+            lines.append(
+                gettext("~ %(name)s: %(old)s -> %(new)s (%(section)s)")
+                % {
+                    "name": row.name,
+                    "old": row.old_qty,
+                    "new": row.new_qty,
+                    "section": row.section_label,
+                }
+            )
+        if row.old_charge or row.new_charge:
+            lines.append(
+                gettext("~ %(name)s: loaded charge %(old)s -> %(new)s")
+                % {
+                    "name": row.name,
+                    "old": row.old_charge or "-",
+                    "new": row.new_charge or "-",
+                }
+            )
+    return "\n\n" + gettext("What changed:") + "\n" + "\n".join(lines)
+
+
+def _notify_approved_stale(fit: DoctrineFit) -> None:
+    """Warn holders of approved submissions that the fit moved on - once per
+    (submission, fit version). The decision itself is never re-graded; the
+    cache guard keeps repeated "Recheck Stale" runs from re-notifying until
+    the fit actually changes again."""
+    from django.core.cache import cache
+
+    from .services.fit_diff import diff_for_submission
+
+    stale_approved = (
+        fit.submissions.filter(
+            status=FitSubmission.Status.APPROVED, fit_version__lt=fit.version
+        )
+        .select_related("user")
+        .order_by("-created_at")
+    )
+    seen_users: set[int] = set()
+    for submission in stale_approved:
+        if submission.user_id in seen_users:
+            continue
+        seen_users.add(submission.user_id)
+        guard_key = f"fitcheck-stale-approved-{submission.pk}-v{fit.version}"
+        if not cache.add(guard_key, True, timeout=None):
+            continue
+        body = gettext(
+            "The fitting standard '%(fit)s' has changed since your submission "
+            "#%(id)s was approved (v%(old)s -> v%(new)s). Your approval still "
+            "stands, but re-verify your fit against the current version."
+        ) % {
+            "fit": fit,
+            "id": submission.pk,
+            "old": submission.fit_version,
+            "new": fit.version,
+        }
+        body += _diff_block(diff_for_submission(submission))
+        notify(
+            submission.user,
+            title=gettext("Fit Check: '%(fit)s' changed since your approval")
+            % {"fit": fit.name},
+            message=body,
+            level="info",
+        )
+
+
 @shared_task(time_limit=3600)
 def recheck_pending_submissions(fit_id: int):
-    """After a doctrine fit re-import or policy change, re-grade pending submissions."""
+    """After a doctrine fit re-import or policy change, re-grade pending
+    submissions and tell the affected pilots what happened (with an old->new
+    module diff when the BOM changed). Holders of approved submissions that
+    predate the change are warned once per fit version - their decision is
+    never re-graded."""
     from .services.check_runner import recheck_submission
+    from .services.fit_diff import diff_for_submission
 
     fit = DoctrineFit.objects.filter(pk=fit_id).first()
     if fit is None:
         return
     for submission in fit.submissions.pending().select_related("doctrine_fit", "user"):
         old_verdict = submission.verdict
+        was_stale = submission.is_stale
+        # Resolve the diff before the re-check resets fit_version to current.
+        diff = diff_for_submission(submission) if was_stale else None
         recheck_submission(submission)
-        if submission.verdict != old_verdict:
+        if was_stale and FITCHECK_NOTIFY_PILOTS_STALE:
+            body = gettext(
+                "The fitting standard '%(fit)s' was updated and your pending "
+                "submission #%(id)s was re-graded against the new version. "
+                "Verdict: %(verdict)s."
+            ) % {
+                "fit": fit,
+                "id": submission.pk,
+                "verdict": submission.get_verdict_display(),
+            }
+            body += _diff_block(diff)
+            notify(
+                submission.user,
+                title=gettext("Fit Check: '%(fit)s' changed - submission re-checked")
+                % {"fit": fit.name},
+                message=body,
+                level="warning",
+            )
+        elif submission.verdict != old_verdict:
             notify(
                 submission.user,
                 title=gettext("Fit Check: verdict changed for %(fit)s") % {"fit": fit.name},
@@ -71,6 +187,8 @@ def recheck_pending_submissions(fit_id: int):
                 },
                 level="warning",
             )
+    if FITCHECK_NOTIFY_PILOTS_STALE:
+        _notify_approved_stale(fit)
 
 
 @shared_task(time_limit=300)
