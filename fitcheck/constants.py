@@ -151,6 +151,29 @@ class EveDogmaAttributeId:
     TECH_LEVEL = 422
     META_GROUP = 1692
     BOOSTERNESS = 1087  # booster-slot attribute - present on boosters, not implants
+    LAUNCHER_HARDPOINTS = 101  # launcherSlotsLeft
+    TURRET_HARDPOINTS = 102  # turretSlotsLeft
+    MAX_SUBSYSTEMS = 1367  # maxSubSystems
+
+
+# Hull attributes the SDE loader keeps for SHIP types (pass 2 otherwise drops
+# ship attribute values to keep the mirror compact). Slot layout powers the
+# import-time slot lint; hardpoints and subsystem count are loaded now so
+# future checks need no second reload.
+SHIP_SLOT_ATTRIBUTE_IDS = frozenset({
+    EveDogmaAttributeId.LOW_SLOTS,
+    EveDogmaAttributeId.MED_SLOTS,
+    EveDogmaAttributeId.HIGH_SLOTS,
+    EveDogmaAttributeId.RIG_SLOTS,
+    EveDogmaAttributeId.LAUNCHER_HARDPOINTS,
+    EveDogmaAttributeId.TURRET_HARDPOINTS,
+    EveDogmaAttributeId.MAX_SUBSYSTEMS,
+})
+
+# Strategic Cruiser hull group (Tengu/Legion/Proteus/Loki). T3C slot counts are
+# driven by fitted subsystem modifiers, not a fixed hull attribute, so the
+# slot lint exempts this group entirely.
+STRATEGIC_CRUISER_GROUP_ID = 963
 
 
 # Skill-requirement attributes (which skill + level a module needs to online). These

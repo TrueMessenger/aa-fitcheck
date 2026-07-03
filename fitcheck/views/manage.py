@@ -45,6 +45,7 @@ from ..models import (
 )
 from ..models.doctrine import POLICY_SECTIONS, SubstitutionPolicy
 from ..services.doctrine_import import DoctrineImportError, _get_or_create_eve_type, import_fit
+from ..services.fit_lint import slot_layout_warnings
 from ..services.substitutions import (
     abyssal_name_for_item,
     possible_meta_groups_bulk,
@@ -110,6 +111,8 @@ def standard_import(request, doctrine_pk: int | None = None):
                 messages.success(
                     request, _("Fitting '%(name)s' imported.") % {"name": fit.name}
                 )
+                for warning in slot_layout_warnings(fit):
+                    messages.warning(request, warning)
                 if doctrine:
                     return redirect("fitcheck:doctrine_detail", doctrine_pk=doctrine.pk)
                 return redirect("fitcheck:fit_detail", fit_pk=fit.pk)
@@ -213,6 +216,8 @@ def fit_update_bom(request, fit_pk: int):
                         _("New modules needing policy review: %(names)s")
                         % {"names": ", ".join(result.added)},
                     )
+                for warning in slot_layout_warnings(fit):
+                    messages.warning(request, warning)
                 return redirect("fitcheck:fit_detail", fit_pk=fit.pk)
     else:
         form = FitBomUpdateForm(initial={"eft_text": fit.eft_source})
@@ -1641,7 +1646,23 @@ def doctrine_resync_from_plugin(request, doctrine_pk: int):
                   "those categories).")
                 % {"c": len(set(report.categories_synced))},
             )
+        _emit_resync_slot_warnings(request, doctrine, report)
     return redirect("fitcheck:doctrine_detail", doctrine_pk=doctrine.pk)
+
+
+def _emit_resync_slot_warnings(request, doctrine: Doctrine, report) -> None:
+    """Run the slot-layout lint against every fit the resync touched (added or
+    refreshed). The report only carries fit names, so resolve them back to
+    DoctrineFit rows scoped to this doctrine; each warning is prefixed with
+    the fit name since the lint text itself only names the hull."""
+    touched_names = set(report.fits_added) | set(report.fits_updated)
+    if not touched_names:
+        return
+    for fit in doctrine.fits.filter(name__in=touched_names).select_related("ship_type"):
+        for warning in slot_layout_warnings(fit):
+            messages.warning(
+                request, _("%(fit)s: %(warning)s") % {"fit": fit.name, "warning": warning}
+            )
 
 
 @login_required

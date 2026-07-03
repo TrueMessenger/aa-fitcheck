@@ -312,6 +312,45 @@ class TestManageViews(ViewTestCase):
         self.assertContains(response, "Not A Module")
         self.assertEqual(self.doctrine.fits.count(), 1)  # only the fixture fit
 
+    def test_import_over_hull_slots_warns_but_still_creates_fit(self):
+        # Fixture Harbinger has 6 low slots; 7 Heat Sink IIs overloads it.
+        self.client.force_login(self.manager)
+        eft = "[Harbinger, Overloaded Lows]\n" + "Heat Sink II\n" * 7
+        response = self.client.post(
+            reverse("fitcheck:standard_import"),
+            {"eft_text": eft, "name": "", "default_policy": "VA"},
+            follow=True,
+        )
+        self.assertContains(response, "check the import for typos")
+        from ..models import DoctrineFit
+
+        self.assertTrue(DoctrineFit.objects.filter(name="Overloaded Lows").exists())
+
+    def test_import_within_hull_slots_shows_no_slot_warning(self):
+        self.client.force_login(self.manager)
+        eft = "[Harbinger, Clean Import]\n" + "Heat Sink II\n" * 3
+        response = self.client.post(
+            reverse("fitcheck:standard_import"),
+            {"eft_text": eft, "name": "", "default_policy": "VA"},
+            follow=True,
+        )
+        self.assertNotContains(response, "check the import for typos")
+
+    def test_bom_update_over_hull_slots_warns_but_still_updates(self):
+        self.client.force_login(self.manager)
+        eft = "[Harbinger, Armor Brawl]\n" + "Heat Sink II\n" * 7
+        response = self.client.post(
+            reverse("fitcheck:manage_fit_update", args=[self.fit.pk]),
+            {"eft_text": eft},
+            follow=True,
+        )
+        self.assertContains(response, "check the import for typos")
+        self.fit.refresh_from_db()
+        self.assertEqual(
+            self.fit.items.filter(section=Section.LOW, module_type_id=T.HEAT_SINK_II).get().quantity,
+            7,
+        )
+
 
 class TestCategoryPicker(ViewTestCase):
     """The doctrine category selector renders as a tom-select dropdown carrying each

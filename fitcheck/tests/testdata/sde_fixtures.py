@@ -14,7 +14,13 @@ Families:
 
 from eveuniverse.models import EveCategory, EveGroup, EveType
 
-from fitcheck.constants import EveCategoryId, EveMetaGroupId, SlotKind
+from fitcheck.constants import (
+    STRATEGIC_CRUISER_GROUP_ID,
+    EveCategoryId,
+    EveDogmaAttributeId,
+    EveMetaGroupId,
+    SlotKind,
+)
 from fitcheck.models import (
     SdeAttribute,
     SdeMutaplasmidMapping,
@@ -43,6 +49,7 @@ class T:
     RIFTER = 587  # Frigate (group 25)
     WOLF = 11371  # Assault Frigate (group 324)
     ASTERO = 33468  # Frigate (group 25), also a named FEB exception hull
+    LEGION = 29986  # Strategic Cruiser (group 963) - slot-lint exemption
 
     HEAT_SINK_I = 2363
     HEAT_SINK_BASIC = 1893
@@ -119,6 +126,10 @@ def create_sde_testdata():
         (Attrs.WEB_STRENGTH, "Maximum Velocity Bonus", False),
         (Attrs.WEB_RANGE, "Optimal Range", True),
         (Attrs.CPU_USAGE, "CPU usage", False),
+        (EveDogmaAttributeId.HIGH_SLOTS, "High Slots", True),
+        (EveDogmaAttributeId.MED_SLOTS, "Mid Slots", True),
+        (EveDogmaAttributeId.LOW_SLOTS, "Low Slots", True),
+        (EveDogmaAttributeId.RIG_SLOTS, "Rig Slots", True),
     ]:
         SdeAttribute.objects.create(
             attribute_id=attr_id, name=name, display_name=name, high_is_good=hig
@@ -127,7 +138,18 @@ def create_sde_testdata():
     ships = EveCategoryId.SHIP
     module = EveCategoryId.MODULE
 
-    _sde_type(T.HARBINGER, "Harbinger", ships, SlotKind.SHIP)
+    # Slot layout (High/Mid/Low/Rig) for the import-time slot lint. Not the
+    # real Harbinger loadout (4H/4M/7L) - fixture values chosen to give the
+    # lint tests headroom in every section.
+    _sde_type(
+        T.HARBINGER, "Harbinger", ships, SlotKind.SHIP,
+        attrs={
+            EveDogmaAttributeId.HIGH_SLOTS: 8,
+            EveDogmaAttributeId.MED_SLOTS: 4,
+            EveDogmaAttributeId.LOW_SLOTS: 6,
+            EveDogmaAttributeId.RIG_SLOTS: 3,
+        },
+    )
     _sde_type(T.ORACLE, "Oracle", ships, SlotKind.SHIP)
     _sde_type(T.HEL, "Hel", ships, SlotKind.SHIP)
     # Battleship-class hull (group 27) - carries a Frigate Escape Bay, so the
@@ -138,6 +160,18 @@ def create_sde_testdata():
     _sde_type(T.RIFTER, "Rifter", ships, SlotKind.SHIP, group=25)
     _sde_type(T.WOLF, "Wolf", ships, SlotKind.SHIP, group=324)
     _sde_type(T.ASTERO, "Astero", ships, SlotKind.SHIP, group=25)
+    # Strategic Cruiser hull (group 963): slot-lint exemption target - real
+    # T3C slot counts come from fitted subsystems, not this fixed attribute,
+    # so the lint must ignore it even though the attribute rows are present.
+    _sde_type(
+        T.LEGION, "Legion", ships, SlotKind.SHIP, group=STRATEGIC_CRUISER_GROUP_ID,
+        attrs={
+            EveDogmaAttributeId.HIGH_SLOTS: 4,
+            EveDogmaAttributeId.MED_SLOTS: 4,
+            EveDogmaAttributeId.LOW_SLOTS: 4,
+            EveDogmaAttributeId.RIG_SLOTS: 3,
+        },
+    )
 
     hs = dict(category=module, slot_kind=SlotKind.LOW, parent=T.HEAT_SINK_I)
     _sde_type(

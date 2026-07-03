@@ -404,3 +404,70 @@ class TestFuelResection(TestCase):
         _resection_fuel_items()
         item.refresh_from_db()
         self.assertEqual(item.section, Section.CARGO)  # pilot fuel stays in cargo
+
+
+class TestShipSlotAttributeException(TestCase):
+    """Pass 2 drops SHIP attribute values to keep the mirror compact, except
+    for the slot-layout ids the import-time slot lint reads (constants.
+    SHIP_SLOT_ATTRIBUTE_IDS). Everything else - other ship attributes, and
+    every attribute on non-ship types - is unaffected."""
+
+    def test_ship_keeps_allowlisted_slot_attribute_and_drops_others(self):
+        load_from_data(
+            groups=iter([{"_key": 27, "categoryID": 6}]),  # battleship hull
+            types=iter([
+                {"_key": 24696, "name": {"en": "Harbinger"}, "groupID": 27, "published": True},
+            ]),
+            type_dogma=iter([
+                {
+                    "_key": 24696,
+                    "dogmaAttributes": [
+                        {"attributeID": 14, "value": 7},  # turretSlotsLeft alias here: HIGH_SLOTS
+                        {"attributeID": 48, "value": 400},  # cpuOutput - not allow-listed
+                    ],
+                },
+            ]),
+            dogma_attributes=iter([
+                {"_key": 14, "name": "hiSlots", "published": True},
+                {"_key": 48, "name": "cpuOutput", "published": True},
+            ]),
+            dogma_units=iter([]),
+            dynamic_items=iter([]),
+            build="ship-slot-attrs",
+        )
+        self.assertTrue(
+            SdeTypeAttribute.objects.filter(eve_type_id=24696, attribute_id=14).exists()
+        )
+        self.assertFalse(
+            SdeTypeAttribute.objects.filter(eve_type_id=24696, attribute_id=48).exists()
+        )
+
+    def test_module_keeps_all_known_attribute_values(self):
+        load_from_data(
+            groups=iter([{"_key": 65, "categoryID": 7}]),  # module category
+            types=iter([
+                {"_key": 526, "name": {"en": "Stasis Webifier I"}, "groupID": 65, "published": True},
+            ]),
+            type_dogma=iter([
+                {
+                    "_key": 526,
+                    "dogmaAttributes": [
+                        {"attributeID": 14, "value": 1},
+                        {"attributeID": 48, "value": 10},
+                    ],
+                },
+            ]),
+            dogma_attributes=iter([
+                {"_key": 14, "name": "hiSlots", "published": True},
+                {"_key": 48, "name": "cpuOutput", "published": True},
+            ]),
+            dogma_units=iter([]),
+            dynamic_items=iter([]),
+            build="module-attrs",
+        )
+        self.assertTrue(
+            SdeTypeAttribute.objects.filter(eve_type_id=526, attribute_id=14).exists()
+        )
+        self.assertTrue(
+            SdeTypeAttribute.objects.filter(eve_type_id=526, attribute_id=48).exists()
+        )
