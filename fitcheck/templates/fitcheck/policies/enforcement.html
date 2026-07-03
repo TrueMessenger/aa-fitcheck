@@ -54,6 +54,13 @@
                                 {{ form.feb_mode }}
                                 <div class="form-text">{% translate "Matches the doctrine fit's specified escape-bay frigate against the pilot's bay (ESI-sourced)." %}</div>
                             </div>
+                            <div class="col-md-6">
+                                <label class="form-label">
+                                    <i class="fa-solid fa-hourglass-half me-1"></i>{{ form.stale_grace_days.label }}
+                                </label>
+                                {{ form.stale_grace_days }}
+                                <div class="form-text">{{ form.stale_grace_days.help_text }}</div>
+                            </div>
                         </div>
                         <button type="submit" class="btn btn-success mt-3">
                             <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Settings" %}

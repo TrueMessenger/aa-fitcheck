@@ -2,6 +2,7 @@ from django.contrib.auth.models import Group, User
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from ..constants import LEEWAY_SECTIONS, Section
@@ -279,6 +280,14 @@ class DoctrineFit(models.Model):
     description = models.TextField(blank=True)
     eft_source = models.TextField(help_text="Raw EFT text as imported, preserved verbatim.")
     version = models.PositiveIntegerField(default=1)
+    # When the global ladder (`version`) last moved - drives the optional
+    # staleness grace window for API/Secure Groups currency.
+    version_bumped_at = models.DateTimeField(null=True, blank=True)
+    # Source-policy ladder: bumped when the fit's own item policies/overrides
+    # change. Independent of `version` so per-doctrine snapshot grading (which
+    # never reads the source policies) is not staled by source-only edits.
+    source_policy_version = models.PositiveIntegerField(default=0)
+    source_policy_bumped_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     strict_extras = models.BooleanField(
         default=False,
@@ -324,9 +333,21 @@ class DoctrineFit(models.Model):
         return self.name
 
     def bump_version(self) -> None:
+        """Global ladder: the BOM or fit-wide settings changed - every
+        submission for this fit is stale regardless of grading path."""
         self.version = models.F("version") + 1
-        self.save(update_fields=["version"])
+        self.version_bumped_at = timezone.now()
+        self.save(update_fields=["version", "version_bumped_at"])
         self.refresh_from_db(fields=["version"])
+
+    def bump_source_policy_version(self) -> None:
+        """Source-policy ladder: the fit's own item policies/overrides changed.
+        Only submissions graded against the source defaults (no doctrine) are
+        affected - per-doctrine assignments grade from their own snapshots."""
+        self.source_policy_version = models.F("source_policy_version") + 1
+        self.source_policy_bumped_at = timezone.now()
+        self.save(update_fields=["source_policy_version", "source_policy_bumped_at"])
+        self.refresh_from_db(fields=["source_policy_version"])
 
 
 class ArchivedFitVersion(models.Model):
@@ -438,6 +459,10 @@ class FitAssignment(models.Model):
         DoctrineFit, on_delete=models.CASCADE, related_name="assignments"
     )
     notes = models.CharField(max_length=255, blank=True)
+    # Assignment ladder: bumped when THIS (doctrine, fit) policy snapshot
+    # changes. Only submissions graded against this doctrine are affected.
+    version = models.PositiveIntegerField(default=0)
+    version_bumped_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
@@ -453,6 +478,12 @@ class FitAssignment(models.Model):
 
     def __str__(self) -> str:
         return f"{self.fit} in {self.doctrine}"
+
+    def bump_version(self) -> None:
+        self.version = models.F("version") + 1
+        self.version_bumped_at = timezone.now()
+        self.save(update_fields=["version", "version_bumped_at"])
+        self.refresh_from_db(fields=["version"])
 
 
 class AssignmentItemPolicy(models.Model):

@@ -9,7 +9,7 @@ from allianceauth.eveonline.models import EveCharacter
 
 from ..constants import Section
 from ..managers import FitSubmissionQuerySet
-from .doctrine import Doctrine, DoctrineFit
+from .doctrine import Doctrine, DoctrineFit, FitAssignment
 
 # Matches an EFT header `[Hull, Custom Name]` and captures the name half.
 _EFT_HEADER_RE = re.compile(r"^\s*\[\s*[^,\]]+\s*,\s*(.+?)\s*\]\s*$")
@@ -54,6 +54,11 @@ class FitSubmission(models.Model):
     fit_version = models.PositiveIntegerField(
         help_text="Version of the doctrine fit this submission was checked against."
     )
+    # Snapshot of the policy ladder this submission was graded against: the
+    # (doctrine, fit) assignment's version when `doctrine` is set, else the
+    # fit's source_policy_version. Compared by `is_stale` so policy edits only
+    # stale the submissions that were actually graded from the edited config.
+    policy_version = models.PositiveIntegerField(default=0)
     source = models.CharField(max_length=3, choices=Source.choices)
     eft_text = models.TextField(
         blank=True, help_text="Raw paste, or the ESI fit rendered to EFT for reviewers."
@@ -95,8 +100,33 @@ class FitSubmission(models.Model):
 
     @property
     def is_stale(self) -> bool:
-        """True when the doctrine fit changed after this submission was checked."""
-        return self.fit_version != self.doctrine_fit.version
+        """True when the config this submission was graded against has changed:
+        the fit's BOM/global settings (any submission), the fit's source-level
+        policies (source-defaults submissions), or this doctrine's assignment
+        snapshot (doctrine-graded submissions). Unrelated edits - e.g. another
+        doctrine's snapshot - no longer stale this submission."""
+        if self.fit_version != self.doctrine_fit.version:
+            return True
+        if self.doctrine_id is None:
+            return self.policy_version != self.doctrine_fit.source_policy_version
+        live = self.live_assignment_version
+        return live is None or self.policy_version != live
+
+    @property
+    def live_assignment_version(self) -> int | None:
+        """The (doctrine, fit) assignment's current policy-ladder version, or
+        None when the assignment no longer exists (its grading basis is gone,
+        so the submission reads as stale). Uses the `with_staleness()` queryset
+        annotation when present to avoid per-row queries on list pages."""
+        if hasattr(self, "assignment_version"):
+            return self.assignment_version
+        return (
+            FitAssignment.objects.filter(
+                doctrine_id=self.doctrine_id, fit_id=self.doctrine_fit_id
+            )
+            .values_list("version", flat=True)
+            .first()
+        )
 
     @cached_property
     def ship_name(self) -> str:

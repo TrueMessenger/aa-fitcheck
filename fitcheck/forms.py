@@ -489,12 +489,26 @@ class ReviewDecisionForm(forms.Form):
 
 
 class EnforcementSettingsForm(forms.ModelForm):
-    """Site-wide 4-mode enforcement selectors for the verification concerns."""
+    """Site-wide 4-mode enforcement selectors for the verification concerns,
+    plus the staleness grace period for compliance consequences."""
 
     class Meta:
         model = EnforcementSettings
-        fields = ["implant_mode", "feb_mode", "fuel_mode", "booster_mode"]
+        fields = ["implant_mode", "feb_mode", "fuel_mode", "booster_mode", "stale_grace_days"]
         widgets = {
-            name: forms.Select(attrs={"class": "form-select"})
-            for name in ("implant_mode", "feb_mode", "fuel_mode", "booster_mode")
+            **{
+                name: forms.Select(attrs={"class": "form-select"})
+                for name in ("implant_mode", "feb_mode", "fuel_mode", "booster_mode")
+            },
+            "stale_grace_days": forms.NumberInput(attrs={"class": "form-control", "min": 0}),
+        }
+        labels = {"stale_grace_days": _("Staleness grace period (days)")}
+        help_texts = {
+            "stale_grace_days": _(
+                "After a fit or policy change, stale passing submissions keep "
+                "counting as compliant for the Python API and Secure Groups for "
+                "this many days, giving pilots time to re-verify. 0 = compliance "
+                "expires the moment the change lands. The stale badge and pilot "
+                "notifications are always immediate."
+            )
         }

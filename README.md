@@ -375,8 +375,11 @@ works normally without it — the filter simply isn't offered.
 | `FITCHECK_REPORT_ANALYTICS_WINDOW_DAYS` | `90` | The Reports failure/substitution analytics only consider each pilot's latest submission per fit made within this many days. `0` = no time limit. |
 | `FITCHECK_SNAPSHOT_RETENTION_DAYS` | `365` | Days of compliance-snapshot history (daily per-doctrine aggregates for trend reporting) the `take_compliance_snapshots` task keeps; older rows are pruned after each run. `0` keeps everything. The **Diagnostics & Health** page shows collection stats and offers run-now / purge controls, so no database access is ever needed to manage this data. |
 
-Section-level enforcement modes (Implants, Boosters, Fuel Bay, Frigate Escape Bay) are managed
-through the in-app **Enforcement Settings** page — no `local.py` changes required.
+Section-level enforcement modes (Implants, Boosters, Fuel Bay, Frigate Escape Bay) and the
+**staleness grace period** (how many days a stale passing submission keeps counting as
+compliant for the Python API / Secure Groups after a fit or policy change — default 0, i.e.
+immediately) are managed through the in-app **Enforcement Settings** page — no `local.py`
+changes required.
 
 ---
 
@@ -385,8 +388,12 @@ through the in-app **Enforcement Settings** page — no `local.py` changes requi
 Other plugins can query a user's doctrine compliance through the stable Python API in
 `fitcheck.services.api` — no REST layer, no reaching into internals. A user is *compliant*
 when they have a submission whose engine verdict passes (`COMPLIANT` / `COMPLIANT_SUBS`); by
-default the check also requires the submission to be **current** (not stale) and **not
-reviewer-rejected**. Pass `require_approved=True` to additionally require a reviewer's approval.
+default the check also requires the submission to be **current** (graded against the live
+config — staleness is scoped, so only changes to the config a submission was actually graded
+from expire it) and **not reviewer-rejected**. Pass `require_approved=True` to additionally
+require a reviewer's approval. A positive **staleness grace period** (Enforcement Settings)
+keeps stale submissions counting as current for that many days after the change, giving
+pilots time to re-verify before Secure Groups membership lapses.
 
 ```python
 from fitcheck.services import api

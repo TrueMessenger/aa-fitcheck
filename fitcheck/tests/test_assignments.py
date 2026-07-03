@@ -573,7 +573,8 @@ class TestResyncFromSource(TestCase):
         self.client.force_login(self.manager)
         self.source.min_quantity_pct = 50
         self.source.save(update_fields=["min_quantity_pct"])
-        before_version = self.fit.version
+        before_fit_version = self.fit.version
+        before_assignment_version = self.assignment.version
 
         resp = self.client.post(
             reverse("fitcheck:manage_assignment_resync", args=[self.assignment.pk])
@@ -581,8 +582,12 @@ class TestResyncFromSource(TestCase):
         self.assertEqual(resp.status_code, 302)
         synced = self.assignment.item_policies.get(module_type_id=T.HEAT_SINK_II)
         self.assertEqual(synced.min_quantity_pct, 50)
+        # A snapshot resync bumps the assignment's own ladder - only that
+        # doctrine's submissions go stale; the global fit version is untouched.
+        self.assignment.refresh_from_db()
+        self.assertGreater(self.assignment.version, before_assignment_version)
         self.fit.refresh_from_db()
-        self.assertGreater(self.fit.version, before_version)
+        self.assertEqual(self.fit.version, before_fit_version)
 
 
 class TestDriftSurfacedInTemplates(TestCase):

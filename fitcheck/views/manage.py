@@ -52,12 +52,17 @@ from ..services.substitutions import (
 )
 
 
-def _bump_fit_version(fit: DoctrineFit) -> None:
-    """Bump the fit version so existing pending submissions show as stale.
-    Re-check is intentionally NOT triggered here - managers fire it manually
-    from the Recheck Stale page to keep the Celery queue from saturating
-    when policy is iterated rapidly. See plan: requirement 2."""
-    fit.bump_version()
+# Version-bump routing: each edit path bumps exactly the ladder it changed, so
+# only the submissions actually graded from the edited config go stale (see
+# FitSubmission.is_stale):
+#   fit.bump_version()               - BOM / fit-wide settings; stales everything
+#   fit.bump_source_policy_version() - the fit's own policy defaults; stales
+#                                      source-defaults submissions only
+#   assignment.bump_version()        - one (doctrine, fit) snapshot; stales that
+#                                      doctrine's submissions only
+# Re-check is intentionally NOT triggered by any bump - managers fire it
+# manually from the Recheck Stale page to keep the Celery queue from
+# saturating when policy is iterated rapidly.
 
 
 # ---------------------------------------------------------------- fittings ---
@@ -147,7 +152,7 @@ def fit_settings(request, fit_pk: int):
         form = FitSettingsForm(request.POST, instance=fit)
         if form.is_valid():
             form.save()
-            _bump_fit_version(fit)
+            fit.bump_version()  # fit-wide settings affect every grading path
             messages.success(
                 request,
                 _("Fitting saved. Pending submissions are now stale - use Recheck Stale to re-grade them."),
@@ -260,12 +265,12 @@ def fit_apply_policy(request, fit_pk: int):
         from ..services.policies import apply_policy_to_fit
 
         updated = apply_policy_to_fit(fit, form.cleaned_data["policy"])
-        _bump_fit_version(fit)
+        fit.bump_source_policy_version()
         messages.success(
             request,
             _(
-                "Policy '%(policy)s' applied to %(count)s modules. "
-                "Pending submissions are now stale - use Recheck Stale to re-grade them."
+                "Policy '%(policy)s' applied to %(count)s modules. Submissions graded "
+                "against the fit's defaults are now stale - use Recheck Stale to re-grade them."
             )
             % {"policy": form.cleaned_data["policy"], "count": updated},
         )
@@ -294,9 +299,13 @@ def _queue_recheck(fit_pk: int) -> bool:
 
 
 def _stale_pending_count(fit: DoctrineFit) -> int:
-    return fit.submissions.filter(
-        status="P", fit_version__lt=fit.version
-    ).count()
+    # Scope-aware staleness (three ladders) can't be a single SQL comparison,
+    # so count over the annotated pending rows; the per-fit volume is small.
+    return sum(
+        1
+        for s in fit.submissions.pending().with_staleness().select_related("doctrine_fit")
+        if s.is_stale
+    )
 
 
 @login_required
@@ -323,18 +332,26 @@ def fit_recheck_stale(request, fit_pk: int):
 
 
 def _stale_fits_queryset():
-    return (
-        DoctrineFit.objects.annotate(
-            stale_pending=Count(
-                "submissions",
-                filter=Q(submissions__status="P", submissions__fit_version__lt=F("version")),
-            )
-        )
-        .filter(stale_pending__gt=0)
+    """Fittings with at least one stale pending submission, each carrying a
+    `stale_pending` count. Staleness is scope-aware (three ladders), so the
+    counts come from the annotated pending rows in Python rather than one SQL
+    aggregate; the pending set is small on a manager page."""
+    counts: dict[int, int] = {}
+    pending = (
+        FitSubmission.objects.pending().with_staleness().select_related("doctrine_fit")
+    )
+    for submission in pending:
+        if submission.is_stale:
+            counts[submission.doctrine_fit_id] = counts.get(submission.doctrine_fit_id, 0) + 1
+    fits = list(
+        DoctrineFit.objects.filter(pk__in=counts)
         .select_related("ship_type")
         .prefetch_related("doctrines")
         .order_by("name")
     )
+    for fit in fits:
+        fit.stale_pending = counts[fit.pk]
+    return fits
 
 
 @login_required
@@ -467,11 +484,11 @@ def fit_items(request, fit_pk: int):
             changed = any(form.has_changed() for form in formset.forms)
             formset.save()
             if changed:
-                _bump_fit_version(fit)
+                fit.bump_source_policy_version()
                 messages.success(
                     request,
                     _(
-                        "Policies saved. Pending submissions are now stale - use Recheck Stale to re-grade them."
+                        "Policies saved. Submissions graded against the fit's defaults are now stale - use Recheck Stale to re-grade them."
                     ),
                 )
             else:
@@ -567,11 +584,11 @@ def assignment_items(request, assignment_pk: int):
             changed = any(form.has_changed() for form in formset.forms)
             formset.save()
             if changed:
-                _bump_fit_version(assignment.fit)
+                assignment.bump_version()
                 messages.success(
                     request,
                     _(
-                        "Policies for %(doctrine)s saved. Pending submissions are now stale - use Recheck Stale to re-grade them."
+                        "Policies for %(doctrine)s saved. That doctrine's pending submissions are now stale - use Recheck Stale to re-grade them."
                     )
                     % {"doctrine": assignment.doctrine.name},
                 )
@@ -646,11 +663,11 @@ def assignment_resync(request, assignment_pk: int):
         FitAssignment.objects.select_related("doctrine", "fit"), pk=assignment_pk
     )
     resync_assignment_from_source(assignment)
-    _bump_fit_version(assignment.fit)
+    assignment.bump_version()
     messages.success(
         request,
         _(
-            "Re-synced %(fit)s in %(doctrine)s from the fit template. Pending submissions are now stale - use Recheck Stale to re-grade them."
+            "Re-synced %(fit)s in %(doctrine)s from the fit template. That doctrine's pending submissions are now stale - use Recheck Stale to re-grade them."
         )
         % {"fit": assignment.fit.name, "doctrine": assignment.doctrine.name},
     )
@@ -698,13 +715,16 @@ def module_search(request):
 
 # --- shared bodies for the source-fit + per-assignment override/attr endpoints ---
 # Each twin pair below differs only in the override model, its FK field back to
-# the policy item, which fit to bump, and the redirect target; the body is shared.
+# the policy item, which version ladder to bump (`bump` is a zero-arg callable:
+# the fit's source-policy ladder or the assignment's own ladder), and the
+# redirect target; the body is shared.
 
 
-def _apply_bulk_overrides(request, item, fit, back, override_model, fk_field):
-    """Create many overrides at once (one mode per call) and bump the fit version
-    once. `override_model` is FitItemOverride or AssignmentItemOverride; `fk_field`
-    is its FK back to the policy item (``item`` / ``assignment_item``)."""
+def _apply_bulk_overrides(request, item, bump, back, override_model, fk_field):
+    """Create many overrides at once (one mode per call) and bump the edited
+    policy ladder once. `override_model` is FitItemOverride or
+    AssignmentItemOverride; `fk_field` is its FK back to the policy item
+    (``item`` / ``assignment_item``)."""
     mode = request.POST.get("mode", override_model.Mode.INCLUDE)
     if mode not in (override_model.Mode.INCLUDE, override_model.Mode.EXCLUDE):
         messages.error(request, _("Invalid override mode."))
@@ -740,7 +760,7 @@ def _apply_bulk_overrides(request, item, fit, back, override_model, fk_field):
         )
         added += 1
     if added:
-        _bump_fit_version(fit)
+        bump()
         messages.success(request, _("Saved %(n)s override(s).") % {"n": added})
     if skipped:
         messages.warning(
@@ -751,7 +771,7 @@ def _apply_bulk_overrides(request, item, fit, back, override_model, fk_field):
     return back
 
 
-def _apply_single_override(request, item, fit, back, override_model, fk_field):
+def _apply_single_override(request, item, bump, back, override_model, fk_field):
     """Add one override from a typed module name (the OverrideAddForm flow)."""
     form = OverrideAddForm(request.POST)
     if form.is_valid():
@@ -774,14 +794,14 @@ def _apply_single_override(request, item, fit, back, override_model, fk_field):
                 alt_type=_get_or_create_eve_type(sde_type.type_id),
                 defaults={"mode": form.cleaned_data["mode"]},
             )
-            _bump_fit_version(fit)
+            bump()
             messages.success(request, _("Override saved: %(name)s.") % {"name": sde_type.name})
     else:
         messages.error(request, _("Enter a module name."))
     return back
 
 
-def _apply_attribute_policy(request, item, fit, back):
+def _apply_attribute_policy(request, item, bump, back):
     """Save the per-attribute meet-or-beat selection for one policy item. The
     posted `attr_ids` become the item's explicit `checked_attributes`; attributes
     NOT listed are ignored at grading time (auto-pass). An empty selection clears
@@ -819,7 +839,7 @@ def _apply_attribute_policy(request, item, fit, back):
     item.checked_attributes = chosen
     item.attribute_bounds = bounds
     item.save(update_fields=["checked_attributes", "attribute_bounds"])
-    _bump_fit_version(fit)
+    bump()
     if chosen:
         messages.success(
             request,
@@ -846,7 +866,9 @@ def override_add_bulk(request, item_pk: int):
         DoctrineFitItem.objects.select_related("fit", "module_type"), pk=item_pk
     )
     back = redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
-    return _apply_bulk_overrides(request, item, item.fit, back, FitItemOverride, "item")
+    return _apply_bulk_overrides(
+        request, item, item.fit.bump_source_policy_version, back, FitItemOverride, "item"
+    )
 
 
 @login_required
@@ -858,7 +880,7 @@ def attribute_policy_save(request, item_pk: int):
         DoctrineFitItem.objects.select_related("fit"), pk=item_pk
     )
     back = redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
-    return _apply_attribute_policy(request, item, item.fit, back)
+    return _apply_attribute_policy(request, item, item.fit.bump_source_policy_version, back)
 
 
 @login_required
@@ -889,7 +911,9 @@ def override_add(request, item_pk: int):
         DoctrineFitItem.objects.select_related("fit", "module_type"), pk=item_pk
     )
     back = redirect("fitcheck:manage_fit_items", fit_pk=item.fit_id)
-    return _apply_single_override(request, item, item.fit, back, FitItemOverride, "item")
+    return _apply_single_override(
+        request, item, item.fit.bump_source_policy_version, back, FitItemOverride, "item"
+    )
 
 
 @login_required
@@ -901,15 +925,16 @@ def override_remove(request, override_pk: int):
     )
     fit = override.item.fit
     override.delete()
-    _bump_fit_version(fit)
+    fit.bump_source_policy_version()
     messages.success(request, _("Override removed."))
     return redirect("fitcheck:manage_fit_items", fit_pk=fit.pk)
 
 
 # ----------------------------------------- per-assignment override + attrs ---
 # Twins of the source-fit endpoints above, operating on AssignmentItemPolicy /
-# AssignmentItemOverride so a per-(doctrine, fit) snapshot is editable on its own.
-# Each redirects back to the assignment editor and bumps the fit version.
+# AssignmentItemOverride so a per-(doctrine, fit) snapshot is editable on its
+# own. Each redirects back to the assignment editor and bumps that
+# assignment's ladder - only the doctrine's own submissions go stale.
 
 
 def _assignment_item(item_pk: int):
@@ -932,7 +957,7 @@ def assignment_override_add_bulk(request, item_pk: int):
     item = _assignment_item(item_pk)
     back = redirect("fitcheck:manage_assignment_items", assignment_pk=item.assignment_id)
     return _apply_bulk_overrides(
-        request, item, item.assignment.fit, back, AssignmentItemOverride, "assignment_item"
+        request, item, item.assignment.bump_version, back, AssignmentItemOverride, "assignment_item"
     )
 
 
@@ -945,7 +970,7 @@ def assignment_override_add(request, item_pk: int):
     item = _assignment_item(item_pk)
     back = redirect("fitcheck:manage_assignment_items", assignment_pk=item.assignment_id)
     return _apply_single_override(
-        request, item, item.assignment.fit, back, AssignmentItemOverride, "assignment_item"
+        request, item, item.assignment.bump_version, back, AssignmentItemOverride, "assignment_item"
     )
 
 
@@ -961,7 +986,7 @@ def assignment_override_remove(request, override_pk: int):
     )
     assignment = override.assignment_item.assignment
     override.delete()
-    _bump_fit_version(assignment.fit)
+    assignment.bump_version()
     messages.success(request, _("Override removed."))
     return redirect("fitcheck:manage_assignment_items", assignment_pk=assignment.pk)
 
@@ -972,7 +997,7 @@ def assignment_override_remove(request, override_pk: int):
 def assignment_attribute_policy_save(request, item_pk: int):
     item = _assignment_item(item_pk)
     back = redirect("fitcheck:manage_assignment_items", assignment_pk=item.assignment_id)
-    return _apply_attribute_policy(request, item, item.assignment.fit, back)
+    return _apply_attribute_policy(request, item, item.assignment.bump_version, back)
 
 
 @login_required

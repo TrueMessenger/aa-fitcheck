@@ -38,6 +38,11 @@ version last got one.
 ## [Unreleased]
 
 ### Added
+- **Staleness grace period** on the Enforcement Settings page: for the configured number of
+  days after a fit or policy change, stale passing submissions keep counting as compliant
+  for the Python API and Secure Groups, giving pilots time to re-verify before group
+  membership lapses. Default 0 preserves the previous immediate expiry; the stale badge and
+  pilot notifications are always immediate (#13).
 - A `fitcheck.signals.compliance_changed` Django signal fires on first grading, re-check,
   and reviewer decision, carrying the submission, user, fit/doctrine, old→new verdict and
   status, and the acting user — so other plugins can react to compliance changes without
@@ -52,6 +57,13 @@ version last got one.
   `FITCHECK_NOTIFY_PILOTS_STALE` (#62).
 
 ### Changed
+- **Staleness is now scoped to what actually changed** (migration 0031): editing one
+  doctrine's policy snapshot stales only that doctrine's submissions, source-policy edits
+  stale only submissions graded against the fit's defaults, and BOM / fit-wide settings
+  changes stale everything — previously any edit staled every submission for the fit. The
+  stale badge, Recheck Stale, pilot notifications, the Python API, and Secure Groups all
+  share the scoped definition, so unrelated edits no longer expire compliance or notify
+  unaffected pilots (#13).
 - Internationalization pass: task notification texts (reviewer alerts, review digest,
   decision and re-check notices) are now translation-wrapped, the app-level `locale/`
   scaffolding is in place, and CI verifies translation extraction stays clean (#6).

@@ -130,9 +130,14 @@ class IterComplianceTests(ApiTestCase):
         self.assertIsNone(results[1].submission)
 
     def test_bulk_single_query(self):
+        from ..models import EnforcementSettings
+
         self._submit(self.pilot)
         self._submit(self.other)
-        with self.assertNumQueries(1):
+        EnforcementSettings.current()  # settings row exists before counting
+        # 1 enforcement-settings read (staleness grace window) + 1 bulk
+        # submissions query - still constant regardless of user count.
+        with self.assertNumQueries(2):
             list(
                 api.iter_user_compliance(
                     [self.pilot, self.other], doctrine=self.doctrine

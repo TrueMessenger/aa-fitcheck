@@ -193,12 +193,14 @@ def health_summary() -> dict:
     )
 
     try:
-        from django.db.models import F
-
-        stale_pending = (
-            FitSubmission.objects.filter(status="P")
-            .filter(fit_version__lt=F("doctrine_fit__version"))
-            .count()
+        # Scope-aware staleness (three ladders) is computed per row over the
+        # annotated pending set - see FitSubmission.is_stale.
+        stale_pending = sum(
+            1
+            for s in FitSubmission.objects.filter(status="P")
+            .with_staleness()
+            .select_related("doctrine_fit")
+            if s.is_stale
         )
     except Exception:  # pragma: no cover - schema guard
         stale_pending = None

@@ -12,9 +12,16 @@ Compliance semantics
 --------------------
 A user is *compliant* with a target when they have a submission whose engine
 verdict passes (``COMPLIANT`` or ``COMPLIANT_SUBS``). By default the check also
-requires the submission to be **current** (graded against the fit's live
-version, i.e. not stale) and **not reviewer-rejected**. Callers that want a
-human-approved submission only can pass ``require_approved=True``.
+requires the submission to be **current** (graded against the live config -
+the fit's global version plus the policy ladder it was actually graded from,
+see ``FitSubmission.is_stale``) and **not reviewer-rejected**. Callers that
+want a human-approved submission only can pass ``require_approved=True``.
+
+A positive **staleness grace period** (``EnforcementSettings.stale_grace_days``,
+set on the in-app Enforcement Settings page) keeps a stale submission counting
+as current while every config change that staled it happened within the
+window - pilots keep Secure Groups access for that long after a fit change
+while they re-verify. The stale badge and notifications are always immediate.
 
 Target selection
 ----------------
@@ -32,11 +39,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from datetime import timedelta
 
 from django.contrib.auth.models import User
-from django.db.models import F
+from django.db.models import F, Q
+from django.utils import timezone
 
-from ..models import Doctrine, DoctrineFit, FitSubmission
+from ..models import Doctrine, DoctrineFit, EnforcementSettings, FitSubmission
 
 # Engine verdicts that count as passing.
 PASSING_VERDICTS = (
@@ -84,9 +93,56 @@ def _qualifying_qs(
         # A reviewer's explicit rejection overrides the engine verdict.
         qs = qs.exclude(status=FitSubmission.Status.REJECTED)
     if require_current:
-        # Not stale: graded against the fit's live version.
-        qs = qs.filter(fit_version=F("doctrine_fit__version"))
+        qs = _filter_current(qs)
     return qs.select_related("doctrine_fit", "doctrine")
+
+
+def _filter_current(qs):
+    """Keep submissions graded against the live config - the SQL mirror of
+    ``FitSubmission.is_stale``: the fit's global ladder plus whichever policy
+    ladder (source or assignment) the submission was graded from.
+
+    With a positive ``EnforcementSettings.stale_grace_days`` a stale submission
+    still counts while every ladder that diverged last moved within the
+    window; a divergent ladder older than the window (or of unknown age -
+    NULL timestamps predate the ladder fields, and a deleted assignment has
+    no ladder at all) expires it."""
+    qs = qs.with_staleness()
+    global_ok = Q(fit_version=F("doctrine_fit__version"))
+    source_ok = Q(doctrine__isnull=True) & Q(
+        policy_version=F("doctrine_fit__source_policy_version")
+    )
+    # NULL assignment_version (deleted assignment) fails this comparison in
+    # SQL, which is exactly right: the grading basis is gone.
+    assignment_ok = Q(doctrine__isnull=False) & Q(policy_version=F("assignment_version"))
+    grace_days = EnforcementSettings.current().stale_grace_days
+    if not grace_days:
+        return qs.filter(global_ok & (source_ok | assignment_ok))
+    cutoff = timezone.now() - timedelta(days=grace_days)
+    global_expired = ~global_ok & (
+        Q(doctrine_fit__version_bumped_at__lte=cutoff)
+        | Q(doctrine_fit__version_bumped_at__isnull=True)
+    )
+    source_expired = (
+        Q(doctrine__isnull=True)
+        & ~Q(policy_version=F("doctrine_fit__source_policy_version"))
+        & (
+            Q(doctrine_fit__source_policy_bumped_at__lte=cutoff)
+            | Q(doctrine_fit__source_policy_bumped_at__isnull=True)
+        )
+    )
+    # NULL-safe divergence: NOT(x = NULL) is NULL in SQL and would silently
+    # drop deleted-assignment rows from the expiry arm, granting them
+    # indefinite grace - spell the isnull case out.
+    assignment_divergent = Q(assignment_version__isnull=True) | (
+        Q(assignment_version__isnull=False) & ~Q(policy_version=F("assignment_version"))
+    )
+    assignment_expired = (
+        Q(doctrine__isnull=False)
+        & assignment_divergent
+        & (Q(assignment_bumped_at__lte=cutoff) | Q(assignment_bumped_at__isnull=True))
+    )
+    return qs.exclude(global_expired | source_expired | assignment_expired)
 
 
 def get_qualifying_submission(

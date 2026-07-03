@@ -100,31 +100,46 @@ def _notify_approved_stale(fit: DoctrineFit) -> None:
 
     from .services.fit_diff import diff_for_submission
 
-    stale_approved = (
-        fit.submissions.filter(
-            status=FitSubmission.Status.APPROVED, fit_version__lt=fit.version
-        )
-        .select_related("user")
+    approved = (
+        fit.submissions.filter(status=FitSubmission.Status.APPROVED)
+        .with_staleness()
+        .select_related("user", "doctrine_fit")
         .order_by("-created_at")
     )
     seen_users: set[int] = set()
-    for submission in stale_approved:
-        if submission.user_id in seen_users:
+    for submission in approved:
+        if not submission.is_stale or submission.user_id in seen_users:
             continue
         seen_users.add(submission.user_id)
-        guard_key = f"fitcheck-stale-approved-{submission.pk}-v{fit.version}"
+        # Keyed on every ladder the submission's currency depends on, so a
+        # repeated Recheck Stale run stays silent but any NEW change (global
+        # or this submission's own policy ladder) re-arms the notification.
+        if submission.doctrine_id:
+            policy_ladder = submission.live_assignment_version
+        else:
+            policy_ladder = fit.source_policy_version
+        guard_key = (
+            f"fitcheck-stale-approved-{submission.pk}-v{fit.version}-p{policy_ladder}"
+        )
         if not cache.add(guard_key, True, timeout=None):
             continue
-        body = gettext(
-            "The fitting standard '%(fit)s' has changed since your submission "
-            "#%(id)s was approved (v%(old)s -> v%(new)s). Your approval still "
-            "stands, but re-verify your fit against the current version."
-        ) % {
-            "fit": fit,
-            "id": submission.pk,
-            "old": submission.fit_version,
-            "new": fit.version,
-        }
+        if submission.fit_version != fit.version:
+            body = gettext(
+                "The fitting standard '%(fit)s' has changed since your submission "
+                "#%(id)s was approved (v%(old)s -> v%(new)s). Your approval still "
+                "stands, but re-verify your fit against the current version."
+            ) % {
+                "fit": fit,
+                "id": submission.pk,
+                "old": submission.fit_version,
+                "new": fit.version,
+            }
+        else:
+            body = gettext(
+                "The policy rules for '%(fit)s' have changed since your submission "
+                "#%(id)s was approved. Your approval still stands, but re-verify "
+                "your fit against the current rules."
+            ) % {"fit": fit, "id": submission.pk}
         body += _diff_block(diff_for_submission(submission))
         notify(
             submission.user,
@@ -148,7 +163,10 @@ def recheck_pending_submissions(fit_id: int):
     fit = DoctrineFit.objects.filter(pk=fit_id).first()
     if fit is None:
         return
-    for submission in fit.submissions.pending().select_related("doctrine_fit", "user"):
+    pending = (
+        fit.submissions.pending().with_staleness().select_related("doctrine_fit", "user")
+    )
+    for submission in pending:
         old_verdict = submission.verdict
         was_stale = submission.is_stale
         # Resolve the diff before the re-check resets fit_version to current.
