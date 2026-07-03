@@ -1,0 +1,55 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="alert alert-info d-flex align-items-center gap-2">
+        <i class="fa-solid fa-flask fa-lg"></i>
+        <div>
+            <strong>{% translate "Sandbox check - nothing was saved." %}</strong>
+            {% translate "These results are not in the review queue and cannot be reviewed. Use Check fit to submit for review." %}
+        </div>
+    </div>
+
+    <div class="fc-toolbar">
+        <div class="fc-eyebrow">
+            {% blocktranslate with fit=fit.name %}Graded against "{{ fit }}"{% endblocktranslate %}
+            {% if parsed.fit_name %}&middot; {{ parsed.fit_name }}{% endif %}
+        </div>
+        <a class="btn btn-secondary btn-sm ms-auto" href="{% url 'fitcheck:submit_eft' fit.pk %}">
+            <i class="fa-solid fa-arrow-left"></i> {% translate "Back to Test a Fit" %}
+        </a>
+    </div>
+
+    {% for result in results %}
+        {% if result.verdict == "C" %}
+            <div class="alert alert-success d-flex align-items-center gap-3">
+        {% elif result.verdict == "S" %}
+            <div class="alert alert-info d-flex align-items-center gap-3">
+        {% elif result.verdict == "N" %}
+            <div class="alert alert-danger d-flex align-items-center gap-3">
+        {% else %}
+            <div class="alert alert-secondary d-flex align-items-center gap-3">
+        {% endif %}
+            <i class="fa-solid fa-clipboard-check fa-2x"></i>
+            <div>
+                <strong>{{ result.verdict_display }}</strong><br>
+                <small>
+                    {{ fit.name }} (v{{ fit.version }})
+                    {% if result.doctrine %}
+                        <span class="fc-chip" title="{% translate 'Graded against this doctrine\'s policy snapshot' %}">{{ result.doctrine.name }}</span>
+                    {% else %}
+                        <span class="text-muted">{% translate "(source defaults)" %}</span>
+                    {% endif %}
+                    &middot; {% translate "sandbox - not saved" %}
+                </small>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body">
+                {% include "fitcheck/partials/findings_table.html" with findings=result.findings %}
+            </div>
+        </div>
+    {% endfor %}
+{% endblock %}

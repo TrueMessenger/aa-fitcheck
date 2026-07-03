@@ -14,6 +14,9 @@
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="stats_step" value="1">
+                {% if check_only %}
+                    <input type="hidden" name="mode" value="check_only">
+                {% endif %}
                 <textarea name="eft_text" class="d-none">{{ eft_text }}</textarea>
                 {% for doctrine in selected_doctrines %}
                     <input type="hidden" name="doctrines" value="{{ doctrine.pk }}">

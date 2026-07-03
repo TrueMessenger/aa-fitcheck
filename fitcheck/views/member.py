@@ -241,6 +241,9 @@ def submit_eft(request, fit_pk: int):
     gradeable = gradeable_doctrines_for(fit, request.user)
     if request.method == "POST":
         eft_text = request.POST.get("eft_text", "").strip()
+        # Sandbox mode: run the engine and show the findings without creating
+        # a submission - no review-queue row, no audit log.
+        check_only = request.POST.get("mode") == "check_only"
         # Selected doctrines to grade against (each carries its own policy
         # snapshot). Restricted to this fit's gradeable set; empty = grade
         # once against the fit's source-level defaults.
@@ -262,6 +265,7 @@ def submit_eft(request, fit_pk: int):
                     "specs": specs,
                     "eft_text": eft_text,
                     "selected_doctrines": chosen,
+                    "check_only": check_only,
                     "page_title": _("Mutated Module Stats"),
                 }
                 if request.POST.get("stats_step") == "1":
@@ -282,6 +286,38 @@ def submit_eft(request, fit_pk: int):
             from ..tasks import notify_reviewers_new_submission
 
             doctrines = chosen or [None]
+            if check_only:
+                # Pure-engine pass: nothing is persisted, nothing reaches the
+                # review queue. The unsaved ComplianceFinding rows carry the
+                # same display surface the findings partial already renders.
+                from ..services.check_runner import build_finding_rows
+                from ..services.compliance import check_fit, check_fit_for_doctrine
+
+                results = []
+                for doctrine in doctrines:
+                    result = (
+                        check_fit_for_doctrine(parsed, fit, doctrine)
+                        if doctrine is not None
+                        else check_fit(parsed, fit)
+                    )
+                    results.append(
+                        {
+                            "doctrine": doctrine,
+                            "verdict": result.verdict,
+                            "verdict_display": FitSubmission.Verdict(result.verdict).label,
+                            "findings": build_finding_rows(result),
+                        }
+                    )
+                return render(
+                    request,
+                    "fitcheck/sandbox_results.html",
+                    {
+                        "fit": fit,
+                        "parsed": parsed,
+                        "results": results,
+                        "page_title": _("Sandbox Check"),
+                    },
+                )
             submissions = [
                 submit_fit(
                     request.user,

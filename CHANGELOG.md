@@ -38,6 +38,9 @@ version last got one.
 ## [Unreleased]
 
 ### Added
+- Sandbox check on the "Test a Fit" bench: a **Check only (don't save)** button grades an
+  EFT paste and shows the full findings without creating a submission — nothing lands in
+  the review queue or audit log. Ideal for theorycrafting and pre-purchase checks (#66).
 - Pilots are now notified when "Recheck Stale" re-grades their stale submission — including
   a compact old→new module diff when the fit's BOM changed — and holders of approved
   submissions are warned once per fit version that the fit moved on (never re-graded). The

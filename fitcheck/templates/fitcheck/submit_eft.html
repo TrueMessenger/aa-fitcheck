@@ -45,6 +45,10 @@
                 <button type="submit" class="btn btn-primary">
                     <i class="fa-solid fa-clipboard-check"></i> {% translate "Check fit" %}
                 </button>
+                <button type="submit" class="btn btn-info" name="mode" value="check_only"
+                        title="{% translate 'Grade the paste and show the findings without creating a submission - nothing lands in the review queue.' %}">
+                    <i class="fa-solid fa-flask"></i> {% translate "Check only (don't save)" %}
+                </button>
                 <a class="btn btn-secondary" href="{% url 'fitcheck:fit_detail' fit.pk %}">
                     {% translate "Cancel" %}
                 </a>

@@ -113,6 +113,41 @@ def parsed_fit_from_submission(submission: FitSubmission) -> ParsedFit:
     )
 
 
+def build_finding_rows(
+    result, submission: FitSubmission | None = None
+) -> list[ComplianceFinding]:
+    """The engine's ``Finding`` dataclasses mapped onto (unsaved)
+    ``ComplianceFinding`` rows - the single translation between the pure
+    engine result and the model the templates render. With ``submission=None``
+    the rows are render-only (sandbox checks); callers persisting them pass
+    the submission and ``bulk_create`` the list."""
+    eve_type_cache: dict[int, EveType] = {}
+
+    def cached_type(type_id: int | None) -> EveType | None:
+        if type_id is None:
+            return None
+        if type_id not in eve_type_cache:
+            eve_type_cache[type_id] = _get_or_create_eve_type(type_id)
+        return eve_type_cache[type_id]
+
+    return [
+        ComplianceFinding(
+            submission=submission,
+            section=finding.section,
+            code=finding.code,
+            expected_type=cached_type(finding.expected_type_id),
+            actual_type=cached_type(finding.actual_type_id),
+            expected_qty=finding.expected_qty,
+            actual_qty=finding.actual_qty,
+            message=finding.message[:500],
+            allowed_alternatives=finding.allowed_alternatives,
+            attribute_results=finding.attribute_results,
+            sort_order=index,
+        )
+        for index, finding in enumerate(result.findings)
+    ]
+
+
 def _run_and_store(
     submission: FitSubmission,
     parsed: ParsedFit,
@@ -129,31 +164,7 @@ def _run_and_store(
     submission.save(update_fields=["verdict", "fit_version"])
 
     submission.findings.all().delete()
-    eve_type_cache: dict[int, EveType] = {}
-
-    def cached_type(type_id: int | None) -> EveType | None:
-        if type_id is None:
-            return None
-        if type_id not in eve_type_cache:
-            eve_type_cache[type_id] = _get_or_create_eve_type(type_id)
-        return eve_type_cache[type_id]
-
-    ComplianceFinding.objects.bulk_create(
-        ComplianceFinding(
-            submission=submission,
-            section=finding.section,
-            code=finding.code,
-            expected_type=cached_type(finding.expected_type_id),
-            actual_type=cached_type(finding.actual_type_id),
-            expected_qty=finding.expected_qty,
-            actual_qty=finding.actual_qty,
-            message=finding.message[:500],
-            allowed_alternatives=finding.allowed_alternatives,
-            attribute_results=finding.attribute_results,
-            sort_order=index,
-        )
-        for index, finding in enumerate(result.findings)
-    )
+    ComplianceFinding.objects.bulk_create(build_finding_rows(result, submission))
     SubmissionActionLog.objects.create(
         submission=submission,
         actor=actor,
