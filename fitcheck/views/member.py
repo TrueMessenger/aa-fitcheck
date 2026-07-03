@@ -667,6 +667,14 @@ def submission_detail(request, submission_pk: int):
             id=submission.frigate_escape_bay_type_id
         ).select_related("eve_group").first()
 
+    # What changed since this submission was graded - only meaningful (and
+    # only computable) when the fit moved on and an archived BOM covers it.
+    stale_diff = None
+    if submission.is_stale:
+        from ..services.fit_diff import diff_for_submission
+
+        stale_diff = diff_for_submission(submission)
+
     # Manager jump-link to the exact per-(doctrine, fit) policy this submission
     # was graded against - the surface to edit when a verdict looks wrong.
     policy_assignment_pk = None
@@ -687,6 +695,7 @@ def submission_detail(request, submission_pk: int):
         {
             "submission": submission,
             "findings": findings,
+            "stale_diff": stale_diff,
             "mutated_items": mutated_items,
             "submitted_items": submitted_items,
             "policy_assignment_pk": policy_assignment_pk,

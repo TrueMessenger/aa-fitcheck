@@ -27,6 +27,11 @@ FITCHECK_NOTIFY_REVIEWERS = clean_setting("FITCHECK_NOTIFY_REVIEWERS", True)
 # fitcheck.tasks.send_review_digest instead for a periodic summary.
 FITCHECK_REVIEWER_DIGEST = clean_setting("FITCHECK_REVIEWER_DIGEST", False)
 
+# Notify pilots when "Recheck Stale" re-grades their stale pending submission
+# (with an old->new module diff when the BOM changed), and warn holders of
+# approved submissions that the fit has changed since their approval.
+FITCHECK_NOTIFY_PILOTS_STALE = clean_setting("FITCHECK_NOTIFY_PILOTS_STALE", True)
+
 # Contact email embedded in the ESI/SDE User-Agent header (required by CCP guidelines).
 FITCHECK_ESI_CONTACT = clean_setting("FITCHECK_ESI_CONTACT", "", required_type=str)
 
