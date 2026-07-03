@@ -19,9 +19,31 @@ from ..models import (
     SubmissionActionLog,
     SubmissionItem,
 )
+from ..signals import compliance_changed
 from .compliance import check_fit, check_fit_for_doctrine
 from .doctrine_import import _get_or_create_eve_type
 from .fit_data import FitItem, ParsedFit
+
+
+def _emit_compliance_changed(
+    submission: FitSubmission,
+    *,
+    old_verdict: str | None,
+    old_status: str | None,
+    actor: User | None,
+) -> None:
+    compliance_changed.send(
+        sender=FitSubmission,
+        submission=submission,
+        user=submission.user,
+        fit=submission.doctrine_fit,
+        doctrine=submission.doctrine,
+        old_verdict=old_verdict,
+        new_verdict=submission.verdict,
+        old_status=old_status,
+        new_status=submission.status,
+        actor=actor,
+    )
 
 
 @transaction.atomic
@@ -77,6 +99,9 @@ def submit_fit(
         submission=submission, actor=user, action=SubmissionActionLog.Action.SUBMITTED
     )
     _run_and_store(submission, parsed, SubmissionActionLog.Action.AUTO_CHECKED)
+    _emit_compliance_changed(
+        submission, old_verdict=None, old_status=None, actor=user
+    )
     return submission
 
 
@@ -84,8 +109,13 @@ def submit_fit(
 def recheck_submission(submission: FitSubmission, actor: User | None = None) -> FitSubmission:
     """Re-run the engine using the stored items (after doctrine/policy changes)."""
     parsed = parsed_fit_from_submission(submission)
+    old_verdict = submission.verdict
+    old_status = submission.status
     submission.fit_version = submission.doctrine_fit.version
     _run_and_store(submission, parsed, SubmissionActionLog.Action.RECHECKED, actor=actor)
+    _emit_compliance_changed(
+        submission, old_verdict=old_verdict, old_status=old_status, actor=actor
+    )
     return submission
 
 
@@ -275,6 +305,8 @@ def review_submission(
     # pilot can refit accordingly.
     if not approve and not comment.strip():
         raise ValueError("A comment is required when rejecting a submission.")
+    old_status = submission.status
+    old_verdict = submission.verdict
     submission.status = (
         FitSubmission.Status.APPROVED if approve else FitSubmission.Status.REJECTED
     )
@@ -293,5 +325,8 @@ def review_submission(
             else SubmissionActionLog.Action.REJECTED
         ),
         comment=comment,
+    )
+    _emit_compliance_changed(
+        submission, old_verdict=old_verdict, old_status=old_status, actor=reviewer
     )
     return submission

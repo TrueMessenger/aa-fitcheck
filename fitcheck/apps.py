@@ -11,3 +11,4 @@ class FitcheckConfig(AppConfig):
 
     def ready(self):
         from . import checks  # noqa: F401  (registers system checks)
+        from . import signals  # noqa: F401  (registers the compliance_changed signal)
