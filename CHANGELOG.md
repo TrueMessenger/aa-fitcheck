@@ -37,6 +37,11 @@ version last got one.
 
 ## [Unreleased]
 
+### Changed
+- Internationalization pass: task notification texts (reviewer alerts, review digest,
+  decision and re-check notices) are now translation-wrapped, the app-level `locale/`
+  scaffolding is in place, and CI verifies translation extraction stays clean (#6).
+
 ## [1.7.0] - 2026-07-02
 
 ### Added

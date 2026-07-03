@@ -39,3 +39,26 @@ jobs:
 
       - name: Coverage report
         run: coverage report
+
+  i18n:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install gettext
+        run: sudo apt-get update && sudo apt-get install --yes gettext
+
+      - name: Install dependencies
+        run: pip install Django
+
+      - name: Verify translation extraction
+        run: |
+          cd fitcheck
+          django-admin makemessages --locale en --no-obsolete
+          msgfmt --check --output-file /dev/null locale/en/LC_MESSAGES/django.po

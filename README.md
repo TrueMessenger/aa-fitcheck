@@ -443,4 +443,11 @@ uv pip install -e .[tests] fakeredis
 python manage.py test fitcheck
 ```
 
+## Translations
+
+The app is fully translation-wrapped (`gettext` / `{% translate %}`). To start a new language,
+run `django-admin makemessages --locale <code>` from the `fitcheck/` directory (requires GNU
+gettext), then edit `fitcheck/locale/<code>/LC_MESSAGES/django.po` and run
+`django-admin compilemessages`. Contributions via PR are welcome.
+
 License: GPL-3.0-or-later.
