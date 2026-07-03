@@ -64,11 +64,12 @@ class ManualRecheckCase(TestCase):
 class TestAutoRecheckRemoved(ManualRecheckCase):
     """Saving the fit/policy/override no longer enqueues recheck_pending_submissions."""
 
-    def test_policy_save_bumps_version_but_does_not_enqueue_recheck(self):
+    def test_policy_save_bumps_source_ladder_but_does_not_enqueue_recheck(self):
         self.client.force_login(self.manager)
         from ..models.doctrine import SubstitutionPolicy
 
         old_version = self.fit.version
+        old_policy = self.fit.source_policy_version
         with patch("fitcheck.tasks.recheck_pending_submissions.delay") as delay:
             self.client.post(
                 reverse("fitcheck:manage_fit_items", args=[self.fit.pk]),
@@ -79,7 +80,10 @@ class TestAutoRecheckRemoved(ManualRecheckCase):
             )
         delay.assert_not_called()
         self.fit.refresh_from_db()
-        self.assertEqual(self.fit.version, old_version + 1)
+        # Source-policy edits bump their own ladder; the global fit version
+        # moves only on BOM / fit-wide settings changes.
+        self.assertEqual(self.fit.source_policy_version, old_policy + 1)
+        self.assertEqual(self.fit.version, old_version)
 
     def test_override_add_does_not_enqueue_recheck(self):
         self.client.force_login(self.manager)

@@ -82,3 +82,20 @@ class FitSubmissionQuerySet(models.QuerySet):
 
     def for_user(self, user):
         return self.filter(user=user)
+
+    def with_staleness(self):
+        """Annotate each row's (doctrine, fit) assignment ladder so
+        ``is_stale`` / ``live_assignment_version`` need no per-row query on
+        list pages. NULL annotations mean "no assignment" (source-defaults
+        submissions, or the assignment was deleted)."""
+        FitAssignment = self.model._meta.apps.get_model("fitcheck", "FitAssignment")
+        assignment = FitAssignment.objects.filter(
+            doctrine_id=models.OuterRef("doctrine_id"),
+            fit_id=models.OuterRef("doctrine_fit_id"),
+        )
+        return self.annotate(
+            assignment_version=models.Subquery(assignment.values("version")[:1]),
+            assignment_bumped_at=models.Subquery(
+                assignment.values("version_bumped_at")[:1]
+            ),
+        )

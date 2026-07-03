@@ -78,6 +78,7 @@ class TestFitItemsEditor(PolicyEditorTestCase):
         self.client.force_login(self.manager)
         url = reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
         old_version = self.fit.version
+        old_policy = self.fit.source_policy_version
         data = self._formset_data(
             {
                 self.low_item.pk: {
@@ -103,7 +104,10 @@ class TestFitItemsEditor(PolicyEditorTestCase):
         self.assertEqual(self.cargo_item.min_quantity_pct, 66)
 
         self.fit.refresh_from_db()
-        self.assertEqual(self.fit.version, old_version + 1)
+        # Source-policy edits bump the source ladder only; the global version
+        # moves only on BOM / fit-wide settings changes.
+        self.assertEqual(self.fit.source_policy_version, old_policy + 1)
+        self.assertEqual(self.fit.version, old_version)
 
     def test_unchanged_save_does_not_bump_version(self):
         self.client.force_login(self.manager)
@@ -115,9 +119,11 @@ class TestFitItemsEditor(PolicyEditorTestCase):
             item.allowed_meta_groups = sorted(possible_meta_groups_for_item(item))
             item.save(update_fields=["allowed_meta_groups"])
         old_version = self.fit.version
+        old_policy = self.fit.source_policy_version
         self.client.post(url, self._formset_data(), follow=True)
         self.fit.refresh_from_db()
         self.assertEqual(self.fit.version, old_version)
+        self.assertEqual(self.fit.source_policy_version, old_policy)
 
     def test_editor_offers_only_possible_meta_groups(self):
         self.client.force_login(self.manager)
@@ -230,13 +236,13 @@ class TestOverrideEndpoints(PolicyEditorTestCase):
             {"type_name": "Imperial Navy Heat Sink", "mode": "E"},
         )
         override = self.low_item.overrides.get()
-        old_version = type(self.fit).objects.get(pk=self.fit.pk).version
+        old_policy = type(self.fit).objects.get(pk=self.fit.pk).source_policy_version
         self.client.post(
             reverse("fitcheck:override_remove", args=[override.pk]), follow=True
         )
         self.assertFalse(self.low_item.overrides.exists())
         self.fit.refresh_from_db()
-        self.assertEqual(self.fit.version, old_version + 1)
+        self.assertEqual(self.fit.source_policy_version, old_policy + 1)
 
     def test_member_cannot_use_override_endpoints(self):
         self.client.force_login(self.member)
@@ -338,11 +344,12 @@ class TestModuleSearch(PolicyEditorTestCase):
 
 
 class TestOverrideAddBulk(PolicyEditorTestCase):
-    """The bulk endpoint stages many overrides with one fit-version bump."""
+    """The bulk endpoint stages many overrides with one source-ladder bump."""
 
     def test_creates_multiple_overrides_with_single_version_bump(self):
         self.client.force_login(self.manager)
         old_version = self.fit.version
+        old_policy = self.fit.source_policy_version
         response = self.client.post(
             reverse("fitcheck:override_add_bulk", args=[self.low_item.pk]),
             {"mode": "I", "type_ids": [str(T.HEAT_SINK_IMPERIAL), str(T.HEAT_SINK_AMMATAR)]},
@@ -352,7 +359,8 @@ class TestOverrideAddBulk(PolicyEditorTestCase):
         type_ids = set(self.low_item.overrides.values_list("alt_type_id", flat=True))
         self.assertEqual(type_ids, {T.HEAT_SINK_IMPERIAL, T.HEAT_SINK_AMMATAR})
         self.fit.refresh_from_db()
-        self.assertEqual(self.fit.version, old_version + 1)
+        self.assertEqual(self.fit.source_policy_version, old_policy + 1)
+        self.assertEqual(self.fit.version, old_version)
 
     def test_skips_off_slot_modules(self):
         """A Stasis Webifier (MED slot) submitted against a LOW-slot item is
@@ -383,6 +391,7 @@ class TestOverrideAddBulk(PolicyEditorTestCase):
     def test_empty_submission_is_a_no_op_and_does_not_bump_version(self):
         self.client.force_login(self.manager)
         old_version = self.fit.version
+        old_policy = self.fit.source_policy_version
         self.client.post(
             reverse("fitcheck:override_add_bulk", args=[self.low_item.pk]),
             {"mode": "I"},
@@ -390,6 +399,7 @@ class TestOverrideAddBulk(PolicyEditorTestCase):
         )
         self.fit.refresh_from_db()
         self.assertEqual(self.fit.version, old_version)
+        self.assertEqual(self.fit.source_policy_version, old_policy)
         self.assertFalse(self.low_item.overrides.exists())
 
     def test_invalid_mode_is_rejected(self):

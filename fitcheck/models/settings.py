@@ -33,6 +33,12 @@ class EnforcementSettings(models.Model):
     feb_mode = models.CharField(
         max_length=6, choices=VerificationMode.choices, default=VerificationMode.IGNORE
     )
+    # Grace window for compliance *consequences* of staleness: for this many
+    # days after the relevant fit/policy change, a stale-but-passing submission
+    # still counts as current for the Python API and Secure Groups. The stale
+    # badge and pilot notifications are always immediate regardless. 0 = no
+    # grace (compliance expires the moment the change lands).
+    stale_grace_days = models.PositiveIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

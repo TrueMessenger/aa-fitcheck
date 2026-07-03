@@ -15,6 +15,7 @@ from ..models import (
     ComplianceFinding,
     Doctrine,
     DoctrineFit,
+    FitAssignment,
     FitSubmission,
     SubmissionActionLog,
     SubmissionItem,
@@ -46,6 +47,20 @@ def _emit_compliance_changed(
     )
 
 
+def _current_policy_version(doctrine_fit: DoctrineFit, doctrine: Doctrine | None) -> int:
+    """The live policy-ladder value a new or re-checked submission snapshots:
+    the (doctrine, fit) assignment's version when grading a doctrine snapshot,
+    else the fit's own source-policy version."""
+    if doctrine is None:
+        return doctrine_fit.source_policy_version
+    version = (
+        FitAssignment.objects.filter(doctrine=doctrine, fit=doctrine_fit)
+        .values_list("version", flat=True)
+        .first()
+    )
+    return version or 0
+
+
 @transaction.atomic
 def submit_fit(
     user: User,
@@ -69,6 +84,7 @@ def submit_fit(
         doctrine_fit=doctrine_fit,
         doctrine=doctrine,
         fit_version=doctrine_fit.version,
+        policy_version=_current_policy_version(doctrine_fit, doctrine),
         source=source,
         eft_text=eft_text,
         esi_fitting_id=esi_fitting_id,
@@ -112,6 +128,9 @@ def recheck_submission(submission: FitSubmission, actor: User | None = None) -> 
     old_verdict = submission.verdict
     old_status = submission.status
     submission.fit_version = submission.doctrine_fit.version
+    submission.policy_version = _current_policy_version(
+        submission.doctrine_fit, submission.doctrine
+    )
     _run_and_store(submission, parsed, SubmissionActionLog.Action.RECHECKED, actor=actor)
     _emit_compliance_changed(
         submission, old_verdict=old_verdict, old_status=old_status, actor=actor
@@ -191,7 +210,7 @@ def _run_and_store(
     else:
         result = check_fit(parsed, submission.doctrine_fit)
     submission.verdict = result.verdict
-    submission.save(update_fields=["verdict", "fit_version"])
+    submission.save(update_fields=["verdict", "fit_version", "policy_version"])
 
     submission.findings.all().delete()
     ComplianceFinding.objects.bulk_create(build_finding_rows(result, submission))
