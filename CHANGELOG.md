@@ -37,6 +37,16 @@ version last got one.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-03
+
+**Upgrade notes:** run `python manage.py migrate` (new migration `0031` — staleness version
+ladders and the grace-period setting; all defaults are behavior-preserving, no submission
+changes staleness state on upgrade) and `collectstatic`, then restart the web and Celery
+workers. No new beat task and no new permission this release. The staleness grace period
+defaults to 0 (compliance expires immediately, as before) — set it on **Settings →
+Enforcement Settings** if you want pilots to keep Secure Groups access for a few days after
+a fit change while they re-verify.
+
 ### Added
 - **Staleness grace period** on the Enforcement Settings page: for the configured number of
   days after a fit or policy change, stale passing submissions keep counting as compliant
