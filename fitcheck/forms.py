@@ -21,6 +21,7 @@ from .models import (
     DoctrineFit,
     DoctrineFitItem,
     EnforcementSettings,
+    ScanParameters,
     SdeType,
 )
 from .models.doctrine import EnforcementMode, SubstitutionPolicy
@@ -511,4 +512,67 @@ class EnforcementSettingsForm(forms.ModelForm):
                 "expires the moment the change lands. The stale badge and pilot "
                 "notifications are always immediate."
             )
+        }
+
+
+class ScanParametersForm(forms.ModelForm):
+    """Admin-tunable scan/result limits. Every help text spells out what raising
+    the bound costs, because these exist to keep page loads inside web-worker
+    timeouts and ESI's shared error budget."""
+
+    class Meta:
+        model = ScanParameters
+        fields = [
+            "member_scan_esi_budget",
+            "audit_ships_per_post",
+            "abyssal_lookups_per_ship",
+            "results_per_page",
+        ]
+        widgets = {
+            **{
+                name: forms.NumberInput(attrs={"class": "form-control", "min": 0})
+                for name in (
+                    "member_scan_esi_budget",
+                    "audit_ships_per_post",
+                    "abyssal_lookups_per_ship",
+                )
+            },
+            "results_per_page": forms.NumberInput(
+                attrs={"class": "form-control", "min": 1}
+            ),
+        }
+        labels = {
+            "member_scan_esi_budget": _("Member scan: live-ESI fallback budget"),
+            "audit_ships_per_post": _("Member audit: ships graded per click"),
+            "abyssal_lookups_per_ship": _("Abyssal verification: lookups per ship"),
+            "results_per_page": _("Lists: results per page"),
+        }
+        help_texts = {
+            "member_scan_esi_budget": _(
+                "Members without a corptools sync fall back to a live ESI fetch "
+                "of their whole asset tree - this caps how many per scan. "
+                "corptools-synced members are always scanned and never count "
+                "against it. Each live fetch takes roughly 1-3 seconds inside "
+                "the page load, so raising this risks the page hitting the web "
+                "server's timeout and burns ESI rate budget. 0 = corptools-only "
+                "scan (skipped pilots are listed on the page either way)."
+            ),
+            "audit_ships_per_post": _(
+                "Ships graded per \"Audit selected\" click on the Member "
+                "Inventory page. Each grades and stores a submission, and "
+                "pilots without a corptools sync cost live ESI reads - raising "
+                "this lengthens the request and risks ESI error-limiting "
+                "mid-audit."
+            ),
+            "abyssal_lookups_per_ship": _(
+                "ESI dynamic-item calls used to verify abyssal (mutated) "
+                "modules, per ship. A ship with more abyssal modules than this "
+                "leaves the rest unverified (warn-only, never a failure). "
+                "Raising it multiplies ESI calls on abyssal-heavy fits."
+            ),
+            "results_per_page": _(
+                "Page size for the review queue, pilot history, Fittings & "
+                "Standards, and Reports drill-down lists. Larger pages mean "
+                "fewer clicks but heavier queries and longer scrolls."
+            ),
         }

@@ -145,15 +145,20 @@ class EsiRateLimitTests(TestCase):
         return provider, client
 
     def test_verify_mutated_items_caps_lookups(self):
-        """H4: the per-ship abyssal verification fan-out is bounded."""
-        from ..services.esi_assets import _MAX_DYNAMIC_ITEM_LOOKUPS, _verify_mutated_items
-        items, rows = self._abyssal(_MAX_DYNAMIC_ITEM_LOOKUPS + 5)
+        """H4: the per-ship abyssal verification fan-out is bounded by the
+        configurable ScanParameters budget."""
+        from ..models import ScanParameters
+        from ..services.esi_assets import _verify_mutated_items
+
+        params = ScanParameters.current()
+        params.abyssal_lookups_per_ship = 4
+        params.save()
+        items, rows = self._abyssal(4 + 5)
         provider, client = self._dogma_client()
         with mock.patch.object(esi_assets, "esi_client", return_value=provider):
             _verify_mutated_items(items, rows)
         self.assertEqual(
-            client.Dogma.GetDogmaDynamicItemsTypeIdItemId.call_count,
-            _MAX_DYNAMIC_ITEM_LOOKUPS,
+            client.Dogma.GetDogmaDynamicItemsTypeIdItemId.call_count, 4
         )
 
     def test_verify_mutated_items_reraises_on_error_limit(self):

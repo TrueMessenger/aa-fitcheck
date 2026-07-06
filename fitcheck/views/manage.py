@@ -30,6 +30,7 @@ from ..forms import (
     FitSettingsForm,
     OverrideAddForm,
     PolicySlotRuleForm,
+    ScanParametersForm,
     hull_allows_feb,
 )
 from ..models import (
@@ -42,6 +43,7 @@ from ..models import (
     FitItemOverride,
     FitSubmission,
     PolicySlotRule,
+    ScanParameters,
     SdeType,
 )
 from ..models.doctrine import POLICY_SECTIONS, SubstitutionPolicy
@@ -1269,11 +1271,6 @@ def _resolve_target_charset(user):
     return EveCharacter.objects.none()
 
 
-# Upper bound on ships graded in a single audit POST, so the on-demand ESI /
-# engine fan-out stays predictable even if every box on the page is ticked.
-_MAX_AUDIT_SHIPS = 50
-
-
 def _audit_selected_ships(request, fit, ships, char_by_id, tokens, selected):
     """Phase 2: grade the reviewer-selected ships on demand and persist one
     FitSubmission each. Returns {ship_item_id: {"verdict", "submission_pk"}}.
@@ -1298,10 +1295,14 @@ def _audit_selected_ships(request, fit, ships, char_by_id, tokens, selected):
         if (cid, iid) in legitimate and iid not in wanted[cid]:
             wanted[cid].append(iid)
 
+    # Upper bound on ships graded in one POST, so the on-demand ESI / engine
+    # fan-out stays predictable even if every box on the page is ticked.
+    # Tunable: Settings -> Scan & Result Limits.
+    max_audit_ships = ScanParameters.current().audit_ships_per_post
     graded: dict[int, dict] = {}
     rate_limited = False
     for cid, item_ids in wanted.items():
-        if len(graded) >= _MAX_AUDIT_SHIPS or rate_limited:
+        if len(graded) >= max_audit_ships or rate_limited:
             break
         token = tokens.get(cid)
         # The owning User backs the persisted submission; fall back to the
@@ -1319,7 +1320,7 @@ def _audit_selected_ships(request, fit, ships, char_by_id, tokens, selected):
         if contents is None:
             continue
         for iid in item_ids:
-            if len(graded) >= _MAX_AUDIT_SHIPS:
+            if len(graded) >= max_audit_ships:
                 break
             ship = legitimate[(cid, iid)]
             try:
@@ -1403,8 +1404,10 @@ def member_inventory_for_fit(request, fit_pk: int):
     if corp_filter and corp_filter.isdigit():
         characters = characters.filter(corporation_id=int(corp_filter))
 
-    # Cap to a reasonable page size to keep ESI fan-out predictable.
-    characters = list(characters.order_by("character_name")[:200])
+    # The full roster is scanned - corptools-synced members cost a bulk DB read
+    # regardless of alliance size; only the live-ESI fallback is bounded, by the
+    # ScanParameters budget inside get_inventory_for_characters.
+    characters = list(characters.order_by("character_name"))
 
     tokens = tokens_by_character(c.character_id for c in characters)
     if granted_only:
@@ -1413,7 +1416,9 @@ def member_inventory_for_fit(request, fit_pk: int):
 
     # Phase 1 - list ships of this hull in scope. No grading: this reads only the
     # narrow ship rows (corptools) or the ship slice of a live fetch (ESI).
-    inventory = get_inventory_for_characters(characters, hull_type_id=fit.ship_type_id)
+    inventory = get_inventory_for_characters(
+        characters, hull_type_id=fit.ship_type_id, tokens=tokens
+    )
     if inventory.error_limited:
         messages.warning(
             request,
@@ -1457,6 +1462,7 @@ def member_inventory_for_fit(request, fit_pk: int):
             "fit": fit,
             "ship_rows": ship_rows,
             "without_token": inventory.characters_without_token,
+            "skipped_esi": inventory.esi_fallback_skipped,
             "errors": inventory.errors,
             "filters": {
                 "q": q,
@@ -1962,6 +1968,27 @@ def enforcement_settings(request):
         request,
         "fitcheck/policies/enforcement.html",
         {"form": form, "page_title": _("Enforcement Settings")},
+    )
+
+
+@login_required
+@permission_required("fitcheck.manage_policies")
+def scan_parameters(request):
+    """Admin-tunable scan/result limits (member-scan ESI budget, audit batch
+    size, abyssal lookup budget, list page size)."""
+    params = ScanParameters.current()
+    if request.method == "POST":
+        form = ScanParametersForm(request.POST, instance=params)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Scan parameters saved."))
+            return redirect("fitcheck:scan_parameters")
+    else:
+        form = ScanParametersForm(instance=params)
+    return render(
+        request,
+        "fitcheck/settings/parameters.html",
+        {"form": form, "page_title": _("Scan & Result Limits")},
     )
 
 

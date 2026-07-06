@@ -37,7 +37,20 @@ version last got one.
 
 ## [Unreleased]
 
+### Added
+- **Scan & Result Limits** settings page (Settings tab, `manage_policies`): the previously
+  hard-coded scan/result bounds are now admin-tunable in-app, each with an explanation of
+  the impact of raising it — the Member Inventory live-ESI fallback budget (default 25),
+  ships graded per audit click (default 50), abyssal-verification lookups per ship
+  (default 25), and the page size of the paginated lists (default 50). Migration 0032.
+
 ### Fixed
+- Member Inventory scanned only the first 200 members alphabetically and silently hid the
+  rest (#50). corptools-synced members are now all scanned via a bulk read (a handful of
+  queries at any alliance size); only the live-ESI full-tree fallback is budgeted (see the
+  new Scan & Result Limits page — the old code could attempt up to 200 multi-second live
+  fetches in one page load), skipped pilots are announced on the page, the skipped-pilot
+  banners list at most 10 names, and the duplicate roster-wide token query is gone (#49).
 - Fittings & Standards page: the hull-class filter listed each ship class once per fitting
   instead of once; doctrine filter pills now render in the app's rounded chip style matching
   the Doctrines tab; filter order is now Category, Hull class, then search.

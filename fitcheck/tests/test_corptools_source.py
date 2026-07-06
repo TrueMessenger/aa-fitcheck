@@ -182,8 +182,10 @@ class TestMemberScanWithoutToken(TestCase):
             "name": "My Harb",
         }]
         with mock.patch.object(esi_assets, "tokens_by_character", return_value={}), \
-             mock.patch("fitcheck.services.corptools_source.ship_assets_for_character",
-                        return_value=ship_assets), \
+             mock.patch(
+                 "fitcheck.services.corptools_source.bulk_ship_assets_for_characters",
+                 return_value={777: ship_assets},
+             ), \
              mock.patch.object(esi_assets, "_ship_group_names",
                                return_value={T.HARBINGER: "Battlecruiser"}):
             inventory = esi_assets.get_inventory_for_characters(
@@ -193,6 +195,117 @@ class TestMemberScanWithoutToken(TestCase):
         self.assertEqual([s.type_id for s in inventory.ships], [T.HARBINGER])
         self.assertEqual(inventory.ships[0].ship_name, "My Harb")  # cached name used
         self.assertEqual(inventory.characters_without_token, [])  # not flagged ungranted
+
+
+class TestMemberScanEsiBudget(TestCase):
+    """The live-ESI fallback in a member scan (token but no corptools sync) is
+    bounded by the admin-tunable ScanParameters budget; corptools-served
+    characters never touch it."""
+
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+        from allianceauth.eveonline.models import EveCharacter
+
+        cls.chars = [
+            EveCharacter.objects.create(
+                character_id=800 + i, character_name=f"Pilot {i}",
+                corporation_id=1, corporation_name="C", corporation_ticker="C",
+                alliance_id=1, alliance_name="A", alliance_ticker="A",
+                security_status=0,
+            )
+            for i in range(3)
+        ]
+
+    def _set_budget(self, n):
+        from ..models import ScanParameters
+
+        params = ScanParameters.current()
+        params.member_scan_esi_budget = n
+        params.save()
+
+    @staticmethod
+    def _ship_row(item_id):
+        return {
+            "item_id": item_id, "type_id": T.HARBINGER, "location_id": 60003760,
+            "location_flag": "Hangar", "quantity": 1, "is_singleton": True,
+            "name": "",
+        }
+
+    def test_budget_limits_live_fallback_and_reports_skipped(self):
+        self._set_budget(2)
+        tokens = {c.character_id: mock.Mock() for c in self.chars}
+        with mock.patch.object(esi_assets, "tokens_by_character", return_value=tokens), \
+             mock.patch(
+                 "fitcheck.services.corptools_source.bulk_ship_assets_for_characters",
+                 return_value={},
+             ), \
+             mock.patch.object(
+                 esi_assets, "_fetch_assets",
+                 side_effect=[[self._ship_row(9001)], [self._ship_row(9002)]],
+             ) as fetch, \
+             mock.patch.object(esi_assets, "_ship_group_names",
+                               return_value={T.HARBINGER: "Battlecruiser"}):
+            inventory = esi_assets.get_inventory_for_characters(
+                self.chars, hull_type_id=T.HARBINGER
+            )
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(
+            [c.character_id for c in inventory.esi_fallback_skipped],
+            [self.chars[2].character_id],
+        )
+        self.assertEqual(inventory.characters_without_token, [])
+        self.assertEqual(len(inventory.ships), 2)
+
+    def test_budget_zero_still_serves_corptools_characters(self):
+        self._set_budget(0)
+        served = {self.chars[0].character_id: [self._ship_row(9001)]}
+        tokens = {c.character_id: mock.Mock() for c in self.chars}
+        with mock.patch.object(esi_assets, "tokens_by_character", return_value=tokens), \
+             mock.patch(
+                 "fitcheck.services.corptools_source.bulk_ship_assets_for_characters",
+                 return_value=served,
+             ), \
+             mock.patch.object(esi_assets, "_fetch_assets") as fetch, \
+             mock.patch.object(esi_assets, "_ship_group_names",
+                               return_value={T.HARBINGER: "Battlecruiser"}):
+            inventory = esi_assets.get_inventory_for_characters(
+                self.chars, hull_type_id=T.HARBINGER
+            )
+        fetch.assert_not_called()
+        self.assertEqual(len(inventory.ships), 1)
+        # The two unserved token-holders were budget-skipped, not "ungranted".
+        self.assertEqual(len(inventory.esi_fallback_skipped), 2)
+        self.assertEqual(inventory.characters_without_token, [])
+
+    def test_tokenless_unserved_character_is_ungranted_not_budgeted(self):
+        self._set_budget(0)
+        with mock.patch.object(esi_assets, "tokens_by_character", return_value={}), \
+             mock.patch(
+                 "fitcheck.services.corptools_source.bulk_ship_assets_for_characters",
+                 return_value={},
+             ), \
+             mock.patch.object(esi_assets, "_fetch_assets") as fetch:
+            inventory = esi_assets.get_inventory_for_characters(
+                self.chars, hull_type_id=T.HARBINGER
+            )
+        fetch.assert_not_called()
+        self.assertEqual(len(inventory.characters_without_token), 3)
+        self.assertEqual(inventory.esi_fallback_skipped, [])
+
+    def test_caller_tokens_map_is_reused(self):
+        """#49: the view's tokens_by_character result is passed through, so the
+        roster-wide token query runs once per request."""
+        self._set_budget(0)
+        with mock.patch.object(esi_assets, "tokens_by_character") as tbc, \
+             mock.patch(
+                 "fitcheck.services.corptools_source.bulk_ship_assets_for_characters",
+                 return_value={},
+             ):
+            esi_assets.get_inventory_for_characters(
+                self.chars, hull_type_id=T.HARBINGER, tokens={}
+            )
+        tbc.assert_not_called()
 
 
 class TestNarrowAssetReads(TestCase):
