@@ -59,6 +59,23 @@ class TestHullClassFilter(StandardsFiltersTestCase):
         self.assertNotContains(response, "Shield Oracle")
         self.assertNotContains(response, "Standalone Hel")
 
+    def test_ship_groups_has_no_duplicates_for_a_shared_hull_class(self):
+        # Harbinger and the Standalone Hel fit already share the fixture's
+        # default "ships" group (see the class comment above); add two more
+        # fits on that same hull so several DoctrineFit rows share one group.
+        # DoctrineFit.Meta.ordering = ["name"] used to leak into SELECT
+        # DISTINCT, so each fit produced its own "distinct" (group, name)
+        # row and the hull class repeated once per fit.
+        create_fit(None, T.HARBINGER, name="Second Harbinger")
+        create_fit(None, T.HARBINGER, name="Third Harbinger")
+        response = self._get()
+        ship_groups = response.context["ship_groups"]
+        ids = [g["id"] for g in ship_groups]
+        self.assertEqual(len(ids), len(set(ids)))
+        harbinger_group_id = self.fit_harbinger.ship_type.eve_group_id
+        matching = [g for g in ship_groups if g["id"] == harbinger_group_id]
+        self.assertEqual(len(matching), 1)
+
 
 class TestCategoryFilter(StandardsFiltersTestCase):
     def test_filters_by_category(self):

@@ -18,24 +18,25 @@
     </div>
 
     <div class="d-flex flex-wrap gap-1 align-items-center mb-2">
-        <a class="btn btn-sm {% if not active_doctrine %}btn-primary{% else %}btn-secondary{% endif %}"
+        <a class="fc-chip {% if not active_doctrine %}active{% endif %}"
            href="?{{ qs_no_doctrine }}">
             {% translate "All" %}
         </a>
         {% for d in pill_doctrines %}
-            <a class="btn btn-sm {% if active_doctrine == d.pk|stringformat:'s' %}btn-primary{% else %}btn-secondary{% endif %}"
+            <a class="fc-chip {% if active_doctrine == d.pk|stringformat:'s' %}active{% endif %}"
                href="?{{ qs_no_doctrine }}&amp;doctrine={{ d.pk }}">
                 {{ d.name }} ({{ d.fit_count }})
             </a>
         {% endfor %}
-        <a class="btn btn-sm {% if active_doctrine == 'none' %}btn-primary{% else %}btn-secondary{% endif %}"
+        <a class="fc-chip {% if active_doctrine == 'none' %}active{% endif %}"
            href="?{{ qs_no_doctrine }}&amp;doctrine=none">
             {% translate "Standalone" %}
         </a>
         {% if overflow_doctrines %}
             <div class="btn-group">
-                <button type="button" class="btn btn-sm btn-secondary dropdown-toggle" data-bs-toggle="dropdown"
-                        aria-expanded="false">
+                <button type="button" class="fc-chip dropdown-toggle{% if overflow_active %} active{% endif %}"
+                        {% if not overflow_active %}style="background:transparent"{% endif %}
+                        data-bs-toggle="dropdown" aria-expanded="false">
                     {% translate "More…" %}
                 </button>
                 <ul class="dropdown-menu">
@@ -53,19 +54,19 @@
     </div>
 
     <form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-3">
-        <select name="group" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
-            <option value="">{% translate "All hull classes" %}</option>
-            {% for group in ship_groups %}
-                <option value="{{ group.id }}" {% if active_group == group.id|stringformat:'s' %}selected{% endif %}>
-                    {{ group.name }}
-                </option>
-            {% endfor %}
-        </select>
         <select name="category" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
             <option value="">{% translate "All categories" %}</option>
             {% for category in categories %}
                 <option value="{{ category.pk }}" {% if active_category == category.pk|stringformat:'s' %}selected{% endif %}>
                     {{ category.name }}
+                </option>
+            {% endfor %}
+        </select>
+        <select name="group" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+            <option value="">{% translate "All hull classes" %}</option>
+            {% for group in ship_groups %}
+                <option value="{{ group.id }}" {% if active_group == group.id|stringformat:'s' %}selected{% endif %}>
+                    {{ group.name }}
                 </option>
             {% endfor %}
         </select>

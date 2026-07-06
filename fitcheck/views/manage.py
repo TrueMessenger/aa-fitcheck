@@ -135,12 +135,16 @@ def standards_list(request):
         )
     )
 
+    # DoctrineFit.Meta.ordering = ["name"] leaks into SELECT DISTINCT (Django
+    # adds the default order_by fields to the SELECT list), so without
+    # clearing it here each fit's name makes its own row "distinct" and hull
+    # groups repeat once per fit sharing that group.
     ship_groups = sorted(
         (
             {"id": group_id, "name": group_name}
-            for group_id, group_name in DoctrineFit.objects.values_list(
-                "ship_type__eve_group_id", "ship_type__eve_group__name"
-            ).distinct()
+            for group_id, group_name in DoctrineFit.objects.order_by()
+            .values_list("ship_type__eve_group_id", "ship_type__eve_group__name")
+            .distinct()
             if group_id is not None
         ),
         key=lambda g: g["name"] or "",
@@ -164,6 +168,9 @@ def standards_list(request):
             "doctrines": doctrines,
             "pill_doctrines": doctrines[:8],
             "overflow_doctrines": doctrines[8:],
+            "overflow_active": any(
+                str(d.pk) == doctrine_param for d in doctrines[8:]
+            ),
             "ship_groups": ship_groups,
             "categories": categories,
             "active_q": q,
