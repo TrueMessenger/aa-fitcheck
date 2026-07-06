@@ -13,7 +13,11 @@ from .doctrine import (  # noqa: F401
 )
 from .general import General  # noqa: F401
 from .reporting import ComplianceSnapshot  # noqa: F401
-from .settings import EnforcementSettings, VerificationMode  # noqa: F401
+from .settings import (  # noqa: F401
+    EnforcementSettings,
+    ScanParameters,
+    VerificationMode,
+)
 from .sde import (  # noqa: F401
     SdeAttribute,
     SdeLoadRecord,

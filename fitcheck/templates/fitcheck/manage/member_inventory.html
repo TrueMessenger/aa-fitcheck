@@ -62,6 +62,23 @@
         </div>
     </form>
 
+    {% if skipped_esi %}
+        <div class="alert alert-info d-flex align-items-start gap-2">
+            <i class="fa-solid fa-satellite-dish mt-1"></i>
+            <div>
+                <strong>{{ skipped_esi|length }}</strong>
+                {% translate "pilot(s) were skipped because the live-ESI scan budget was reached. Results show corptools-synced pilots plus the first token-granted pilots; ask skipped pilots to register with corptools, narrow the scan with the filters above, or raise the budget under Settings → Scan & Result Limits." %}
+                <div class="small mt-1">
+                    {% for character in skipped_esi|slice:":10" %}
+                        {{ character.character_name }}{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                    {% if skipped_esi|length > 10 %}
+                        &hellip; {% blocktranslate with more=skipped_esi|length|add:"-10" %}and {{ more }} more{% endblocktranslate %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    {% endif %}
     {% if without_token %}
         <div class="alert alert-warning d-flex align-items-start gap-2">
             <i class="fa-solid fa-key mt-1"></i>
@@ -69,9 +86,12 @@
                 <strong>{{ without_token|length }}</strong>
                 {% translate "pilot(s) in scope have not granted an asset-scope token and were skipped:" %}
                 <div class="small mt-1">
-                    {% for character in without_token %}
+                    {% for character in without_token|slice:":10" %}
                         {{ character.character_name }}{% if not forloop.last %}, {% endif %}
                     {% endfor %}
+                    {% if without_token|length > 10 %}
+                        &hellip; {% blocktranslate with more=without_token|length|add:"-10" %}and {{ more }} more{% endblocktranslate %}
+                    {% endif %}
                 </div>
             </div>
         </div>

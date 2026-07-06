@@ -186,6 +186,7 @@ urlpatterns = [
     ),
     # Settings hub (fittings import + enforcement / global settings)
     path("settings/", manage.settings_home, name="settings_home"),
+    path("settings/parameters/", manage.scan_parameters, name="scan_parameters"),
     path("settings/diagnostics/", manage.diagnostics, name="diagnostics"),
     path(
         "settings/diagnostics/snapshots/run/",

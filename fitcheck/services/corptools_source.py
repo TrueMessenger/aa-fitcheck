@@ -147,6 +147,58 @@ def ship_assets_for_character(
     return [_map_asset_row(r) for r in rows]
 
 
+def bulk_ship_assets_for_characters(
+    character_ids, ship_type_ids
+) -> dict[int, list[dict]]:
+    """Phase 1 (bulk): assembled ships for MANY characters in two queries -
+    the alliance-wide member scan calls this once instead of hitting
+    `ship_assets_for_character` per pilot (~3 queries each, thousands of
+    queries on a big roster).
+
+    Returns {character_id: [ship rows]} where:
+    - a key present with ``[]`` means corptools serves this character and they
+      own no matching ship - the caller must NOT fall back to ESI;
+    - an absent key means corptools cannot serve them (not audited, or the
+      assets module never synced) - the caller may fall back;
+    - ``{}`` when corptools isn't installed or ``character_ids`` is empty.
+    """
+    character_ids = list(character_ids)
+    if not character_ids or not corptools_installed():
+        return {}
+    CharacterAudit, CharacterAsset = _models()
+    # Query 1: which of these characters have a servable audit. corptools keeps
+    # per-module sync times in a JSON column ON the audit row, so the
+    # get_update_time filter is Python-side and free of extra queries.
+    char_id_by_audit_pk: dict[int, int] = {}
+    audits = CharacterAudit.objects.filter(
+        character__character_id__in=character_ids
+    ).select_related("character")
+    for audit in audits:
+        try:
+            synced = audit.get_update_time("assets")
+        except Exception:  # pragma: no cover - guards corptools API drift
+            synced = None
+        if synced is not None:
+            char_id_by_audit_pk[audit.pk] = audit.character.character_id
+    out: dict[int, list[dict]] = {
+        cid: [] for cid in char_id_by_audit_pk.values()
+    }
+    if not char_id_by_audit_pk:
+        return out
+    # Query 2: every matching ship row across all servable audits at once.
+    # NB `character_id` here is CharacterAsset's FK to CharacterAudit (the
+    # audit pk), not an EVE character id.
+    lookups = {"character_id__in": list(char_id_by_audit_pk), "singleton": True}
+    if ship_type_ids is not None:
+        lookups["type_id__in"] = list(ship_type_ids)
+    rows = CharacterAsset.objects.filter(**lookups).values(
+        "character_id", *_ASSET_FIELDS
+    )
+    for r in rows:
+        out[char_id_by_audit_pk[r["character_id"]]].append(_map_asset_row(r))
+    return out
+
+
 def ship_contents_for_character(
     character_id: int, ship_item_ids
 ) -> list[dict] | None:

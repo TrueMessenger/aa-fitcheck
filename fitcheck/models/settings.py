@@ -57,3 +57,41 @@ class EnforcementSettings(models.Model):
         """The single settings row, created with defaults on first access."""
         obj, _created = cls.objects.get_or_create(pk=1)
         return obj
+
+
+class ScanParameters(models.Model):
+    """Singleton of admin-tunable scan/result limits (Settings -> Scan & Result
+    Limits). Each bounds how much work a single page or scan may do; the
+    defaults are sized so a large-alliance install stays inside typical web
+    worker timeouts and ESI's error budget."""
+
+    # Live-ESI fallback budget for the member-inventory scan: members without a
+    # corptools sync each cost a full asset-tree ESI fetch (~1-3s, serial,
+    # inside the page load). corptools-synced members never count against it.
+    member_scan_esi_budget = models.PositiveIntegerField(default=25)
+    # Ships graded per "Audit selected" POST on the member-inventory page.
+    audit_ships_per_post = models.PositiveIntegerField(default=50)
+    # ESI dynamic-item lookups per ship when verifying abyssal modules; rolls
+    # past the budget stay unverified (warn-only).
+    abyssal_lookups_per_ship = models.PositiveIntegerField(default=25)
+    # Page size for the paginated lists (review queue, pilot history,
+    # Fittings & Standards, Reports drill-down).
+    results_per_page = models.PositiveIntegerField(default=50)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Scan parameters"
+        verbose_name_plural = "Scan parameters"
+
+    def __str__(self) -> str:
+        return "Fit Check scan parameters"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce a single row
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def current(cls) -> "ScanParameters":
+        """The single parameters row, created with defaults on first access."""
+        obj, _created = cls.objects.get_or_create(pk=1)
+        return obj

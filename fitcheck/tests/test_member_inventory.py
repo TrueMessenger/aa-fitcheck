@@ -129,6 +129,7 @@ class TestMemberInventoryView(TestCase):
                 return_value=mock.Mock(
                     ships=[],
                     characters_without_token=[],
+                    esi_fallback_skipped=[],
                     errors={},
                     error_limited=False,
                 ),
@@ -190,8 +191,8 @@ class TestMemberInventoryView(TestCase):
             ship_name="Member's Harb", location_name="Jita",
         )
         inv = mock.Mock(
-            ships=[ship], characters_without_token=[], errors={},
-            error_limited=False,
+            ships=[ship], characters_without_token=[], esi_fallback_skipped=[],
+            errors={}, error_limited=False,
         )
         return ship, inv
 
@@ -302,3 +303,69 @@ class TestMemberInventoryView(TestCase):
         contents.assert_not_called()
         build.assert_not_called()
         self.assertFalse(FitSubmission.objects.filter(doctrine_fit=fit).exists())
+
+    def test_scan_is_not_capped_at_200_members(self):
+        """Regression for the silent alphabetical 200-member cap (#50): every
+        in-scope character reaches the inventory scan."""
+        user = create_user("alliance_big")
+        _attach_main(user, alliance_id=99, corporation_id=2001)
+        user = _grant(user, "view_member_inventory")
+        for i in range(210):
+            _make_member(character_id=51000 + i, alliance_id=99, corporation_id=2001)
+        fit = create_fit(None, T.HARBINGER, name="Big Scan")
+
+        with mock.patch(
+            "fitcheck.services.esi_assets.get_inventory_for_characters",
+            return_value=mock.Mock(
+                ships=[], characters_without_token=[], esi_fallback_skipped=[],
+                errors={}, error_limited=False,
+            ),
+        ) as scan:
+            self.client.force_login(user)
+            response = self.client.get(
+                reverse("fitcheck:member_inventory_for_fit", args=[fit.pk])
+            )
+        self.assertEqual(response.status_code, 200)
+        scanned = scan.call_args.args[0]
+        self.assertGreaterEqual(len(scanned), 210)
+
+    def _notice_response(self, *, skipped_esi=(), without_token=()):
+        user = create_user(f"alliance_notice_{len(skipped_esi)}_{len(without_token)}")
+        _attach_main(user, alliance_id=99, corporation_id=2001)
+        user = _grant(user, "view_member_inventory")
+        fit = create_fit(None, T.HARBINGER, name="Notice Target")
+        with mock.patch(
+            "fitcheck.services.esi_assets.get_inventory_for_characters",
+            return_value=mock.Mock(
+                ships=[], characters_without_token=list(without_token),
+                esi_fallback_skipped=list(skipped_esi), errors={},
+                error_limited=False,
+            ),
+        ):
+            self.client.force_login(user)
+            return self.client.get(
+                reverse("fitcheck:member_inventory_for_fit", args=[fit.pk])
+            )
+
+    def test_skipped_esi_notice_caps_names_at_ten(self):
+        chars = [
+            mock.Mock(character_name=f"Skipped {chr(65 + i)}") for i in range(12)
+        ]
+        response = self._notice_response(skipped_esi=chars)
+        content = response.content.decode()
+        self.assertIn("live-ESI scan budget", content)
+        self.assertIn("Skipped A", content)
+        self.assertIn("Skipped J", content)  # 10th name
+        self.assertNotIn("Skipped K", content)  # 11th name capped
+        self.assertIn("and 2 more", content)
+
+    def test_without_token_banner_caps_names_at_ten(self):
+        chars = [
+            mock.Mock(character_name=f"Ungranted {chr(65 + i)}") for i in range(15)
+        ]
+        response = self._notice_response(without_token=chars)
+        content = response.content.decode()
+        self.assertIn("Ungranted A", content)
+        self.assertIn("Ungranted J", content)
+        self.assertNotIn("Ungranted K", content)
+        self.assertIn("and 5 more", content)

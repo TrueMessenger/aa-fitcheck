@@ -1,0 +1,60 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-9 col-xxl-7">
+            <div class="card">
+                <div class="card-header d-flex align-items-center">
+                    <i class="fa-solid fa-sliders me-2"></i>
+                    {% translate "Scan & Result Limits" %}
+                    <a class="btn btn-secondary btn-sm ms-auto" href="{% url 'fitcheck:settings_home' %}">
+                        <i class="fa-solid fa-arrow-left"></i> {% translate "Back" %}
+                    </a>
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        {% translate "These bound how much work a single page load or scan may do. The defaults are sized so a large-alliance install stays inside typical web-server timeouts and EVE's shared ESI error budget - raise them deliberately, and lower them again if pages start timing out." %}
+                    </p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label" for="{{ form.member_scan_esi_budget.id_for_label }}">
+                                    <i class="fa-solid fa-satellite-dish me-1"></i>{{ form.member_scan_esi_budget.label }}
+                                </label>
+                                {{ form.member_scan_esi_budget }}
+                                <div class="form-text">{{ form.member_scan_esi_budget.help_text }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="{{ form.audit_ships_per_post.id_for_label }}">
+                                    <i class="fa-solid fa-clipboard-check me-1"></i>{{ form.audit_ships_per_post.label }}
+                                </label>
+                                {{ form.audit_ships_per_post }}
+                                <div class="form-text">{{ form.audit_ships_per_post.help_text }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="{{ form.abyssal_lookups_per_ship.id_for_label }}">
+                                    <i class="fa-solid fa-dna me-1"></i>{{ form.abyssal_lookups_per_ship.label }}
+                                </label>
+                                {{ form.abyssal_lookups_per_ship }}
+                                <div class="form-text">{{ form.abyssal_lookups_per_ship.help_text }}</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="{{ form.results_per_page.id_for_label }}">
+                                    <i class="fa-solid fa-list-ol me-1"></i>{{ form.results_per_page.label }}
+                                </label>
+                                {{ form.results_per_page }}
+                                <div class="form-text">{{ form.results_per_page.help_text }}</div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success mt-3">
+                            <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Parameters" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

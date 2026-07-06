@@ -386,6 +386,13 @@ compliant for the Python API / Secure Groups after a fit or policy change — de
 immediately) are managed through the in-app **Enforcement Settings** page — no `local.py`
 changes required.
 
+Scan and result bounds are likewise managed in-app, on the **Scan & Result Limits** page
+(Settings tab, admin-only): the Member Inventory live-ESI fallback budget (members without a
+corptools sync each cost a full asset-tree fetch inside the page load — corptools-synced
+members are always scanned and never count against it), ships graded per audit click,
+abyssal-verification lookups per ship, and the page size of the paginated lists. Each field
+explains the impact of raising it.
+
 ---
 
 ## Integration (Python API)

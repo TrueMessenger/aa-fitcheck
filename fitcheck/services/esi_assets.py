@@ -65,10 +65,6 @@ CLONES_SCOPES = ["esi-clones.read_implants.v1"]
 PILOT_GRANT_SCOPES = ASSET_GRANT_SCOPES + CLONES_SCOPES + FITTINGS_WRITE_SCOPES
 
 _NAME_CHUNK = 990  # ESI caps assets/names and universe/names around 1000 ids
-# Per-ship ceiling on dynamic-item (abyssal roll) lookups. Each is its own ESI
-# call, so an unbounded fan-out across a bulk scan could burn the error budget;
-# cap it and log what was skipped rather than silently truncating.
-_MAX_DYNAMIC_ITEM_LOOKUPS = 25
 
 # Tags we need from the ESI spec - django-esi 9.x requires this to keep
 # the generated client small (and raises AttributeError under DEBUG=False if missing).
@@ -112,6 +108,9 @@ class ShipInventory:
     ships: list[OwnedShip] = field(default_factory=list)
     # Characters on the account that have no usable assets token yet.
     characters_without_token: list = field(default_factory=list)
+    # Characters a bulk scan skipped because the live-ESI fallback budget ran
+    # out (they have a token but no corptools sync).
+    esi_fallback_skipped: list = field(default_factory=list)
     # Characters whose asset fetch errored (name -> reason).
     errors: dict[str, str] = field(default_factory=dict)
     # Set when a scan was cut short by the ESI error limit.
@@ -396,6 +395,26 @@ def resolve_contents(
     return _fetch_assets(token, character_id)
 
 
+def _ship_display_names(type_ids: set[int]) -> tuple[dict[int, str], dict[int, str]]:
+    """(type_id -> type name, type_id -> ship class name) for the given hulls.
+    The SDE mirror is authoritative for names it has; anything missing falls
+    back to eveuniverse (which `_ship_group_names` just loaded)."""
+    type_names = dict(
+        SdeType.objects.filter(type_id__in=type_ids).values_list("type_id", "name")
+    )
+    group_names = _ship_group_names(type_ids)
+    # Names for types the SDE mirror doesn't carry (e.g. before fitcheck_load_sde):
+    # _ship_group_names just loaded these into eveuniverse, so read them back.
+    missing_names = type_ids - set(type_names)
+    if missing_names:
+        from eveuniverse.models import EveType
+
+        type_names.update(
+            EveType.objects.filter(id__in=missing_names).values_list("id", "name")
+        )
+    return type_names, group_names
+
+
 def _build_owned_ships(
     character_id: int,
     char_name: str,
@@ -403,6 +422,9 @@ def _build_owned_ships(
     token,
     *,
     resolve_names: bool = True,
+    type_names: dict[int, str] | None = None,
+    group_names: dict[int, str] | None = None,
+    location_details: dict[int, dict] | None = None,
 ) -> list[OwnedShip]:
     """Turn a character's ship rows into OwnedShip listing entries (names +
     location). Shared by the self-inventory and member-inventory scans.
@@ -419,22 +441,16 @@ def _build_owned_ships(
 
     `resolve_names=True` (self-inventory, needs a token) still fetches custom
     ship names live - one cheap batched call per character. May raise on an ESI
-    error-limit from that call; callers catch it and set `error_limited`."""
+    error-limit from that call; callers catch it and set `error_limited`.
+
+    `type_names` / `group_names` / `location_details` accept precomputed maps
+    so a bulk scan resolves them ONCE across every character instead of ~4-6
+    small queries per hull owner; when omitted they are computed here (the
+    self-inventory path)."""
     by_item_id = {s["item_id"]: s for s in ships}
     type_ids = {s["type_id"] for s in ships}
-    type_names = dict(
-        SdeType.objects.filter(type_id__in=type_ids).values_list("type_id", "name")
-    )
-    group_names = _ship_group_names(type_ids)
-    # Names for types the SDE mirror doesn't carry (e.g. before fitcheck_load_sde):
-    # _ship_group_names just loaded these into eveuniverse, so read them back.
-    missing_names = type_ids - set(type_names)
-    if missing_names:
-        from eveuniverse.models import EveType
-
-        type_names.update(
-            EveType.objects.filter(id__in=missing_names).values_list("id", "name")
-        )
+    if type_names is None or group_names is None:
+        type_names, group_names = _ship_display_names(type_ids)
     root_ids = {_root_location(s, by_item_id) for s in ships}
     if resolve_names and token is not None:
         ship_names = _fetch_asset_names(token, character_id, [s["item_id"] for s in ships])
@@ -443,7 +459,8 @@ def _build_owned_ships(
         # token: custom ship name comes from the corptools cache when present
         # (template falls back to the hull type name otherwise).
         ship_names = {s["item_id"]: s.get("name", "") for s in ships}
-    location_details = _resolve_locations_cached(root_ids)
+    if location_details is None:
+        location_details = _resolve_locations_cached(root_ids)
     out: list[OwnedShip] = []
     for ship in ships:
         root = _root_location(ship, by_item_id)
@@ -464,54 +481,120 @@ def _build_owned_ships(
     return out
 
 
-def get_inventory_for_characters(characters, hull_type_id: int | None = None) -> ShipInventory:
+def get_inventory_for_characters(
+    characters, hull_type_id: int | None = None, tokens: dict | None = None
+) -> ShipInventory:
     """Same shape as `get_ship_inventory(user)` but iterates a set of EveCharacter
     rows we already pulled (alliance- or corp-scoped). `hull_type_id` pre-filters
     the asset scan to ships of that type only - a doctrine fitting only cares
     about one hull, so we skip the rest. Missing tokens land in the same
-    `characters_without_token` bucket as the self-inventory flow."""
+    `characters_without_token` bucket as the self-inventory flow.
+
+    The roster is NOT capped: corptools-synced characters come from ONE bulk
+    read (two queries at any alliance size). Only characters that need the
+    live-ESI full-tree fallback (token but no corptools sync) are bounded, by
+    the admin-tunable ScanParameters live-ESI budget - each such fetch costs
+    seconds inside the page load. Over-budget characters land in
+    `esi_fallback_skipped` so the page can say who was skipped and why.
+
+    `tokens` accepts the caller's `tokens_by_character` map so the roster-wide
+    token query runs once per request, not twice."""
+    from ..models import ScanParameters
+
+    from . import corptools_source
+
     inventory = ShipInventory()
     char_by_id = {c.character_id: c for c in characters}
-    tokens = tokens_by_character(char_by_id.keys())
+    if tokens is None:
+        tokens = tokens_by_character(char_by_id.keys())
     # Empty only when no hull was given AND the SDE mirror has no ships loaded;
     # resolve_ship_list then classifies owned assets via eveuniverse. A hull-scoped
     # scan always has {hull_type_id} here, so it never needs the mirror.
     ship_type_ids = _ship_type_id_set(hull_type_id)
+    # Bulk-prefetch every corptools-served character in two queries. Only
+    # possible with a ship-type whitelist; the no-whitelist classification path
+    # (fresh install, no hull) keeps the per-character flow below.
+    served: dict[int, list[dict]] = {}
+    use_bulk = bool(ship_type_ids) and _asset_source() in ("auto", "corptools")
+    if use_bulk:
+        served = corptools_source.bulk_ship_assets_for_characters(
+            char_by_id.keys(), ship_type_ids
+        )
+    esi_budget = ScanParameters.current().member_scan_esi_budget
+    esi_used = 0
+    resolved: list[tuple[int, str, list[dict], object]] = []
     for character_id, character in char_by_id.items():
         token = tokens.get(character_id)
         char_name = character.character_name if character else str(character_id)
-        try:
-            ships = resolve_ship_list(character_id, token, ship_type_ids)
-        except Exception as exc:  # pragma: no cover - network dependent
-            if is_error_limited(exc):
-                logger.error("ESI error limited during member scan; aborting at %s", char_name)
-                inventory.error_limited = True
-                break
-            logger.warning("Asset fetch failed for %s: %s", char_name, exc)
-            inventory.errors[char_name] = str(exc)
-            continue
-        if ships is None:
-            # Neither a granted token nor a corptools cache can supply this
-            # character's assets - nothing to scan.
+        if use_bulk and character_id in served:
+            # corptools serves this character: no per-character queries, no
+            # token needed, and the live-ESI budget is untouched.
+            ships = served[character_id]
+        elif use_bulk and (token is None or _asset_source() == "corptools"):
+            # Not corptools-served, and no live fallback is possible/allowed.
             inventory.characters_without_token.append(character)
             continue
-        if not ships:
-            continue
+        else:
+            # Live-ESI fallback (or the rare no-whitelist path). Each fetch
+            # pulls the character's whole asset tree and takes seconds, so it
+            # is budgeted - the page must finish inside the web worker timeout.
+            if token is not None and esi_used >= esi_budget:
+                inventory.esi_fallback_skipped.append(character)
+                continue
+            if token is not None:
+                esi_used += 1
+            try:
+                ships = resolve_ship_list(character_id, token, ship_type_ids)
+            except Exception as exc:  # pragma: no cover - network dependent
+                if is_error_limited(exc):
+                    logger.error(
+                        "ESI error limited during member scan; aborting at %s", char_name
+                    )
+                    inventory.error_limited = True
+                    break
+                logger.warning("Asset fetch failed for %s: %s", char_name, exc)
+                inventory.errors[char_name] = str(exc)
+                continue
+            if ships is None:
+                # Neither a granted token nor a corptools cache can supply this
+                # character's assets - nothing to scan.
+                inventory.characters_without_token.append(character)
+                continue
+        if ships:
+            resolved.append((character_id, char_name, ships, token))
+
+    # Resolve display names/locations ONCE across every character's ships
+    # (they share the hull on a doctrine scan), then build the listing rows.
+    # resolve_names=False: the bulk scan reads ship names/locations from local
+    # caches only (no live ESI) - resolving Citadel names live across every
+    # pilot's token is what trips the ESI error limit.
+    if resolved and not inventory.error_limited:
+        all_type_ids = {s["type_id"] for _, _, ships, _ in resolved for s in ships}
+        all_root_ids = set()
+        for _, _, ships, _ in resolved:
+            by_item_id = {s["item_id"]: s for s in ships}
+            all_root_ids |= {_root_location(s, by_item_id) for s in ships}
         try:
-            # resolve_names=False: the bulk scan reads ship names/locations from
-            # local caches only (no live ESI) - resolving Citadel names live across
-            # every pilot's token is what trips the ESI error limit.
-            inventory.ships.extend(
-                _build_owned_ships(
-                    character_id, char_name, ships, token, resolve_names=False
+            type_names, group_names = _ship_display_names(all_type_ids)
+            location_details = _resolve_locations_cached(all_root_ids)
+            for character_id, char_name, ships, token in resolved:
+                inventory.ships.extend(
+                    _build_owned_ships(
+                        character_id, char_name, ships, token,
+                        resolve_names=False,
+                        type_names=type_names,
+                        group_names=group_names,
+                        location_details=location_details,
+                    )
                 )
-            )
         except Exception as exc:  # pragma: no cover - network dependent
             if is_error_limited(exc):
-                logger.error("ESI error limited resolving names/locations; aborting member scan")
+                logger.error(
+                    "ESI error limited resolving names/locations; aborting member scan"
+                )
                 inventory.error_limited = True
-                break
-            raise
+            else:
+                raise
     inventory.ships.sort(key=lambda s: (s.character_name, s.type_name))
     return inventory
 
@@ -807,13 +890,20 @@ def _verify_mutated_items(items: list[FitItem], asset_rows: list[dict]) -> None:
     if not abyssal_ids:
         return
     to_verify = [r for r in asset_rows if r["type_id"] in abyssal_ids]
-    if len(to_verify) > _MAX_DYNAMIC_ITEM_LOOKUPS:
+    # Per-ship ceiling on dynamic-item (abyssal roll) lookups. Each is its own
+    # ESI call, so an unbounded fan-out across a bulk scan could burn the error
+    # budget; cap it and log what was skipped rather than silently truncating.
+    # Tunable: Settings -> Scan & Result Limits.
+    from ..models import ScanParameters
+
+    max_lookups = ScanParameters.current().abyssal_lookups_per_ship
+    if len(to_verify) > max_lookups:
         logger.warning(
             "Verifying only %s of %s abyssal modules on this ship (capping ESI fan-out); "
             "the rest stay unverified.",
-            _MAX_DYNAMIC_ITEM_LOOKUPS, len(to_verify),
+            max_lookups, len(to_verify),
         )
-        to_verify = to_verify[:_MAX_DYNAMIC_ITEM_LOOKUPS]
+        to_verify = to_verify[:max_lookups]
     rolls_by_item_id: dict[int, dict[int, float]] = {}
     for row in to_verify:
         try:
