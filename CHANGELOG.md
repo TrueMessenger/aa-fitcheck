@@ -48,6 +48,13 @@ version last got one.
   attributes and activate the lint immediately — otherwise it stays silently dormant until
   CCP's next build triggers the daily SDE reload (#67).
 
+### Fixed
+- Alliance Auth 5.2 compatibility: reviewer notifications, the review digest, and
+  compliance-snapshot audience resolution crashed with `AttributeError: 'Permission'
+  object has no attribute 'state_set'` under AA 5.2, whose new `Permission` proxy model
+  breaks `app_utils.users_with_permission`. Permission-holder resolution is now done
+  locally with forward lookups that work on both AA 5.1 and 5.2.
+
 ## [1.8.0] - 2026-07-03
 
 **Upgrade notes:** run `python manage.py migrate` (new migration `0031` — staleness version
