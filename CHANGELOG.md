@@ -37,6 +37,11 @@ version last got one.
 
 ## [Unreleased]
 
+### Fixed
+- Fittings & Standards page: the hull-class filter listed each ship class once per fitting
+  instead of once; doctrine filter pills now render in the app's rounded chip style matching
+  the Doctrines tab; filter order is now Category, Hull class, then search.
+
 ## [1.9.0] - 2026-07-06
 
 **Upgrade notes:** no new migration this release. Run `collectstatic` and restart the web
