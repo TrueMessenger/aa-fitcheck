@@ -17,7 +17,7 @@ from .models import DoctrineFit, FitSubmission
 def _reviewers():
     from django.contrib.auth.models import Permission, User
 
-    from app_utils.django import users_with_permission
+    from .services.permissions import users_with_permission
 
     users = User.objects.none()
     for codename in ("review_submissions", "secure_group_management"):
