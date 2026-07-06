@@ -34,7 +34,7 @@ def basic_access_users():
     the snapshot task and the Reports drill-down."""
     from django.contrib.auth.models import Permission
 
-    from app_utils.django import users_with_permission
+    from .permissions import users_with_permission
 
     permission = Permission.objects.get(
         content_type__app_label="fitcheck", codename="basic_access"
