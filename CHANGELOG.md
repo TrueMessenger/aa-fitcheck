@@ -37,6 +37,15 @@ version last got one.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-06
+
+**Upgrade notes:** run `python manage.py migrate` (adds migration 0032), then
+`collectstatic` and restart the web workers as usual. No new beat task, permission, or
+setting is required. Scan behaviour changes out of the box: the Member Inventory scan now
+covers **all** corptools-synced members (previously it silently stopped at the first 200
+alphabetically), and at most 25 members without a corptools sync are fetched live from ESI
+per scan — raise that under **Settings → Scan & Result Limits** if you need more.
+
 ### Added
 - **Scan & Result Limits** settings page (Settings tab, `manage_policies`): the previously
   hard-coded scan/result bounds are now admin-tunable in-app, each with an explanation of
