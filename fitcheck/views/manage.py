@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db.models import Count, F, Q
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -51,6 +52,7 @@ from ..services.substitutions import (
     possible_meta_groups_bulk,
     rollable_attributes_for_item,
 )
+from .common import paginate
 
 
 # Version-bump routing: each edit path bumps exactly the ladder it changed, so
@@ -69,19 +71,111 @@ from ..services.substitutions import (
 # ---------------------------------------------------------------- fittings ---
 
 
+# Sort keys accepted by `sort=` on the Fittings & Standards list, mapped to the
+# ORM field/annotation each toggles. `name` is always appended as a secondary
+# key so ties (e.g. equal doctrine counts) render in a stable order.
+STANDARDS_SORT_FIELDS = {
+    "name": "name",
+    "hull": "ship_type__name",
+    "doctrines": "doctrine_count",
+    "version": "version",
+    "created": "created_at",
+    "updated": "last_updated",
+}
+
+
 @login_required
 @permission_required("fitcheck.manage_doctrines")
 def standards_list(request):
-    """Fittings & Standards home: every fitting, doctrine-bound or standalone."""
+    """Fittings & Standards home: every fitting, doctrine-bound or standalone.
+
+    Filters (`q`, `doctrine`, `group`, `category`), sorting (`sort`) and
+    pagination all live in GET params so a filtered view is a shareable URL.
+    """
+    q = request.GET.get("q", "").strip()
+    doctrine_param = request.GET.get("doctrine", "").strip()
+    group_param = request.GET.get("group", "").strip()
+    category_param = request.GET.get("category", "").strip()
+    sort_param = request.GET.get("sort", "").strip()
+
     fits = (
         DoctrineFit.objects.select_related("ship_type", "compliance_policy")
         .prefetch_related("doctrines")
-        .order_by("name")
+        .annotate(
+            doctrine_count=Count("doctrines", distinct=True),
+            last_updated=Coalesce("bom_updated_at", "updated_at"),
+        )
     )
+
+    if q:
+        fits = fits.filter(name__icontains=q)
+    if doctrine_param == "none":
+        fits = fits.filter(doctrines__isnull=True)
+    elif doctrine_param.isdigit():
+        fits = fits.filter(doctrines__pk=int(doctrine_param)).distinct()
+    if group_param.isdigit():
+        fits = fits.filter(ship_type__eve_group_id=int(group_param))
+    if category_param.isdigit():
+        fits = fits.filter(categories__pk=int(category_param)).distinct()
+
+    sort_key = sort_param.lstrip("-")
+    order_field = STANDARDS_SORT_FIELDS.get(sort_key)
+    if order_field:
+        prefix = "-" if sort_param.startswith("-") else ""
+        fits = fits.order_by(f"{prefix}{order_field}", "name")
+    else:
+        sort_param = ""
+        fits = fits.order_by("name")
+
+    page_obj, elided_range, querystring = paginate(request, fits)
+
+    doctrines = list(
+        Doctrine.objects.annotate(fit_count=Count("fits", distinct=True)).order_by(
+            "-fit_count", "name"
+        )
+    )
+
+    ship_groups = sorted(
+        (
+            {"id": group_id, "name": group_name}
+            for group_id, group_name in DoctrineFit.objects.values_list(
+                "ship_type__eve_group_id", "ship_type__eve_group__name"
+            ).distinct()
+            if group_id is not None
+        ),
+        key=lambda g: g["name"] or "",
+    )
+    categories = DoctrineCategory.objects.order_by("name")
+
+    no_doctrine_params = request.GET.copy()
+    no_doctrine_params.pop("doctrine", None)
+    no_doctrine_params.pop("page", None)
+    no_sort_params = request.GET.copy()
+    no_sort_params.pop("sort", None)
+    no_sort_params.pop("page", None)
+
     return render(
         request,
         "fitcheck/standards/list.html",
-        {"fits": fits, "page_title": _("Fittings & Standards")},
+        {
+            "page_obj": page_obj,
+            "elided_range": elided_range,
+            "querystring": querystring,
+            "doctrines": doctrines,
+            "pill_doctrines": doctrines[:8],
+            "overflow_doctrines": doctrines[8:],
+            "ship_groups": ship_groups,
+            "categories": categories,
+            "active_q": q,
+            "active_doctrine": doctrine_param,
+            "active_group": group_param,
+            "active_category": category_param,
+            "active_sort": sort_param,
+            "has_filters": bool(q or doctrine_param or group_param or category_param),
+            "qs_no_doctrine": no_doctrine_params.urlencode(),
+            "qs_no_sort": no_sort_params.urlencode(),
+            "page_title": _("Fittings & Standards"),
+        },
     )
 
 

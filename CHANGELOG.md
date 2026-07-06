@@ -38,6 +38,8 @@ version last got one.
 ## [Unreleased]
 
 ### Added
+- Fittings & Standards page: doctrine/hull-class/category filters, name search, sortable
+  columns, standalone-fit filter, and pagination (50/page).
 - Import-time slot lint: importing, updating, or re-syncing a fitting standard now warns when
   the fit exceeds the hull's slot layout (e.g. nine low-slot modules on a six-low hull) —
   warn-only, nothing is rejected; Strategic Cruisers are exempt (subsystem-modified layouts).
