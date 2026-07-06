@@ -37,6 +37,15 @@ version last got one.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-06
+
+**Upgrade notes:** no new migration this release. Run `collectstatic` and restart the web
+workers as usual. To activate the new import slot lint immediately, run
+`python manage.py fitcheck_load_sde --force` once — otherwise it stays dormant until CCP's
+next build triggers the daily SDE reload. If you are upgrading Alliance Auth to 5.2.x,
+upgrade aa-fitcheck to this version **first or at the same time** — older aa-fitcheck
+versions crash on AA 5.2 (see Fixed below).
+
 ### Added
 - Fittings & Standards page: doctrine/hull-class/category filters, name search, sortable
   columns, standalone-fit filter, and pagination (50/page).
