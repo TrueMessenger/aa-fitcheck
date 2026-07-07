@@ -55,6 +55,10 @@ version last got one.
   policy settings on every fitting in the doctrine at once (with an impact confirmation
   showing how many fittings are affected), and newly attached or re-synced fittings pick it
   up automatically.
+- The Secure Groups compliance filter gains a grandfather window (`Enforce from`): attach it
+  to an existing group without triggering a purge - members pass until the chosen date while
+  the group audit shows who still needs a fit audit; the filter is now manageable in Django
+  admin.
 
 ### Fixed
 - Bulk audits now surface a warning when the per-ship abyssal lookup cap truncated

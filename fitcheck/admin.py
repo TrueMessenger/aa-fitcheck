@@ -14,6 +14,10 @@ from .models import (
     SdeType,
     SubmissionActionLog,
 )
+from .models.securegroups import SECUREGROUPS_INSTALLED
+
+if SECUREGROUPS_INSTALLED:
+    from .models import FitComplianceFilter
 
 
 @admin.register(DoctrineCategory)
@@ -125,3 +129,20 @@ class SdeTypeAdmin(admin.ModelAdmin):
 @admin.register(SdeLoadRecord)
 class SdeLoadRecordAdmin(admin.ModelAdmin):
     list_display = ("sde_build", "loaded_at", "type_count")
+
+
+if SECUREGROUPS_INSTALLED:
+
+    @admin.register(FitComplianceFilter)
+    class FitComplianceFilterAdmin(admin.ModelAdmin):
+        list_display = (
+            "name",
+            "doctrine",
+            "fit",
+            "require_approved",
+            "require_current",
+            "enforce_from",
+        )
+        list_select_related = ("doctrine", "fit")
+        search_fields = ("name",)
+        raw_id_fields = ("doctrine", "fit")

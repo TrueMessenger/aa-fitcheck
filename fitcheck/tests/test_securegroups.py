@@ -4,9 +4,13 @@ Runs only meaningfully with allianceauth-securegroups installed; the dev/test
 site (testauth) installs it, so the suite exercises the real filter.
 """
 
+from datetime import timedelta
+
+from django.contrib.admin.sites import site as admin_site
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.utils import timezone
 
 from ..constants import Section
 from ..models import FitSubmission
@@ -100,6 +104,54 @@ class AuditFilterTests(FilterTestCase):
         out = self._filter().audit_filter(users)
         # defaultdict: an unseen user id still answers False.
         self.assertFalse(out[999999]["check"])
+
+
+class GrandfatherWindowTests(FilterTestCase):
+    def test_future_enforce_from_passes_non_compliant_user(self):
+        self._submit(self.pilot, SHORT_EFT)
+        f = self._filter(enforce_from=timezone.now() + timedelta(days=90))
+        self.assertTrue(f.process_filter(self.pilot))
+
+    def test_future_enforce_from_passes_user_with_no_submission(self):
+        f = self._filter(enforce_from=timezone.now() + timedelta(days=90))
+        self.assertTrue(f.process_filter(self.other))
+
+    def test_future_enforce_from_audit_all_check_true(self):
+        self._submit(self.pilot)  # compliant
+        self._submit(self.other, SHORT_EFT)  # non-compliant
+        f = self._filter(enforce_from=timezone.now() + timedelta(days=90))
+        users = User.objects.filter(pk__in=[self.pilot.pk, self.other.pk])
+        out = f.audit_filter(users)
+
+        self.assertTrue(out[self.pilot.pk]["check"])
+        self.assertEqual(
+            out[self.pilot.pk]["message"], FitSubmission.Verdict.COMPLIANT.label
+        )
+        self.assertTrue(out[self.other.pk]["check"])
+        self.assertIn("Grandfathered until", out[self.other.pk]["message"])
+        # defaultdict path: a user id iter_user_compliance never returned a
+        # result for still has to pass during the window.
+        self.assertTrue(out[999999]["check"])
+        self.assertIn("Grandfathered until", out[999999]["message"])
+
+    def test_past_enforce_from_behaves_like_no_window(self):
+        self._submit(self.pilot, SHORT_EFT)
+        self._submit(self.other)
+        f = self._filter(enforce_from=timezone.now() - timedelta(days=1))
+        self.assertFalse(f.process_filter(self.pilot))
+        self.assertTrue(f.process_filter(self.other))
+
+    def test_enforce_from_none_is_unchanged(self):
+        self._submit(self.pilot, SHORT_EFT)
+        f = self._filter(enforce_from=None)
+        self.assertFalse(f.process_filter(self.pilot))
+
+
+class AdminRegistrationTests(FilterTestCase):
+    def test_filter_is_registered_in_admin(self):
+        from ..models import FitComplianceFilter
+
+        self.assertIn(FitComplianceFilter, admin_site._registry)
 
 
 class ValidationTests(FilterTestCase):
