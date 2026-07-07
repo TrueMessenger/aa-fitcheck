@@ -1260,6 +1260,62 @@ def doctrine_assign_fits_bulk(request, doctrine_pk: int):
     return redirect("fitcheck:doctrine_detail", doctrine_pk=doctrine.pk)
 
 
+@login_required
+@permission_required("fitcheck.manage_doctrines")
+def doctrine_apply_policy(request, doctrine_pk: int):
+    """Apply a policy preset to every fitting assignment in a doctrine at
+    once. GET shows an impact-confirmation page (how many fittings/module
+    policies will be overwritten); POST performs the bulk apply and records
+    the preset as the doctrine's standing policy."""
+    from ..models import FitAssignment
+
+    doctrine = get_object_or_404(Doctrine, pk=doctrine_pk)
+    policy_pk = request.POST.get("policy") if request.method == "POST" else request.GET.get("policy")
+    policy = (
+        CompliancePolicy.objects.filter(pk=policy_pk, disabled_at__isnull=True).first()
+        if policy_pk
+        else None
+    )
+    if policy is None:
+        messages.error(request, _("Pick a policy first."))
+        return redirect("fitcheck:doctrine_detail", doctrine_pk=doctrine.pk)
+
+    if request.method == "POST":
+        from ..services.policies import apply_policy_to_doctrine
+
+        assignments_touched, items_updated = apply_policy_to_doctrine(doctrine, policy)
+        messages.success(
+            request,
+            _(
+                "Applied '%(policy)s' to %(assignments)s fitting(s) (%(items)s module "
+                "policies updated). Pending submissions are now stale - use Recheck "
+                "Stale to re-grade them."
+            )
+            % {
+                "policy": policy.name,
+                "assignments": assignments_touched,
+                "items": items_updated,
+            },
+        )
+        return redirect("fitcheck:doctrine_detail", doctrine_pk=doctrine.pk)
+
+    assignments = list(
+        FitAssignment.objects.filter(doctrine=doctrine)
+        .select_related("fit")
+        .order_by("fit__name")
+    )
+    return render(
+        request,
+        "fitcheck/doctrine_apply_policy_confirm.html",
+        {
+            "doctrine": doctrine,
+            "policy": policy,
+            "assignments": assignments,
+            "page_title": _("Apply Policy Preset"),
+        },
+    )
+
+
 def _resolve_target_charset(user):
     """Return the EveCharacter queryset this user is allowed to inventory.
 

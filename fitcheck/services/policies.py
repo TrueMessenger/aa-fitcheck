@@ -6,7 +6,7 @@ from __future__ import annotations
 from django.db import transaction
 
 from ..constants import LEEWAY_SECTIONS, Section
-from ..models import CompliancePolicy, DoctrineFit
+from ..models import CompliancePolicy, Doctrine, DoctrineFit, FitAssignment
 from ..models.doctrine import ENFORCEMENT_TO_POLICY, EnforcementMode, SubstitutionPolicy
 
 # Pre-built policies seeded by migration 0022 (is_builtin=True). Pure data so the
@@ -122,6 +122,35 @@ def seed_fields_for_section(policy: CompliancePolicy | None, section: str) -> di
     return {"policy": SubstitutionPolicy.VARIANTS}
 
 
+def _apply_policy_rules(items, policy: CompliancePolicy) -> tuple[int, dict | None]:
+    """Write each of `policy`'s slot rules onto `items` (a DoctrineFitItem or
+    AssignmentItemPolicy queryset/related manager), section by section.
+
+    Returns the number of rows updated and, if the policy carries a CARGO
+    rule, the `{"charge_policy", "charge_min_quantity_pct"}` fields it implies
+    (None otherwise) - the CARGO rule also governs the synthesized
+    loaded-charge demand, which lives on the parent fit/assignment rather than
+    a per-item row, so the caller applies it there. Shared by
+    `apply_policy_to_fit` and `apply_policy_to_assignment` so a bulk-applied
+    fit and a bulk-applied assignment snapshot end up configured the same way.
+    """
+    updated = 0
+    charge_fields: dict | None = None
+    for rule in policy.rules.all():
+        fields = {"policy": ENFORCEMENT_TO_POLICY[rule.enforcement]}
+        if rule.enforcement == EnforcementMode.GTE:
+            fields["allow_mutated"] = rule.allow_mutated
+        if rule.section in LEEWAY_SECTIONS:
+            fields["min_quantity_pct"] = rule.min_quantity_pct
+        updated += items.filter(section=rule.section).update(**fields)
+        if rule.section == Section.CARGO:
+            charge_fields = {
+                "charge_policy": ENFORCEMENT_TO_POLICY[rule.enforcement],
+                "charge_min_quantity_pct": rule.min_quantity_pct,
+            }
+    return updated, charge_fields
+
+
 @transaction.atomic
 def apply_policy_to_fit(fit: DoctrineFit, policy: CompliancePolicy) -> int:
     """Overwrite per-module policies on every item the policy's slot rules cover.
@@ -129,22 +158,56 @@ def apply_policy_to_fit(fit: DoctrineFit, policy: CompliancePolicy) -> int:
     Returns the number of items updated. The caller is responsible for bumping
     the fit version and re-checking pending submissions.
     """
-    updated = 0
+    updated, charge_fields = _apply_policy_rules(fit.items, policy)
     fit_fields = ["compliance_policy"]
-    for rule in policy.rules.all():
-        fields = {"policy": ENFORCEMENT_TO_POLICY[rule.enforcement]}
-        if rule.enforcement == EnforcementMode.GTE:
-            fields["allow_mutated"] = rule.allow_mutated
-        if rule.section in LEEWAY_SECTIONS:
-            fields["min_quantity_pct"] = rule.min_quantity_pct
-        updated += fit.items.filter(section=rule.section).update(**fields)
-        if rule.section == Section.CARGO:
-            # The CARGO rule also governs the synthesized loaded-charge demand
-            # (charges loaded in fitted modules with no explicit cargo line of
-            # their own) - keep it in step with the rest of the cargo policy.
-            fit.charge_policy = ENFORCEMENT_TO_POLICY[rule.enforcement]
-            fit.charge_min_quantity_pct = rule.min_quantity_pct
-            fit_fields += ["charge_policy", "charge_min_quantity_pct"]
+    if charge_fields is not None:
+        fit.charge_policy = charge_fields["charge_policy"]
+        fit.charge_min_quantity_pct = charge_fields["charge_min_quantity_pct"]
+        fit_fields += ["charge_policy", "charge_min_quantity_pct"]
     fit.compliance_policy = policy
     fit.save(update_fields=fit_fields)
     return updated
+
+
+@transaction.atomic
+def apply_policy_to_assignment(assignment: FitAssignment, policy: CompliancePolicy) -> int:
+    """Overwrite one FitAssignment's per-item policy snapshot from `policy`'s
+    slot rules - the per-(doctrine, fit) counterpart to `apply_policy_to_fit`.
+
+    Returns the number of AssignmentItemPolicy rows updated. Does NOT bump the
+    assignment's version - callers decide when dependent submissions should go
+    stale (e.g. `apply_policy_to_doctrine` bumps once per assignment after its
+    rules are applied; a future single-assignment apply endpoint would bump
+    immediately, like `assignment_resync` does).
+    """
+    updated, charge_fields = _apply_policy_rules(assignment.item_policies, policy)
+    if charge_fields is not None:
+        assignment.charge_policy = charge_fields["charge_policy"]
+        assignment.charge_min_quantity_pct = charge_fields["charge_min_quantity_pct"]
+        assignment.save(update_fields=["charge_policy", "charge_min_quantity_pct"])
+    return updated
+
+
+@transaction.atomic
+def apply_policy_to_doctrine(doctrine: Doctrine, policy: CompliancePolicy) -> tuple[int, int]:
+    """Apply `policy` to every FitAssignment in `doctrine`, then record it as
+    the doctrine's standing preset (new/re-synced assignments pick it up
+    automatically - see services.assignments).
+
+    This overwrites per-assignment customizations for the slot groups the
+    policy covers; `AssignmentItemOverride` rows (substitution exceptions) are
+    untouched, since they live independently of the policy fields. Each
+    touched assignment's version is bumped, so its doctrine's pending
+    submissions go stale and need a recheck.
+
+    Returns (assignments touched, item rows updated).
+    """
+    assignments_touched = 0
+    items_updated = 0
+    for assignment in doctrine.assignments.all():
+        items_updated += apply_policy_to_assignment(assignment, policy)
+        assignment.bump_version()
+        assignments_touched += 1
+    doctrine.compliance_policy = policy
+    doctrine.save(update_fields=["compliance_policy"])
+    return assignments_touched, items_updated

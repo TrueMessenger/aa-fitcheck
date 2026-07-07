@@ -148,6 +148,23 @@ class Doctrine(models.Model):
         db_index=True,
         help_text="Primary key of the source row in the `fittings` plugin, if imported.",
     )
+    # Forward reference as a string: CompliancePolicy is defined later in this
+    # module. The standing preset for this doctrine - applied to every fitting
+    # assignment's policy snapshot on demand (services.policies.
+    # apply_policy_to_doctrine), and automatically when a fitting is attached
+    # or re-synced (services.assignments).
+    compliance_policy = models.ForeignKey(
+        "CompliancePolicy",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="doctrines",
+        help_text=(
+            "Standing policy preset for this doctrine. Applied to every fitting "
+            "assignment's policy snapshot on demand, and automatically when a "
+            "fitting is attached or re-synced."
+        ),
+    )
 
     objects = DoctrineQuerySet.as_manager()
 
