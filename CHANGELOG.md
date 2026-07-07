@@ -37,6 +37,11 @@ version last got one.
 
 ## [Unreleased]
 
+### Fixed
+- Bulk audits now surface a warning when the per-ship abyssal lookup cap truncated
+  verification, and the compliance finding distinguishes cap-skipped rolls from missing
+  data (#48).
+
 ## [1.10.0] - 2026-07-06
 
 **Upgrade notes:** run `python manage.py migrate` (adds migration 0032), then

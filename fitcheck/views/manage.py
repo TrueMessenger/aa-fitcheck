@@ -1301,6 +1301,8 @@ def _audit_selected_ships(request, fit, ships, char_by_id, tokens, selected):
     max_audit_ships = ScanParameters.current().audit_ships_per_post
     graded: dict[int, dict] = {}
     rate_limited = False
+    capped_ships = 0
+    capped_modules = 0
     for cid, item_ids in wanted.items():
         if len(graded) >= max_audit_ships or rate_limited:
             break
@@ -1339,6 +1341,9 @@ def _audit_selected_ships(request, fit, ships, char_by_id, tokens, selected):
             # rejects a crafted/raced item_id that isn't this doctrine's hull.
             if fit.ship_type_id and parsed.ship_type_id != fit.ship_type_id:
                 continue
+            if parsed.abyssal_capped:
+                capped_ships += 1
+                capped_modules += parsed.abyssal_capped
             submission = submit_fit(
                 owner, fit, parsed,
                 source=FitSubmission.Source.ESI,
@@ -1351,6 +1356,17 @@ def _audit_selected_ships(request, fit, ships, char_by_id, tokens, selected):
         messages.warning(
             request,
             _("EVE's ESI rate limit was reached mid-audit - results are partial."),
+        )
+    if capped_ships:
+        messages.warning(
+            request,
+            _(
+                "Abyssal module verification was capped on %(ships)d ship(s) - "
+                "%(modules)d module(s) stayed unverified. Raise 'Abyssal lookups "
+                "per ship' under Settings -> Scan & Result Limits and re-run the "
+                "audit."
+            )
+            % {"ships": capped_ships, "modules": capped_modules},
         )
     if graded:
         messages.success(

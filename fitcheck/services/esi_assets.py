@@ -875,11 +875,15 @@ def fit_items_from_flags(rows) -> list[FitItem]:
     return items
 
 
-def _verify_mutated_items(items: list[FitItem], asset_rows: list[dict]) -> None:
+def _verify_mutated_items(items: list[FitItem], asset_rows: list[dict]) -> int:
     """ESI-verify abyssal module rolls using the public dynamic-items endpoint.
 
     Rolls are matched to the exact fitted module by asset item_id, so two
     abyssal modules of the same type can carry independent rolls.
+
+    Returns the number of abyssal lookups skipped by the per-ship cap (0 when
+    under it), so callers can surface truncation instead of it silently
+    reading as "no rolled stats provided".
     """
     abyssal_ids = set(
         SdeType.objects.filter(
@@ -888,7 +892,7 @@ def _verify_mutated_items(items: list[FitItem], asset_rows: list[dict]) -> None:
         ).values_list("type_id", flat=True)
     )
     if not abyssal_ids:
-        return
+        return 0
     to_verify = [r for r in asset_rows if r["type_id"] in abyssal_ids]
     # Per-ship ceiling on dynamic-item (abyssal roll) lookups. Each is its own
     # ESI call, so an unbounded fan-out across a bulk scan could burn the error
@@ -897,13 +901,20 @@ def _verify_mutated_items(items: list[FitItem], asset_rows: list[dict]) -> None:
     from ..models import ScanParameters
 
     max_lookups = ScanParameters.current().abyssal_lookups_per_ship
+    skipped = 0
     if len(to_verify) > max_lookups:
+        dropped = to_verify[max_lookups:]
+        skipped = len(dropped)
         logger.warning(
             "Verifying only %s of %s abyssal modules on this ship (capping ESI fan-out); "
             "the rest stay unverified.",
             max_lookups, len(to_verify),
         )
         to_verify = to_verify[:max_lookups]
+        dropped_item_ids = {r["item_id"] for r in dropped}
+        for item in items:
+            if item.source_item_id in dropped_item_ids:
+                item.mutation_capped = True
     rolls_by_item_id: dict[int, dict[int, float]] = {}
     for row in to_verify:
         try:
@@ -927,6 +938,7 @@ def _verify_mutated_items(items: list[FitItem], asset_rows: list[dict]) -> None:
         if rolls is not None and item.mutated_attributes is None:
             item.mutated_attributes = rolls
             item.mutation_source = SubmissionItem.MutationSource.ESI_VERIFIED
+    return skipped
 
 
 def get_active_implants(character_id: int) -> set[int] | None:
@@ -1001,7 +1013,7 @@ def build_parsed_fit(
         for a in fitted
     ]
     items = fit_items_from_flags(rows)
-    _verify_mutated_items(items, fitted)
+    abyssal_capped = _verify_mutated_items(items, fitted)
 
     # Frigate Escape Bay: battleships / navy BS / black ops / marauders carry
     # at most one frigate in this bay. Informational only - not fed to the
@@ -1037,4 +1049,5 @@ def build_parsed_fit(
         frigate_escape_bay_type_id=feb_type_id,
         source_ship_item_id=ship_item_id,
         pilot_implant_type_ids=implant_type_ids,
+        abyssal_capped=abyssal_capped,
     )

@@ -146,7 +146,9 @@ class EsiRateLimitTests(TestCase):
 
     def test_verify_mutated_items_caps_lookups(self):
         """H4: the per-ship abyssal verification fan-out is bounded by the
-        configurable ScanParameters budget."""
+        configurable ScanParameters budget, and the truncation is surfaced -
+        both via the returned skipped count and by flagging exactly the
+        dropped items so the UI can distinguish "capped" from "no rolls"."""
         from ..models import ScanParameters
         from ..services.esi_assets import _verify_mutated_items
 
@@ -156,10 +158,14 @@ class EsiRateLimitTests(TestCase):
         items, rows = self._abyssal(4 + 5)
         provider, client = self._dogma_client()
         with mock.patch.object(esi_assets, "esi_client", return_value=provider):
-            _verify_mutated_items(items, rows)
+            skipped = _verify_mutated_items(items, rows)
         self.assertEqual(
             client.Dogma.GetDogmaDynamicItemsTypeIdItemId.call_count, 4
         )
+        self.assertEqual(skipped, 5)
+        verified, dropped = items[:4], items[4:]
+        self.assertTrue(all(not item.mutation_capped for item in verified))
+        self.assertTrue(all(item.mutation_capped for item in dropped))
 
     def test_verify_mutated_items_reraises_on_error_limit(self):
         """H4/H3: error limit during dynamic-item verification aborts cleanly."""

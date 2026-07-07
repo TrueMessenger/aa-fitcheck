@@ -22,6 +22,10 @@ class FitItem:
     # mutated-roll verifier match rolls to the exact fitted module (two abyssal
     # modules of the same type can carry different rolls).
     source_item_id: int | None = None
+    # True when this is an abyssal module whose roll lookup was skipped by the
+    # per-ship abyssal-lookups cap (Settings -> Scan & Result Limits), so
+    # mutated_attributes stays None for a reason other than an ESI miss.
+    mutation_capped: bool = False
 
 
 @dataclass
@@ -49,6 +53,10 @@ class ParsedFit:
     # ESI asset item_id of the ship this was built from (inventory path), so a
     # later Re-check can re-pull the same ship's latest fit. None for EFT pastes.
     source_ship_item_id: int | None = None
+    # Count of abyssal roll lookups skipped by the per-ship cap on this ship
+    # (0 = none skipped). Lets callers surface truncation instead of it
+    # silently reading as "no rolled stats provided".
+    abyssal_capped: int = 0
 
     @property
     def has_blocking_errors(self) -> bool:
