@@ -1392,6 +1392,8 @@ def member_inventory_for_fit(request, fit_pk: int):
     (toggle to only show pilots with a valid asset-scope token)."""
     from allianceauth.eveonline.models import EveCorporationInfo
 
+    from ..services import esi_assets
+    from ..services.corptools_source import corptools_installed
     from ..services.esi_assets import (
         get_inventory_for_characters,
         tokens_by_character,
@@ -1429,6 +1431,25 @@ def member_inventory_for_fit(request, fit_pk: int):
     if granted_only:
         characters = [c for c in characters if c.character_id in tokens]
     char_by_id = {c.character_id: c for c in characters}
+
+    # Upfront notice when nothing can serve this scan but live ESI and the
+    # budget will truncate it. Only token-granted pilots cost budget (tokenless
+    # ones are skipped outright), so count those - not the whole roster.
+    esi_budget = ScanParameters.current().member_scan_esi_budget
+    source = esi_assets._asset_source()
+    tokened = sum(1 for c in characters if c.character_id in tokens)
+    if (
+        (source == "esi" or (source == "auto" and not corptools_installed()))
+        and tokened > esi_budget
+    ):
+        messages.info(
+            request,
+            _("corptools is not serving this install, so the member scan runs on "
+              "live ESI and only the first %(budget)d token-granted pilot(s) are "
+              "scanned per page load. Install aa-corptools for alliance-scale scans, "
+              "or narrow the roster with the filters above.")
+            % {"budget": esi_budget},
+        )
 
     # Phase 1 - list ships of this hull in scope. No grading: this reads only the
     # narrow ship rows (corptools) or the ship slice of a live fetch (ESI).

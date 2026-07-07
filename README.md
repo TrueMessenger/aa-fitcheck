@@ -177,6 +177,12 @@ skipped in the member scan and appears in the "characters without a token" secti
 pilots to grant the asset scope (prompted by the "My Ships" feature they already use) is the
 easiest way to expand coverage without requiring corptools.
 
+**Note:** corptools is **strongly recommended at alliance scale.** Without it, every token-granted pilot
+in a member scan costs one full ESI asset-tree fetch (ESI has no server-side type filter), so
+scans are limited by the `member_scan_esi_budget` setting (default 25 pilots per page load). When
+corptools is absent or the source is forced to `esi`, an upfront notice appears on the Member
+Inventory page, and the settings show the current budget limit.
+
 ### Review Workflow
 
 - Filterable review queue (by pilot, doctrine, verdict, status).
@@ -390,8 +396,10 @@ Scan and result bounds are likewise managed in-app, on the **Scan & Result Limit
 (Settings tab, admin-only): the Member Inventory live-ESI fallback budget (members without a
 corptools sync each cost a full asset-tree fetch inside the page load — corptools-synced
 members are always scanned and never count against it), ships graded per audit click,
-abyssal-verification lookups per ship, and the page size of the paginated lists. Each field
-explains the impact of raising it.
+abyssal-verification lookups per ship, and the page size of the paginated lists. When
+corptools is absent or the asset source is forced to `esi`, the live-ESI operation is limited
+to the configured budget, and an upfront notice is shown on the Member Inventory page. Each
+field explains the impact of raising it.
 
 ---
 
