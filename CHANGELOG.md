@@ -38,6 +38,12 @@ version last got one.
 ## [Unreleased]
 
 ### Added
+- The Test a Fit page's check-only sandbox is now available to every member who can see
+  the fitting (previously staff-only): paste any fit as EFT text for an instant graded
+  result with nothing saved, no review-queue row, and no reviewer notification - useful
+  for checking a fit before buying it. Creating a real submission from a paste remains
+  restricted to doctrine managers and reviewers; member submissions that count still
+  come from ESI inventory validation.
 - The "Missing Modules" deficit list on the submission page is now available to the
   submission's owner as a copy-to-clipboard multibuy button - a failed self-audit ends
   with a paste-ready shopping list of just the gap between the fit and the standard.

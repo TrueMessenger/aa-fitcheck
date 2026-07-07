@@ -38,7 +38,8 @@ class MutatedFlowTestCase(TestCase):
             policy=SubstitutionPolicy.MEET_OR_BEAT,
             checked_attributes=[Attrs.WEB_STRENGTH, Attrs.WEB_RANGE],
         )
-        # The EFT test bench is reviewer/manager-only; members validate from inventory.
+        # Reviewer perms so this flow exercises the PERSISTING submit path
+        # (plain members only get check-only mode on the test bench).
         cls.member = create_user("member", permissions=["basic_access", "review_submissions"])
         cls.url = reverse("fitcheck:submit_eft", args=[cls.fit.pk])
 

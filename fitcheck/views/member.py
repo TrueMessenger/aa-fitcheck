@@ -187,8 +187,9 @@ def fit_detail(request, fit_pk: int):
             "all_doctrines": all_doctrines,
             "assigned_doctrine_ids": assigned_ids,
             "doctrine_chips": doctrine_chips,
-            "can_test": request.user.has_perm("fitcheck.manage_doctrines")
-            or _can_review(request.user),
+            # Everyone with visibility may open the test bench; the page itself
+            # limits non-staff to the check-only sandbox.
+            "can_test": True,
             "page_title": fit.name,
         },
     )
@@ -238,17 +239,25 @@ def _apply_manual_stats(parsed, specs, post_data):
 @login_required
 @permission_required("fitcheck.basic_access")
 def submit_eft(request, fit_pk: int):
-    """EFT-paste test bench for fitting/doctrine staff. Members validate their
-    real ships from their ESI inventory instead (Pilot Fittings tab)."""
+    """EFT-paste test bench. Staff (doctrine managers / reviewers) can create
+    real submissions from a paste; any member who can see the fit gets the
+    check-only sandbox - graded by the engine, nothing persisted, no reviewer
+    involvement. Member submissions that count still come from ESI inventory
+    validation (Pilot Fittings tab)."""
     fit = _visible_fit_or_404(request, fit_pk)
-    if not (request.user.has_perm("fitcheck.manage_doctrines") or _can_review(request.user)):
+    can_submit_paste = request.user.has_perm(
+        "fitcheck.manage_doctrines"
+    ) or _can_review(request.user)
+    # Sandbox mode: run the engine and show the findings without creating
+    # a submission - no review-queue row, no audit log.
+    check_only = (
+        request.method == "POST" and request.POST.get("mode") == "check_only"
+    )
+    if request.method == "POST" and not check_only and not can_submit_paste:
         raise PermissionDenied
     gradeable = gradeable_doctrines_for(fit, request.user)
     if request.method == "POST":
         eft_text = request.POST.get("eft_text", "").strip()
-        # Sandbox mode: run the engine and show the findings without creating
-        # a submission - no review-queue row, no audit log.
-        check_only = request.POST.get("mode") == "check_only"
         # Selected doctrines to grade against (each carries its own policy
         # snapshot). Restricted to this fit's gradeable set; empty = grade
         # once against the fit's source-level defaults.
@@ -359,7 +368,12 @@ def submit_eft(request, fit_pk: int):
     return render(
         request,
         "fitcheck/submit_eft.html",
-        {"fit": fit, "gradeable_doctrines": gradeable, "page_title": _("Test a Fit")},
+        {
+            "fit": fit,
+            "gradeable_doctrines": gradeable,
+            "can_submit_paste": can_submit_paste,
+            "page_title": _("Test a Fit"),
+        },
     )
 
 
