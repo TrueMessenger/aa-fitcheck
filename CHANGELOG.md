@@ -37,6 +37,12 @@ version last got one.
 
 ## [Unreleased]
 
+### Added
+- Member Inventory scans now show an upfront notice when corptools is absent or the asset
+  source is forced to live ESI, explaining that the scan is limited to the configured
+  budget (`member_scan_esi_budget`, default 25 pilots per page load). README documentation
+  emphasizes that corptools is strongly recommended at alliance scale (#47).
+
 ### Fixed
 - Bulk audits now surface a warning when the per-ship abyssal lookup cap truncated
   verification, and the compliance finding distinguishes cap-skipped rolls from missing

@@ -406,3 +406,72 @@ class TestMemberInventoryView(TestCase):
         self.assertIn("Ungranted J", content)
         self.assertNotIn("Ungranted K", content)
         self.assertIn("and 5 more", content)
+
+    def _esi_fallback_response(
+        self, username, char_id_base, n_members, n_tokened, corptools_present
+    ):
+        """GET the member-inventory page with the asset source forced to the
+        live-ESI regime knobs under test: n_members in scope, the first
+        n_tokened of them holding an asset token, corptools present or not."""
+        user = create_user(username)
+        _attach_main(user, alliance_id=99, corporation_id=2001)
+        user = _grant(user, "view_member_inventory")
+        fit = create_fit(None, T.HARBINGER, name=f"Budget {username}")
+
+        char_ids = [char_id_base + i for i in range(n_members)]
+        for cid in char_ids:
+            _make_member(character_id=cid, alliance_id=99, corporation_id=2001)
+        tokens = {cid: object() for cid in char_ids[:n_tokened]}
+
+        with mock.patch(
+            "fitcheck.services.esi_assets.get_inventory_for_characters",
+            return_value=mock.Mock(
+                ships=[], characters_without_token=[],
+                esi_fallback_skipped=[], errors={},
+                error_limited=False,
+            ),
+        ), mock.patch(
+            "fitcheck.services.esi_assets.tokens_by_character",
+            return_value=tokens,
+        ), mock.patch(
+            "fitcheck.services.esi_assets._asset_source", return_value="auto"
+        ), mock.patch(
+            "fitcheck.services.corptools_source.corptools_installed",
+            return_value=corptools_present,
+        ):
+            self.client.force_login(user)
+            response = self.client.get(
+                reverse("fitcheck:member_inventory_for_fit", args=[fit.pk])
+            )
+        return response.content.decode()
+
+    def test_esi_fallback_notice_when_corptools_absent_and_auto_source(self):
+        """#47: with corptools absent (source auto) and more token-granted
+        pilots than the ESI budget, the page shows an upfront notice that the
+        scan is budget-limited."""
+        content = self._esi_fallback_response(
+            "alliance_auto_source", 20000,
+            n_members=30, n_tokened=30, corptools_present=False,
+        )
+        self.assertIn("corptools is not serving this install", content)
+        self.assertIn("live ESI", content)
+        self.assertIn("first 25", content)
+
+    def test_no_esi_fallback_notice_when_corptools_present(self):
+        """corptools serving the scan (source auto) means no live-ESI regime
+        notice, however large the roster."""
+        content = self._esi_fallback_response(
+            "alliance_with_corptools", 21000,
+            n_members=30, n_tokened=30, corptools_present=True,
+        )
+        self.assertNotIn("corptools is not serving this install", content)
+
+    def test_no_esi_fallback_notice_when_tokened_pilots_within_budget(self):
+        """Only token-granted pilots cost live-ESI budget, so a roster larger
+        than the budget with few tokened pilots must NOT trigger the notice
+        (tokenless pilots are skipped outright, never live-fetched)."""
+        content = self._esi_fallback_response(
+            "alliance_small_roster", 22000,
+            n_members=30, n_tokened=10, corptools_present=False,
+        )
+        self.assertNotIn("corptools is not serving this install", content)
