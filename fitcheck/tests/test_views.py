@@ -1177,3 +1177,58 @@ class TestSettingsHub(ViewTestCase):
         self.client.force_login(self.member)
         response = self.client.get(reverse("fitcheck:index"))
         self.assertNotContains(response, reverse("fitcheck:settings_home"))
+
+
+class TestOwnerDeficitMultibuy(ViewTestCase):
+    """The Missing Modules deficit list is self-serve for the submission owner."""
+
+    EFT_SHORT = "[Harbinger, Mine]\nHeat Sink II\n"  # needs 3, has 1 -> deficit 2
+
+    def _deficit_submission(self):
+        # Source-default grading: the factory scaffolding links doctrines via
+        # the bare M2M only (no assignment snapshot to grade against).
+        return submit_fit(
+            self.member,
+            self.fit,
+            parse_eft(self.EFT_SHORT),
+            eft_text=self.EFT_SHORT,
+        )
+
+    def test_owner_sees_copy_button_on_deficit(self):
+        sub = self._deficit_submission()
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:submission_detail", args=[sub.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "copy-missing-btn")
+        self.assertIn("Heat Sink II 2", response.context["missing_multibuy"])
+
+    def test_owner_gets_no_button_without_deficit(self):
+        sub = self._member_submission()  # compliant via substitutes - no gap
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:submission_detail", args=[sub.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "copy-missing-btn")
+        self.assertEqual(response.context["missing_multibuy"], "")
+
+    def test_reviewer_keeps_fill_comment_variant(self):
+        sub = self._deficit_submission()
+        self.client.force_login(self.reviewer)
+        response = self.client.get(
+            reverse("fitcheck:submission_detail", args=[sub.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "fill-missing-btn")
+        self.assertNotContains(response, "copy-missing-btn")
+
+    def test_unrelated_member_still_denied(self):
+        sub = self._deficit_submission()
+        other = create_user("other-pilot")
+        self.client.force_login(other)
+        response = self.client.get(
+            reverse("fitcheck:submission_detail", args=[sub.pk])
+        )
+        self.assertEqual(response.status_code, 403)

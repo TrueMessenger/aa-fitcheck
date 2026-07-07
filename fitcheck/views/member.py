@@ -757,13 +757,14 @@ def submission_detail(request, submission_pk: int):
             "submitted_items": submitted_items,
             "policy_assignment_pk": policy_assignment_pk,
             "can_review": can_review,
+            "is_owner": is_owner,
             "can_delete": is_owner and submission.status == FitSubmission.Status.PENDING,
             "can_recheck": is_owner,
             "show_feb_panel": show_feb_panel,
             "feb_type": feb_type,
             "log_entries": submission.log.select_related("actor"),
             "missing_multibuy": (
-                build_deficit_multibuy(submission) if can_review else ""
+                build_deficit_multibuy(submission) if (can_review or is_owner) else ""
             ),
             "page_title": _("Submission #%(pk)s") % {"pk": submission.pk},
         },
