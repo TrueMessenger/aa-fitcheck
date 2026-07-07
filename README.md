@@ -30,6 +30,7 @@ allows it. Mutated/abyssal modules are compared attribute-by-attribute using EVE
 - [Integration (Python API)](#integration-python-api)
 - [Roadmap](#roadmap)
 - [Development](#development)
+- [FAQ](FAQ.md)
 
 ---
 
