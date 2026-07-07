@@ -37,6 +37,20 @@ version last got one.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-07-07
+
+**Upgrade notes:** run `python manage.py migrate` (adds migrations 0033–0037), then
+`collectstatic` and restart the web workers as usual. No new beat task, permission, or
+setting is required. Policy behaviour changes: the built-in "Standard" preset's cargo
+leeway is now 25% on future applications (already-applied per-module policies are
+untouched), and fitting imports now seed from a chosen policy preset. If an install has
+been seeing very high audit failure rates driven by cargo/ammo findings, the intended
+recovery after upgrading is: pick or create a suitably lenient policy preset, use
+**Apply to Doctrine** on the doctrine page (an impact confirmation lists the affected
+fittings), then **Recheck Stale**. The Secure Groups compliance filter can now be
+attached to an already-populated group without a purge by setting its new **Enforce
+from** date (Django admin).
+
 ### Added
 - Member Inventory scans now show an upfront notice when corptools is absent or the asset
   source is forced to live ESI, explaining that the scan is limited to the configured
