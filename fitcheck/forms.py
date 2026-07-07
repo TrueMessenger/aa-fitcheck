@@ -24,7 +24,7 @@ from .models import (
     ScanParameters,
     SdeType,
 )
-from .models.doctrine import EnforcementMode, SubstitutionPolicy
+from .models.doctrine import EnforcementMode
 
 # Full static fallback list (every labelled non-abyssal meta group), derived from
 # the single source of truth in constants. The policy editor narrows this per item
@@ -167,12 +167,23 @@ class FitImportForm(forms.Form):
         widget=forms.TextInput(attrs={"class": "form-control"}),
         help_text=_("Leave empty to use the name from the EFT header."),
     )
-    default_policy = forms.ChoiceField(
-        label=_("Default Substitution Policy"),
-        choices=SubstitutionPolicy.choices,
-        initial=SubstitutionPolicy.VARIANTS,
+    # Disabled policies are retired and must not be offered for applying (same
+    # queryset/pattern as ApplyPolicyForm). Initial defaults to the built-in
+    # "Standard" preset via a callable, so a fresh install with no builtins
+    # seeded yet doesn't crash importing this module.
+    policy = forms.ModelChoiceField(
+        queryset=CompliancePolicy.objects.filter(disabled_at__isnull=True),
+        label=_("Policy preset"),
+        initial=lambda: CompliancePolicy.objects.filter(
+            name="Standard", is_builtin=True, disabled_at__isnull=True
+        )
+        .values_list("pk", flat=True)
+        .first(),
         widget=forms.Select(attrs={"class": "form-select"}),
-        help_text=_("Applied to every module; fine-tune per module afterwards."),
+        help_text=_(
+            "Substitution and quantity rules applied per slot group to the "
+            "imported modules."
+        ),
     )
     strict_extras = forms.BooleanField(
         label=_("Strict Extras"),
@@ -303,12 +314,11 @@ class FitSettingsForm(forms.ModelForm):
         # orphan/skip those snapshots. Edit doctrine links via fit_set_doctrines.
         fields = [
             "name", "description", "is_active", "strict_extras",
-            "default_policy", "feb_frigate_type_ids",
+            "feb_frigate_type_ids",
         ]
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "description": forms.Textarea(attrs={"rows": 2, "class": "form-control"}),
-            "default_policy": forms.Select(attrs={"class": "form-select"}),
         }
 
     def __init__(self, *args, **kwargs):

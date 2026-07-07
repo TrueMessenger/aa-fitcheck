@@ -296,9 +296,6 @@ class DoctrineFit(models.Model):
         default=False,
         help_text="When set, modules outside the doctrine fail the check instead of warning.",
     )
-    default_policy = models.CharField(
-        max_length=2, choices=SubstitutionPolicy.choices, default=SubstitutionPolicy.VARIANTS
-    )
     compliance_policy = models.ForeignKey(
         CompliancePolicy,
         null=True,

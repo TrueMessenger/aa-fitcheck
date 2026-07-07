@@ -69,6 +69,13 @@ from .common import paginate
 # manually from the Recheck Stale page to keep the Celery queue from
 # saturating when policy is iterated rapidly.
 
+# FitSettingsForm fields that actually affect grading (name/description/
+# is_active don't); fit_settings() only bumps the version - staling every
+# pending submission - when one of these changed. feb_frigate_group_ids isn't
+# a model field, but a class picked there feeds into feb_frigate_type_ids on
+# save, so it counts too.
+_FIT_SETTINGS_GRADING_FIELDS = {"strict_extras", "feb_frigate_type_ids", "feb_frigate_group_ids"}
+
 
 # ---------------------------------------------------------------- fittings ---
 
@@ -202,15 +209,14 @@ def standard_import(request, doctrine_pk: int | None = None):
                     request.user,
                     doctrine=doctrine,
                     name=form.cleaned_data["name"] or None,
+                    policy=form.cleaned_data["policy"],
                 )
             except DoctrineImportError as exc:
                 for error in exc.errors or [str(exc)]:
                     form.add_error("eft_text", error)
             else:
-                fit.default_policy = form.cleaned_data["default_policy"]
                 fit.strict_extras = form.cleaned_data["strict_extras"]
-                fit.save(update_fields=["default_policy", "strict_extras"])
-                fit.items.update(policy=fit.default_policy)
+                fit.save(update_fields=["strict_extras"])
                 messages.success(
                     request, _("Fitting '%(name)s' imported.") % {"name": fit.name}
                 )
@@ -258,11 +264,17 @@ def fit_settings(request, fit_pk: int):
         form = FitSettingsForm(request.POST, instance=fit)
         if form.is_valid():
             form.save()
-            fit.bump_version()  # fit-wide settings affect every grading path
-            messages.success(
-                request,
-                _("Fitting saved. Pending submissions are now stale - use Recheck Stale to re-grade them."),
-            )
+            if _FIT_SETTINGS_GRADING_FIELDS & set(form.changed_data):
+                fit.bump_version()  # a grading-relevant field changed
+                messages.success(
+                    request,
+                    _(
+                        "Fitting saved. Pending submissions are now stale - "
+                        "use Recheck Stale to re-grade them."
+                    ),
+                )
+            else:
+                messages.success(request, _("Fitting saved."))
             return redirect("fitcheck:fit_detail", fit_pk=fit.pk)
     else:
         form = FitSettingsForm(instance=fit)

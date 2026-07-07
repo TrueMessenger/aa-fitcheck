@@ -49,11 +49,25 @@ version last got one.
   longer always a hard exact-quantity requirement - the demand is now governed by the fit's
   (or per-doctrine assignment's) charge substitution policy and minimum-quantity percent,
   same as an explicit cargo line.
+- Importing a fitting standard now applies a named compliance policy preset (built-in or
+  custom) to its modules, instead of a plain per-module substitution default.
 
 ### Fixed
 - Bulk audits now surface a warning when the per-ship abyssal lookup cap truncated
   verification, and the compliance finding distinguishes cap-skipped rolls from missing
   data (#48).
+- Importing a fitting straight into a doctrine now applies the chosen policy preset to the
+  doctrine's own policy snapshot; previously the snapshot was captured before the preset was
+  applied, so the doctrine kept the plain seed policy regardless of what was chosen (#98).
+
+### Changed
+- The built-in "Standard" compliance policy's cargo minimum-quantity leeway is now 25% (was
+  100%); this only changes what a future application of "Standard" sets, not any fitting's
+  already-applied per-module policy.
+- The fitting import form's "Default Substitution Policy" dropdown is replaced by a policy
+  preset picker, matching the picker already used to bulk-apply a policy to an existing fit.
+  `DoctrineFit.default_policy` is removed (migration drops the column); a freshly-imported
+  module without a chosen preset now seeds a plain "variant family" substitution instead.
 
 ## [1.10.0] - 2026-07-06
 

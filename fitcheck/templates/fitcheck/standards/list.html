@@ -169,7 +169,7 @@
                                 {% if fit.compliance_policy %}
                                     <i class="fa-solid fa-scale-balanced me-1"></i>{{ fit.compliance_policy.name }}
                                 {% else %}
-                                    {{ fit.get_default_policy_display }}
+                                    {% translate "None applied yet" %}
                                 {% endif %}
                             </td>
                             <td>{% translate "Fit" %} v{{ fit.version }}</td>
