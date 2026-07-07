@@ -41,15 +41,12 @@ def create_fit(
     doctrine: Doctrine | None,
     ship_type_id: int,
     name="Test Fit",
-    *,
-    default_policy=SubstitutionPolicy.VARIANTS,
     **kwargs,
 ) -> DoctrineFit:
     fit = DoctrineFit.objects.create(
         name=name,
         ship_type=EveType.objects.get(id=ship_type_id),
         eft_source="",
-        default_policy=default_policy,
         **kwargs,
     )
     if doctrine is not None:
@@ -73,6 +70,6 @@ def add_item(
         module_type=EveType.objects.get(id=type_id),
         quantity=quantity,
         charge_type=EveType.objects.get(id=charge_type_id) if charge_type_id else None,
-        policy=policy or fit.default_policy,
+        policy=policy or SubstitutionPolicy.VARIANTS,
         **kwargs,
     )

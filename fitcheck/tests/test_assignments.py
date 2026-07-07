@@ -419,7 +419,6 @@ class TestFitSettingsDoesNotEditDoctrines(TestCase):
             {
                 "name": "Brawl",
                 "description": "",
-                "default_policy": SubstitutionPolicy.VARIANTS,
                 # Smuggle a doctrines param - the form must ignore it entirely.
                 "doctrines": [str(self.other.pk)],
             },

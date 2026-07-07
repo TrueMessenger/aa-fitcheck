@@ -57,10 +57,11 @@ class UpdateFitBomTests(TestCase):
             hs.overrides.filter(alt_type_id=T.HEAT_SINK_IMPERIAL).exists()
         )
 
-        # Cap Recharger removed; Stasis Webifier added with default policy.
+        # Cap Recharger removed; Stasis Webifier added with the fallback policy
+        # (this fit has no compliance_policy applied, so new modules seed VARIANTS).
         self.assertFalse(fit.items.filter(module_type_id=T.CAP_RECHARGER_II).exists())
         web = fit.items.get(module_type_id=T.WEB_II)
-        self.assertEqual(web.policy, fit.default_policy)
+        self.assertEqual(web.policy, SubstitutionPolicy.VARIANTS)
 
         # Result summary by name.
         self.assertIn("Heat Sink II", result.carried)

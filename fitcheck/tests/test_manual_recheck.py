@@ -104,7 +104,6 @@ class TestAutoRecheckRemoved(ManualRecheckCase):
                     "name": self.fit.name,
                     "description": "tweak",
                     "is_active": "on",
-                    "default_policy": self.fit.default_policy,
                 },
                 follow=True,
             )

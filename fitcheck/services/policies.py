@@ -7,7 +7,7 @@ from django.db import transaction
 
 from ..constants import LEEWAY_SECTIONS, Section
 from ..models import CompliancePolicy, DoctrineFit
-from ..models.doctrine import ENFORCEMENT_TO_POLICY, EnforcementMode
+from ..models.doctrine import ENFORCEMENT_TO_POLICY, EnforcementMode, SubstitutionPolicy
 
 # Pre-built policies seeded by migration 0022 (is_builtin=True). Pure data so the
 # migration can consume it with historical model classes. Each rule: (enforcement,
@@ -54,9 +54,12 @@ BUILTIN_POLICIES: dict[str, dict] = {
         ),
     },
     "Standard": {
-        "description": "Variant-family substitutes (same meta family); fuel passes at 66%.",
+        "description": (
+            "Variant-family substitutes (same meta family); cargo passes at 25%, "
+            "fuel at 66%."
+        ),
         "rules": _rules(
-            module=(_ME, True, 100), drone=(_ME, True, 100), cargo=(_ME, True, 100),
+            module=(_ME, True, 100), drone=(_ME, True, 100), cargo=(_ME, True, 25),
             fuel=(_EX, True, 66), booster=(_ME, True, 100),
         ),
     },
@@ -99,6 +102,24 @@ def seed_builtin_policies(CompliancePolicyModel, PolicySlotRuleModel) -> list[st
         if was_created:
             created.append(name)
     return created
+
+
+def seed_fields_for_section(policy: CompliancePolicy | None, section: str) -> dict:
+    """Policy fields for a newly-materialised item in `section`, mirroring the
+    per-rule field selection `apply_policy_to_fit` uses so a freshly-imported
+    module and a bulk-applied one end up configured the same way. Falls back to
+    plain VARIANTS substitution when there's no policy yet (a standalone import
+    with no preset chosen) or the policy carries no rule for this section."""
+    if policy is not None:
+        rule = policy.rules.filter(section=section).first()
+        if rule is not None:
+            fields = {"policy": ENFORCEMENT_TO_POLICY[rule.enforcement]}
+            if rule.enforcement == EnforcementMode.GTE:
+                fields["allow_mutated"] = rule.allow_mutated
+            if section in LEEWAY_SECTIONS:
+                fields["min_quantity_pct"] = rule.min_quantity_pct
+            return fields
+    return {"policy": SubstitutionPolicy.VARIANTS}
 
 
 @transaction.atomic

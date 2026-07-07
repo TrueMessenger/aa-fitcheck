@@ -64,13 +64,15 @@
             {% endif %}
 
             <div class="card">
-                <div class="card-header"><i class="fa-solid fa-scale-balanced me-2"></i>{% translate "Slot-Group Policy" %}</div>
+                <div class="card-header"><i class="fa-solid fa-scale-balanced me-2"></i>{% translate "Policy Preset" %}</div>
                 <div class="card-body">
-                    {% if fit.compliance_policy %}
-                        <p class="small">
+                    <p class="small">
+                        {% if fit.compliance_policy %}
                             {% blocktranslate with name=fit.compliance_policy.name %}Currently applied: <strong>{{ name }}</strong>{% endblocktranslate %}
-                        </p>
-                    {% endif %}
+                        {% else %}
+                            {% translate "None applied yet." %}
+                        {% endif %}
+                    </p>
                     {% if has_policies %}
                         <form method="post" action="{% url 'fitcheck:fit_apply_policy' fit.pk %}" class="d-flex gap-2">
                             {% csrf_token %}

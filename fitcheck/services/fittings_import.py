@@ -288,8 +288,8 @@ class ResyncReport:
 
 def _refresh_fit_from_plugin(fit: DoctrineFit, plugin_fit, user) -> bool:
     """Replace `fit`'s items + eft_source from the plugin fit. Preserves the
-    fit's per-item policy + overrides, compliance_policy FK, strict_extras,
-    default_policy and doctrine assignments - only the BOM gets refreshed.
+    fit's per-item policy + overrides, compliance_policy FK, strict_extras
+    and doctrine assignments - only the BOM gets refreshed.
     Returns True if the contents actually changed (we compare module_type_id
     sets), False otherwise. Per-item policy and FitItemOverride rows are carried
     forward by (section, module_type_id) so rules survive a refresh, and
@@ -351,8 +351,8 @@ def resync_doctrine_from_plugin(doctrine: Doctrine, user) -> ResyncReport:
 
     Re-uses the source_plugin_pk on the doctrine and each fit to match rows
     so renames don't break the link. Preserves our policy data (per-item
-    overrides, compliance_policy, default_policy, doctrine targeting); only
-    the fit's BOM and the doctrine's membership get refreshed."""
+    overrides, compliance_policy, doctrine targeting); only the fit's BOM
+    and the doctrine's membership get refreshed."""
     report = ResyncReport(name=doctrine.name)
     if not fittings_installed():
         report.error = "fittings plugin not installed"

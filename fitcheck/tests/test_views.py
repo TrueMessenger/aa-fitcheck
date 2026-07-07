@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from ..constants import Section
-from ..models import Doctrine, DoctrineCategory, FitSubmission
+from ..models import CompliancePolicy, Doctrine, DoctrineCategory, FitSubmission
 from ..services.check_runner import submit_fit
 from ..services.eft_parser import parse_eft
 from .testdata.factories import add_item, create_doctrine, create_fit, create_user
@@ -259,12 +259,13 @@ class TestManageViews(ViewTestCase):
         self.assertEqual(response.status_code, 200)
         doctrine = Doctrine.objects.get(name="Shield Supers")
 
+        standard_policy = CompliancePolicy.objects.get(name="Standard")
         response = self.client.post(
             reverse("fitcheck:manage_fit_import", args=[doctrine.pk]),
             {
                 "eft_text": "[Hel, Standard]\nTemplar II x9\n",
                 "name": "",
-                "default_policy": "VA",
+                "policy": standard_policy.pk,
             },
             follow=True,
         )
@@ -275,9 +276,14 @@ class TestManageViews(ViewTestCase):
 
     def test_standalone_import_needs_no_doctrine(self):
         self.client.force_login(self.manager)
+        standard_policy = CompliancePolicy.objects.get(name="Standard")
         response = self.client.post(
             reverse("fitcheck:standard_import"),
-            {"eft_text": "[Hel, Baseline Hel]\nTemplar II x9\n", "name": "", "default_policy": "VA"},
+            {
+                "eft_text": "[Hel, Baseline Hel]\nTemplar II x9\n",
+                "name": "",
+                "policy": standard_policy.pk,
+            },
             follow=True,
         )
         self.assertEqual(response.status_code, 200)
@@ -305,9 +311,14 @@ class TestManageViews(ViewTestCase):
 
     def test_import_shows_parse_errors(self):
         self.client.force_login(self.manager)
+        standard_policy = CompliancePolicy.objects.get(name="Standard")
         response = self.client.post(
             reverse("fitcheck:manage_fit_import", args=[self.doctrine.pk]),
-            {"eft_text": "[Harbinger, X]\nNot A Module\n", "name": "", "default_policy": "VA"},
+            {
+                "eft_text": "[Harbinger, X]\nNot A Module\n",
+                "name": "",
+                "policy": standard_policy.pk,
+            },
         )
         self.assertContains(response, "Not A Module")
         self.assertEqual(self.doctrine.fits.count(), 1)  # only the fixture fit
@@ -315,10 +326,11 @@ class TestManageViews(ViewTestCase):
     def test_import_over_hull_slots_warns_but_still_creates_fit(self):
         # Fixture Harbinger has 6 low slots; 7 Heat Sink IIs overloads it.
         self.client.force_login(self.manager)
+        standard_policy = CompliancePolicy.objects.get(name="Standard")
         eft = "[Harbinger, Overloaded Lows]\n" + "Heat Sink II\n" * 7
         response = self.client.post(
             reverse("fitcheck:standard_import"),
-            {"eft_text": eft, "name": "", "default_policy": "VA"},
+            {"eft_text": eft, "name": "", "policy": standard_policy.pk},
             follow=True,
         )
         self.assertContains(response, "check the import for typos")
@@ -328,10 +340,11 @@ class TestManageViews(ViewTestCase):
 
     def test_import_within_hull_slots_shows_no_slot_warning(self):
         self.client.force_login(self.manager)
+        standard_policy = CompliancePolicy.objects.get(name="Standard")
         eft = "[Harbinger, Clean Import]\n" + "Heat Sink II\n" * 3
         response = self.client.post(
             reverse("fitcheck:standard_import"),
-            {"eft_text": eft, "name": "", "default_policy": "VA"},
+            {"eft_text": eft, "name": "", "policy": standard_policy.pk},
             follow=True,
         )
         self.assertNotContains(response, "check the import for typos")
@@ -898,7 +911,6 @@ class FebFieldVisibilityTests(ViewTestCase):
                 "name": self.fit.name,
                 "description": "",
                 "is_active": "on",
-                "default_policy": self.fit.default_policy,
                 "feb_frigate_type_ids": [str(T.ORACLE)],
             },
             follow=True,
@@ -921,7 +933,6 @@ class FebGroupSelectorTests(ViewTestCase):
             "name": fit.name,
             "description": "",
             "is_active": "on",
-            "default_policy": fit.default_policy,
         }
         data.update(extra)
         return self.client.post(
