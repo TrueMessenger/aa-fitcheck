@@ -704,6 +704,25 @@ class TestPolicyEditorViews(ViewTestCase):
         self.assertEqual(rules["LOW"].enforcement, "ME")
         self.assertEqual(rules["CARGO"].enforcement, "AN")
 
+    def test_create_policy_with_quantity_pct_zero_is_optional_not_defaulted(self):
+        """0 must be saved as-is ('listed but optional'), not fall back to 100 -
+        a plain `data.get(...) or 100` would silently discard an explicit 0."""
+        self.client.force_login(self.policy_admin)
+        data = {
+            "name": "Optional Cargo",
+            "description": "",
+            "CARGO-enforcement": "EX",
+            "CARGO-min_quantity_pct": "0",
+        }
+        response = self.client.post(reverse("fitcheck:policy_create"), data, follow=True)
+        self.assertEqual(response.status_code, 200)
+
+        from ..models import CompliancePolicy
+
+        policy = CompliancePolicy.objects.get(name="Optional Cargo")
+        rule = policy.rules.get(section="CARGO")
+        self.assertEqual(rule.min_quantity_pct, 0)
+
 
 class TestBuiltinPolicies(ViewTestCase):
     """Pre-built (seeded) policies are flagged is_builtin, editable/deletable only

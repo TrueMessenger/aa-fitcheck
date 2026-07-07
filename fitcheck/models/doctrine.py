@@ -244,8 +244,11 @@ class PolicySlotRule(models.Model):
     )
     min_quantity_pct = models.PositiveSmallIntegerField(
         default=100,
-        validators=[MinValueValidator(1), MaxValueValidator(100)],
-        help_text="Consumable sections: pass at this percent of the listed quantity.",
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text=(
+            "Consumable sections: pass at this percent of the listed quantity. "
+            "0 = listed but optional (a pilot carrying none still passes)."
+        ),
     )
 
     class Meta:
@@ -303,6 +306,18 @@ class DoctrineFit(models.Model):
         on_delete=models.SET_NULL,
         related_name="fits",
         help_text="The slot-group policy last applied to this fitting, if any.",
+    )
+    # Governs ONLY the synthesized demand for a charge loaded in a fitted module
+    # that has no explicit CARGO line of its own (see
+    # services.compliance._check_quantity_sections). Explicit cargo lines keep
+    # their own per-item policy/min_quantity_pct regardless of these two fields.
+    charge_policy = models.CharField(
+        max_length=2, choices=SubstitutionPolicy.choices, default=SubstitutionPolicy.EXACT
+    )
+    charge_min_quantity_pct = models.PositiveSmallIntegerField(
+        default=100,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Leeway for synthesized loaded-charge demands (see charge_policy).",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -415,8 +430,12 @@ class DoctrineFitItem(models.Model):
     )
     min_quantity_pct = models.PositiveSmallIntegerField(
         default=100,
-        validators=[MinValueValidator(1), MaxValueValidator(100)],
-        help_text="Consumable leeway for bay/cargo items: pass at this percent of the listed quantity.",
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text=(
+            "Consumable leeway for bay/cargo items: pass at this percent of the "
+            "listed quantity. 0 = listed but optional (a pilot carrying none "
+            "still passes)."
+        ),
     )
     notes = models.CharField(max_length=255, blank=True)
 
@@ -459,6 +478,16 @@ class FitAssignment(models.Model):
         DoctrineFit, on_delete=models.CASCADE, related_name="assignments"
     )
     notes = models.CharField(max_length=255, blank=True)
+    # Same charge-demand governance as DoctrineFit.charge_policy/
+    # charge_min_quantity_pct, but per-(doctrine, fit): copied from the source
+    # fit at attach time and re-copied on resync (services.assignments).
+    charge_policy = models.CharField(
+        max_length=2, choices=SubstitutionPolicy.choices, default=SubstitutionPolicy.EXACT
+    )
+    charge_min_quantity_pct = models.PositiveSmallIntegerField(
+        default=100,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
     # Assignment ladder: bumped when THIS (doctrine, fit) policy snapshot
     # changes. Only submissions graded against this doctrine are affected.
     version = models.PositiveIntegerField(default=0)
@@ -521,7 +550,7 @@ class AssignmentItemPolicy(models.Model):
     allow_mutated = models.BooleanField(default=True)
     min_quantity_pct = models.PositiveSmallIntegerField(
         default=100,
-        validators=[MinValueValidator(1), MaxValueValidator(100)],
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
     )
     notes = models.CharField(max_length=255, blank=True)
 

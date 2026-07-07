@@ -84,6 +84,42 @@ class TestPolicyApplication(TestCase):
         self.fit.refresh_from_db()
         self.assertEqual(self.fit.compliance_policy, self.policy)
 
+    def test_no_cargo_rule_leaves_charge_policy_untouched(self):
+        """This policy has no CARGO rule, so the fit's synthesized loaded-charge
+        governance (a separate concept from the per-item CARGO policy) must
+        stay at its own default rather than being touched."""
+        apply_policy_to_fit(self.fit, self.policy)
+        self.fit.refresh_from_db()
+        self.assertEqual(self.fit.charge_policy, SubstitutionPolicy.EXACT)
+        self.assertEqual(self.fit.charge_min_quantity_pct, 100)
+
+
+class TestPolicyApplicationSetsChargePolicy(TestCase):
+    """A CARGO rule also governs the synthesized loaded-charge demand (see
+    services.compliance._check_quantity_sections), so applying a policy with
+    a CARGO rule must keep the fit's charge_policy/charge_min_quantity_pct in
+    step with the rest of the cargo policy."""
+
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+        cls.doctrine = create_doctrine()
+        cls.fit = create_fit(cls.doctrine, T.HARBINGER)
+        cls.admin = create_user("cadmin", permissions=["basic_access", "manage_policies"])
+        cls.policy = CompliancePolicy.objects.create(name="Cargo Policy", created_by=cls.admin)
+        PolicySlotRule.objects.create(
+            policy=cls.policy,
+            section=Section.CARGO,
+            enforcement=EnforcementMode.GTE,
+            min_quantity_pct=66,
+        )
+
+    def test_cargo_rule_sets_fit_charge_policy(self):
+        apply_policy_to_fit(self.fit, self.policy)
+        self.fit.refresh_from_db()
+        self.assertEqual(self.fit.charge_policy, SubstitutionPolicy.MEET_OR_BEAT)
+        self.assertEqual(self.fit.charge_min_quantity_pct, 66)
+
 
 class TestMultiDoctrineMatching(TestCase):
     @classmethod

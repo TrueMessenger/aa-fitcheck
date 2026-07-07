@@ -42,6 +42,13 @@ version last got one.
   source is forced to live ESI, explaining that the scan is limited to the configured
   budget (`member_scan_esi_budget`, default 25 pilots per page load). README documentation
   emphasizes that corptools is strongly recommended at alliance scale (#47).
+- A quantity line's min-quantity percent may now be set to 0, meaning "listed but
+  optional": the item stays on the fit/BOM with its desired quantity shown, but a pilot
+  carrying zero units still passes.
+- Ammo/charges loaded into a fitted module with no matching cargo line of their own are no
+  longer always a hard exact-quantity requirement - the demand is now governed by the fit's
+  (or per-doctrine assignment's) charge substitution policy and minimum-quantity percent,
+  same as an explicit cargo line.
 
 ### Fixed
 - Bulk audits now surface a warning when the per-ship abyssal lookup cap truncated

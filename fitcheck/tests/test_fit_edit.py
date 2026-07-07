@@ -143,6 +143,21 @@ class UpdateFitBomAssignmentSnapshotTests(TestCase):
         new_hs_item = fit.items.get(module_type_id=T.HEAT_SINK_II)
         self.assertEqual(hs.source_item_id, new_hs_item.pk)
 
+    def test_bom_update_preserves_assignment_charge_policy_pair(self):
+        """charge_policy/charge_min_quantity_pct live on FitAssignment itself,
+        not on a CASCADE-deleted AssignmentItemPolicy row, so a BOM rebuild
+        (which only replaces the item snapshot) must leave them untouched."""
+        fit, _doctrine, assignment = self._attach()
+        assignment.charge_policy = SubstitutionPolicy.ANY
+        assignment.charge_min_quantity_pct = 25
+        assignment.save(update_fields=["charge_policy", "charge_min_quantity_pct"])
+
+        update_fit_bom(fit, NEW_EFT, self.user)
+
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.charge_policy, SubstitutionPolicy.ANY)
+        self.assertEqual(assignment.charge_min_quantity_pct, 25)
+
     def test_reclone_repairs_emptied_snapshot(self):
         """The one-shot repair re-clones a snapshot that a pre-fix update wiped."""
         from ..models import AssignmentItemPolicy

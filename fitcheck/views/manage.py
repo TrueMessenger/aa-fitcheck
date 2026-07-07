@@ -2065,12 +2065,13 @@ def policy_edit(request, policy_pk: int | None = None):
                 data = rule_form.cleaned_data
                 if not data.get("enforcement"):
                     continue
+                pct = data.get("min_quantity_pct")
                 PolicySlotRule.objects.create(
                     policy=obj,
                     section=section,
                     enforcement=data["enforcement"],
                     allow_mutated=data.get("allow_mutated", True),
-                    min_quantity_pct=data.get("min_quantity_pct") or 100,
+                    min_quantity_pct=100 if pct is None else pct,
                 )
             messages.success(request, _("Policy saved."))
             return redirect("fitcheck:policy_list")

@@ -119,13 +119,24 @@ def check_fit(
     *,
     doctrine_items=None,
     overrides_by_item=None,
+    charge_policy: str | None = None,
+    charge_min_quantity_pct: int | None = None,
 ) -> CheckResult:
     """Run the engine against the fit's source-level defaults, OR against a
     per-(doctrine, fit) assignment snapshot when the caller passes
     `doctrine_items` (an iterable of AssignmentItemPolicy) plus the matching
     `overrides_by_item`. Use `check_fit_for_doctrine()` for the assignment
-    path - it computes both and calls this."""
+    path - it computes both and calls this.
+
+    `charge_policy`/`charge_min_quantity_pct` govern the synthesized
+    loaded-charge demand (see `_check_quantity_sections`); when omitted they
+    default to `fit`'s own values - the assignment path passes the
+    FitAssignment's copy instead."""
     findings: list[Finding] = []
+    if charge_policy is None:
+        charge_policy = fit.charge_policy
+    if charge_min_quantity_pct is None:
+        charge_min_quantity_pct = fit.charge_min_quantity_pct
 
     for err in parsed.errors:
         findings.append(
@@ -212,6 +223,8 @@ def check_fit(
             parsed, doctrine_items, allowed_sets, name_of,
             cargo_pool, fitted_extra_pool, fuel_mode=settings.fuel_mode,
             extra_sections=extra_sections,
+            charge_policy=charge_policy,
+            charge_min_quantity_pct=charge_min_quantity_pct,
         )
     )
     findings.extend(
@@ -288,7 +301,9 @@ def check_fit_for_doctrine(
         for override in item.overrides.all():
             overrides_by_item[item.pk].append(override)
     return check_fit(
-        parsed, fit, doctrine_items=items, overrides_by_item=overrides_by_item
+        parsed, fit, doctrine_items=items, overrides_by_item=overrides_by_item,
+        charge_policy=assignment.charge_policy,
+        charge_min_quantity_pct=assignment.charge_min_quantity_pct,
     )
 
 
@@ -647,6 +662,8 @@ def _check_quantity_sections(
     fitted_extra_pool: dict[int, list[_PilotUnit]] | None = None,
     fuel_mode: str = VerificationMode.WARN,
     extra_sections: dict[int, str] | None = None,
+    charge_policy: str = SubstitutionPolicy.EXACT,
+    charge_min_quantity_pct: int = 100,
 ) -> list[Finding]:
     findings: list[Finding] = []
 
@@ -707,11 +724,17 @@ def _check_quantity_sections(
             threshold = -(-demand_qty * item.min_quantity_pct // 100)
             demands.append((item, demand_qty, threshold))
         if section == Section.CARGO:
-            # Loaded doctrine charges with no matching cargo line become synthetic
-            # exact-match requirements (so "4 loaded crystals" still demand 4).
+            # Loaded doctrine charges with no matching cargo line of their own
+            # become synthetic requirements, governed by the fit/assignment
+            # charge_policy + charge_min_quantity_pct (ANY = no demand at all;
+            # otherwise leeway applies just like an explicit cargo line).
             for type_id, qty in doctrine_charge_pool.items():
-                if type_id not in seen_doctrine_charge_types:
-                    demands.append((None, qty, qty, type_id))
+                if type_id in seen_doctrine_charge_types:
+                    continue
+                if charge_policy == SubstitutionPolicy.ANY:
+                    continue
+                threshold = -(-qty * charge_min_quantity_pct // 100)
+                demands.append((None, qty, threshold, type_id))
 
         for demand in demands:
             if len(demand) == 4:
@@ -902,6 +925,26 @@ def _check_quantity_sections(
                             expected_qty=exact_qty,
                             actual_qty=exact_qty,
                             message=f"{exact_qty}x {name_of(exact_type_id)}: requirement met.",
+                        )
+                    )
+                elif threshold == 0:
+                    # min_quantity_pct=0: listed but optional - nothing was
+                    # consumed above (threshold capped `take` at 0), so still
+                    # surface the doctrine's desired quantity and whatever the
+                    # pilot happens to carry, rather than emitting no finding.
+                    carried = pilot_counts.get(exact_type_id, 0)
+                    findings.append(
+                        Finding(
+                            code=Code.OK,
+                            section=section,
+                            expected_type_id=exact_type_id,
+                            actual_type_id=exact_type_id if carried else None,
+                            expected_qty=demand_qty,
+                            actual_qty=carried,
+                            message=(
+                                f"{name_of(exact_type_id)} is optional (doctrine lists "
+                                f"{demand_qty}, 0 required); found {carried}."
+                            ),
                         )
                     )
             else:
@@ -1122,18 +1165,38 @@ def _check_boosters(
             present_counts.get(sub_id, 0) for sub_id in allowed.substitutes
         )
         if present_qty >= threshold:
-            findings.append(
-                Finding(
-                    code=Code.OK,
-                    section=Section.BOOSTER,
-                    expected_type_id=item.module_type_id,
-                    # Show the carried booster in the "Your fit" column.
-                    actual_type_id=item.module_type_id,
-                    expected_qty=threshold,
-                    actual_qty=present_qty,
-                    message=f"Booster {name_of(item.module_type_id)}: present in the submitted fit.",
+            if threshold == 0:
+                # min_quantity_pct=0: listed but optional - report the doctrine's
+                # desired quantity instead of a bare "present" that would be
+                # misleading when present_qty is 0.
+                findings.append(
+                    Finding(
+                        code=Code.OK,
+                        section=Section.BOOSTER,
+                        expected_type_id=item.module_type_id,
+                        actual_type_id=item.module_type_id if present_qty else None,
+                        expected_qty=item.quantity,
+                        actual_qty=present_qty,
+                        message=(
+                            f"Booster {name_of(item.module_type_id)} is optional "
+                            f"(doctrine lists {item.quantity}, 0 required); "
+                            f"found {present_qty}."
+                        ),
+                    )
                 )
-            )
+            else:
+                findings.append(
+                    Finding(
+                        code=Code.OK,
+                        section=Section.BOOSTER,
+                        expected_type_id=item.module_type_id,
+                        # Show the carried booster in the "Your fit" column.
+                        actual_type_id=item.module_type_id,
+                        expected_qty=threshold,
+                        actual_qty=present_qty,
+                        message=f"Booster {name_of(item.module_type_id)}: present in the submitted fit.",
+                    )
+                )
             continue
         # Active boosters can't be read from ESI, but a spare carried in cargo /
         # fleet hangar proves availability - any amount counts as a pass (REF).

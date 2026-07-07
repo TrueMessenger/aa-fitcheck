@@ -378,9 +378,10 @@ class FitItemPolicyForm(forms.ModelForm):
             ]
     min_quantity_pct = forms.IntegerField(
         required=False,
-        min_value=1,
+        min_value=0,
         max_value=100,
         label=_("Min Quantity %"),
+        help_text=_("0 = listed but optional (carrying none still passes)."),
         widget=forms.NumberInput(
             attrs={"class": "form-control form-control-sm", "style": "width: 5.5em"}
         ),
@@ -408,7 +409,7 @@ class FitItemPolicyForm(forms.ModelForm):
 
     def clean_min_quantity_pct(self):
         value = self.cleaned_data.get("min_quantity_pct")
-        return value if value is not None else (self.instance.min_quantity_pct or 100)
+        return value if value is not None else self.instance.min_quantity_pct
 
 
 FitItemPolicyFormSet = modelformset_factory(DoctrineFitItem, form=FitItemPolicyForm, extra=0)
@@ -463,9 +464,10 @@ class PolicySlotRuleForm(forms.Form):
     )
     min_quantity_pct = forms.IntegerField(
         required=False,
-        min_value=1,
+        min_value=0,
         max_value=100,
         initial=100,
+        help_text=_("0 = listed but optional (carrying none still passes)."),
         widget=forms.NumberInput(
             attrs={"class": "form-control form-control-sm", "style": "width: 5.5em"}
         ),

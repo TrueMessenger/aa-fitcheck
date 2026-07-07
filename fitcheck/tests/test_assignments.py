@@ -116,6 +116,19 @@ class TestAttachAndDetach(TestCase):
         )
         self.assertEqual(snapshot.policy, SubstitutionPolicy.VARIANTS)
 
+    def test_attach_clones_charge_policy_pair(self):
+        """The charge-demand governance pair (charge_policy/
+        charge_min_quantity_pct) is copied from the fit onto the fresh
+        assignment at attach time, same as the per-item policies."""
+        self.fit.charge_policy = SubstitutionPolicy.ANY
+        self.fit.charge_min_quantity_pct = 50
+        self.fit.save(update_fields=["charge_policy", "charge_min_quantity_pct"])
+
+        assignment = attach_fit_to_doctrine(self.fit, self.doctrine, user=self.user)
+
+        self.assertEqual(assignment.charge_policy, SubstitutionPolicy.ANY)
+        self.assertEqual(assignment.charge_min_quantity_pct, 50)
+
 
 class TestCheckFitForDoctrine(TestCase):
     """Engine adapter: same parsed fit, two doctrines, divergent verdicts
@@ -490,6 +503,24 @@ class TestSnapshotDriftDetection(TestCase):
         self.policy.save(update_fields=["allowed_meta_groups"])
         self.assertFalse(assignment_item_differs(self.policy))
 
+    def test_charge_policy_pair_mismatch_is_drift(self):
+        """The charge-demand governance pair lives on FitAssignment/DoctrineFit
+        directly (no per-item row), so drift detection compares it separately
+        from the item-level checks above."""
+        self.fit.charge_min_quantity_pct = 50
+        self.fit.save(update_fields=["charge_min_quantity_pct"])
+        self.assertTrue(assignment_differs(self.assignment))
+        self.assertEqual(differing_assignments(self.fit), {self.assignment.pk})
+
+    def test_charge_policy_pair_in_sync_is_not_drift(self):
+        self.assertEqual(
+            self.assignment.charge_policy, self.fit.charge_policy
+        )
+        self.assertEqual(
+            self.assignment.charge_min_quantity_pct, self.fit.charge_min_quantity_pct
+        )
+        self.assertFalse(assignment_differs(self.assignment))
+
 
 class TestResyncFromSource(TestCase):
     @classmethod
@@ -523,6 +554,19 @@ class TestResyncFromSource(TestCase):
         synced = self.assignment.item_policies.get(module_type_id=T.HEAT_SINK_II)
         self.assertEqual(synced.min_quantity_pct, 10)
         self.assertEqual(synced.policy, SubstitutionPolicy.VARIANTS)
+        self.assertFalse(assignment_differs(self.assignment))
+
+    def test_resync_re_copies_charge_policy_pair(self):
+        self.fit.charge_policy = SubstitutionPolicy.ANY
+        self.fit.charge_min_quantity_pct = 0
+        self.fit.save(update_fields=["charge_policy", "charge_min_quantity_pct"])
+        self.assertTrue(assignment_differs(self.assignment))
+
+        resync_assignment_from_source(self.assignment)
+
+        self.assignment.refresh_from_db()
+        self.assertEqual(self.assignment.charge_policy, SubstitutionPolicy.ANY)
+        self.assertEqual(self.assignment.charge_min_quantity_pct, 0)
         self.assertFalse(assignment_differs(self.assignment))
 
     def test_resync_re_clones_overrides(self):
