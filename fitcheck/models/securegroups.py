@@ -30,6 +30,8 @@ if SECUREGROUPS_INSTALLED:
     from django.contrib.auth.models import User
     from django.core.exceptions import ValidationError
     from django.db import models
+    from django.utils import timezone
+    from django.utils.formats import date_format
     from django.utils.translation import gettext_lazy as _
     from securegroups.models import FilterBase
 
@@ -71,6 +73,21 @@ if SECUREGROUPS_INSTALLED:
                 "version (ignore stale submissions)."
             ),
         )
+        enforce_from = models.DateTimeField(
+            null=True,
+            blank=True,
+            help_text=_(
+                "Grandfather window: until this moment the filter passes every "
+                "member (the group audit still shows who is genuinely "
+                "compliant). Blank = enforce immediately. Lets you attach the "
+                "filter to an existing secure group without purging members - "
+                "set it ~90 days out and members must pass a fit audit by then."
+            ),
+        )
+
+        @property
+        def grandfather_active(self) -> bool:
+            return bool(self.enforce_from and timezone.now() < self.enforce_from)
 
         def clean(self):
             if self.doctrine_id is None and self.fit_id is None:
@@ -79,6 +96,12 @@ if SECUREGROUPS_INSTALLED:
                 )
 
         def process_filter(self, user: User) -> bool:
+            # Grandfather window: pass everyone at join-time so an existing
+            # group's membership isn't purged; audit_filter still tells the
+            # truth about who is genuinely compliant during the window.
+            if self.grandfather_active:
+                return True
+
             from ..services import api
 
             return api.is_user_compliant(
@@ -91,6 +114,31 @@ if SECUREGROUPS_INSTALLED:
 
         def audit_filter(self, users):
             from ..services import api
+
+            if self.grandfather_active:
+                when = date_format(
+                    timezone.localtime(self.enforce_from), "SHORT_DATETIME_FORMAT"
+                )
+                grandfathered = {
+                    "message": f"Grandfathered until {when} - fit audit needed",
+                    "check": True,
+                }
+                out = defaultdict(lambda: dict(grandfathered))
+                for result in api.iter_user_compliance(
+                    users,
+                    doctrine=self.doctrine,
+                    fit=self.fit,
+                    require_approved=self.require_approved,
+                    require_current=self.require_current,
+                ):
+                    if result.is_compliant:
+                        out[result.user_id] = {
+                            "message": result.submission.get_verdict_display(),
+                            "check": True,
+                        }
+                    else:
+                        out[result.user_id] = dict(grandfathered)
+                return out
 
             out = defaultdict(lambda: {"message": "", "check": False})
             for result in api.iter_user_compliance(

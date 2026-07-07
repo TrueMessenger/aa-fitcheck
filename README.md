@@ -465,6 +465,13 @@ Compliance** lets an admin require doctrine/fit compliance for membership of an 
 e.g. a "Shield Supers" group that only holds pilots with a compliant Hel or Wyvern fit. The
 filter is backed by the compliance API above and honours the same staleness / approval options.
 
+The filter can be created and edited in the Django admin. Its **Enforce from** field is the
+adoption path for attaching the filter to a group that already has members, without a purge:
+set it to a date ~90 days out and, until then, every member passes while the group audit still
+shows who is genuinely compliant versus "Grandfathered ... - fit audit needed." After that date
+the filter enforces normally; securegroups' own per-group grace period (`can_grace` and the
+binding's `grace_period`) continues to cover steady-state lapses from then on.
+
 ---
 
 ## Roadmap
