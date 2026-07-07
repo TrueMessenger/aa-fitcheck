@@ -109,6 +109,7 @@ def apply_policy_to_fit(fit: DoctrineFit, policy: CompliancePolicy) -> int:
     the fit version and re-checking pending submissions.
     """
     updated = 0
+    fit_fields = ["compliance_policy"]
     for rule in policy.rules.all():
         fields = {"policy": ENFORCEMENT_TO_POLICY[rule.enforcement]}
         if rule.enforcement == EnforcementMode.GTE:
@@ -116,6 +117,13 @@ def apply_policy_to_fit(fit: DoctrineFit, policy: CompliancePolicy) -> int:
         if rule.section in LEEWAY_SECTIONS:
             fields["min_quantity_pct"] = rule.min_quantity_pct
         updated += fit.items.filter(section=rule.section).update(**fields)
+        if rule.section == Section.CARGO:
+            # The CARGO rule also governs the synthesized loaded-charge demand
+            # (charges loaded in fitted modules with no explicit cargo line of
+            # their own) - keep it in step with the rest of the cargo policy.
+            fit.charge_policy = ENFORCEMENT_TO_POLICY[rule.enforcement]
+            fit.charge_min_quantity_pct = rule.min_quantity_pct
+            fit_fields += ["charge_policy", "charge_min_quantity_pct"]
     fit.compliance_policy = policy
-    fit.save(update_fields=["compliance_policy"])
+    fit.save(update_fields=fit_fields)
     return updated

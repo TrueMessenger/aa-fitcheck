@@ -5,7 +5,8 @@ from ..constants import EveMetaGroupId, Section
 from ..models import ComplianceFinding, EnforcementSettings, FitItemOverride, FitSubmission
 from ..models.doctrine import SubstitutionPolicy
 from ..models.settings import VerificationMode
-from ..services.compliance import check_fit
+from ..services.assignments import attach_fit_to_doctrine
+from ..services.compliance import check_fit, check_fit_for_doctrine
 from ..services.fit_data import FitItem, ParsedFit
 from .testdata.factories import add_item, create_doctrine, create_fit
 from .testdata.sde_fixtures import Attrs, T, create_sde_testdata
@@ -1174,3 +1175,101 @@ class TestNoEnforcementFinding(EngineTestCase):
             fit_of(FitItem(Section.LOW, T.WEB_II, 1)), fit
         )
         self.assertEqual(result.verdict, Verdict.COMPLIANT)
+
+
+class TestOptionalQuantity(EngineTestCase):
+    """min_quantity_pct=0 ('listed but optional'): the line stays on the BOM
+    with its desired quantity, but a pilot carrying zero units still passes."""
+
+    def test_zero_min_quantity_passes_with_zero_units(self):
+        fit = self.make_fit()
+        add_item(
+            fit, Section.CARGO, T.NANITE_PASTE, 10,
+            policy=SubstitutionPolicy.EXACT, min_quantity_pct=0,
+        )
+        result = check_fit(fit_of(), fit)
+        self.assertNotIn(Code.QTY_SHORT, codes(result))
+        self.assertEqual(result.verdict, Verdict.COMPLIANT)
+        ok = finding(result, Code.OK)
+        self.assertEqual(ok.expected_qty, 10)  # desired quantity still reported
+        self.assertEqual(ok.actual_qty, 0)
+
+    def test_zero_min_quantity_passes_with_some_units(self):
+        fit = self.make_fit()
+        add_item(
+            fit, Section.CARGO, T.NANITE_PASTE, 10,
+            policy=SubstitutionPolicy.EXACT, min_quantity_pct=0,
+        )
+        result = check_fit(
+            fit_of(FitItem(Section.CARGO, T.NANITE_PASTE, 3)), fit
+        )
+        self.assertNotIn(Code.QTY_SHORT, codes(result))
+        self.assertEqual(result.verdict, Verdict.COMPLIANT)
+        ok = finding(result, Code.OK)
+        self.assertEqual(ok.expected_qty, 10)  # desired quantity still reported
+        self.assertEqual(ok.actual_qty, 3)
+
+
+class TestChargePolicyGovernedSyntheticDemand(EngineTestCase):
+    """A charge loaded in a fitted module with no matching CARGO line of its
+    own becomes a synthetic quantity demand, governed by
+    DoctrineFit.charge_policy/charge_min_quantity_pct (or the FitAssignment's
+    own copy when graded per-doctrine) instead of always hard-failing at exact
+    quantity."""
+
+    def _fit_with_loaded_charge_demand(self, **fit_kwargs):
+        fit = self.make_fit(**fit_kwargs)
+        add_item(
+            fit, Section.HIGH, T.PULSE_LASER_II, 2,
+            policy=SubstitutionPolicy.EXACT, charge_type_id=T.MULTIFREQ_L,
+        )
+        return fit
+
+    def _results_both_paths(self, fit, parsed):
+        """Grade via both the source-fit path (check_fit) and the per-doctrine
+        assignment path (check_fit_for_doctrine) - attaching clones the fit's
+        charge_policy/charge_min_quantity_pct onto the assignment at that
+        moment, so both paths should agree in these tests."""
+        attach_fit_to_doctrine(fit, self.doctrine)
+        return check_fit(parsed, fit), check_fit_for_doctrine(parsed, fit, self.doctrine)
+
+    def test_default_fields_hard_fail_on_shortfall(self):
+        """Default fields (EXACT/100%) reproduce today's behaviour exactly:
+        an exact-match hard QTY_SHORT."""
+        fit = self._fit_with_loaded_charge_demand()
+        parsed = fit_of(
+            FitItem(Section.HIGH, T.PULSE_LASER_II, 1, charge_type_id=T.MULTIFREQ_L),
+            FitItem(Section.HIGH, T.PULSE_LASER_II, 1),
+        )
+        for result in self._results_both_paths(fit, parsed):
+            self.assertEqual(result.verdict, Verdict.NON_COMPLIANT)
+            qty = finding(result, Code.QTY_SHORT)
+            self.assertEqual(qty.expected_type_id, T.MULTIFREQ_L)
+            self.assertEqual(qty.expected_qty, 2)
+            self.assertEqual(qty.actual_qty, 1)
+
+    def test_charge_policy_any_skips_the_demand_entirely(self):
+        fit = self._fit_with_loaded_charge_demand(charge_policy=SubstitutionPolicy.ANY)
+        parsed = fit_of(FitItem(Section.HIGH, T.PULSE_LASER_II, 2))  # no crystals loaded
+        for result in self._results_both_paths(fit, parsed):
+            self.assertEqual(result.verdict, Verdict.COMPLIANT)
+            self.assertNotIn(
+                T.MULTIFREQ_L, [f.expected_type_id for f in result.findings]
+            )
+
+    def test_charge_min_quantity_pct_50_passes_at_half(self):
+        fit = self._fit_with_loaded_charge_demand(charge_min_quantity_pct=50)
+        parsed = fit_of(
+            FitItem(Section.HIGH, T.PULSE_LASER_II, 1, charge_type_id=T.MULTIFREQ_L),
+            FitItem(Section.HIGH, T.PULSE_LASER_II, 1),
+        )
+        for result in self._results_both_paths(fit, parsed):
+            self.assertNotIn(Code.QTY_SHORT, codes(result))
+            self.assertEqual(result.verdict, Verdict.COMPLIANT)
+
+    def test_charge_min_quantity_pct_0_passes_empty(self):
+        fit = self._fit_with_loaded_charge_demand(charge_min_quantity_pct=0)
+        parsed = fit_of(FitItem(Section.HIGH, T.PULSE_LASER_II, 2))  # no crystals loaded
+        for result in self._results_both_paths(fit, parsed):
+            self.assertNotIn(Code.QTY_SHORT, codes(result))
+            self.assertEqual(result.verdict, Verdict.COMPLIANT)

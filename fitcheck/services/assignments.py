@@ -74,7 +74,13 @@ def attach_fit_to_doctrine(
     Idempotent: a second call returns the existing assignment unchanged."""
     fit.doctrines.add(doctrine)  # back-compat M2M
     assignment, created = FitAssignment.objects.get_or_create(
-        doctrine=doctrine, fit=fit, defaults={"created_by": user}
+        doctrine=doctrine,
+        fit=fit,
+        defaults={
+            "created_by": user,
+            "charge_policy": fit.charge_policy,
+            "charge_min_quantity_pct": fit.charge_min_quantity_pct,
+        },
     )
     if not created:
         return assignment
@@ -191,13 +197,27 @@ def assignment_item_differs(policy: AssignmentItemPolicy) -> bool:
     return _override_set(policy) != _override_set(source)
 
 
+def _charge_policy_differs(assignment: FitAssignment) -> bool:
+    """True when the assignment's charge-demand governance (charge_policy +
+    charge_min_quantity_pct) no longer matches its source fit's - the
+    assignment-level counterpart to assignment_item_differs, since these two
+    fields live on FitAssignment/DoctrineFit rather than a per-item row."""
+    fit = assignment.fit
+    return (
+        assignment.charge_policy != fit.charge_policy
+        or assignment.charge_min_quantity_pct != fit.charge_min_quantity_pct
+    )
+
+
 def assignment_differs(assignment: FitAssignment) -> bool:
     """True when an assignment's snapshot has drifted from the fit's current
-    source template: any item differs, OR the set of (section, module_type)
-    no longer matches the fit's source items (a module was added to or removed
-    from the BOM since this snapshot was cloned). This is the per-(doctrine,
-    fit) 'differs from template' state - distinct from the fit_version-based
-    'stale submission' concept."""
+    source template: any item differs, the charge-demand pair differs, OR the
+    set of (section, module_type) no longer matches the fit's source items (a
+    module was added to or removed from the BOM since this snapshot was
+    cloned). This is the per-(doctrine, fit) 'differs from template' state -
+    distinct from the fit_version-based 'stale submission' concept."""
+    if _charge_policy_differs(assignment):
+        return True
     policies = list(assignment.item_policies.all())
     snapshot_keys = {(p.section, p.module_type_id) for p in policies}
     source_keys = {(i.section, i.module_type_id) for i in assignment.fit.items.all()}
@@ -216,10 +236,16 @@ def differing_assignments(fit: DoctrineFit) -> set[int]:
         "item_policies__overrides", "item_policies__source_item__overrides"
     )
     for assignment in assignments:
+        charge_differs = (
+            assignment.charge_policy != fit.charge_policy
+            or assignment.charge_min_quantity_pct != fit.charge_min_quantity_pct
+        )
         policies = list(assignment.item_policies.all())
         snapshot_keys = {(p.section, p.module_type_id) for p in policies}
-        if snapshot_keys != source_keys or any(
-            assignment_item_differs(p) for p in policies
+        if (
+            charge_differs
+            or snapshot_keys != source_keys
+            or any(assignment_item_differs(p) for p in policies)
         ):
             result.add(assignment.pk)
     return result
@@ -236,6 +262,9 @@ def resync_assignment_from_source(assignment: FitAssignment) -> None:
     a re-sync is requested - other assignments are untouched."""
     AssignmentItemPolicy.objects.filter(assignment=assignment).delete()
     _clone_source_items_into(assignment)
+    assignment.charge_policy = assignment.fit.charge_policy
+    assignment.charge_min_quantity_pct = assignment.fit.charge_min_quantity_pct
+    assignment.save(update_fields=["charge_policy", "charge_min_quantity_pct"])
 
 
 @transaction.atomic

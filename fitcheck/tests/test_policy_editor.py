@@ -109,6 +109,15 @@ class TestFitItemsEditor(PolicyEditorTestCase):
         self.assertEqual(self.fit.source_policy_version, old_policy + 1)
         self.assertEqual(self.fit.version, old_version)
 
+    def test_min_quantity_pct_zero_is_accepted_as_optional(self):
+        self.client.force_login(self.manager)
+        url = reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
+        data = self._formset_data({self.cargo_item.pk: {"min_quantity_pct": "0"}})
+        response = self.client.post(url, data, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.cargo_item.refresh_from_db()
+        self.assertEqual(self.cargo_item.min_quantity_pct, 0)
+
     def test_unchanged_save_does_not_bump_version(self):
         self.client.force_login(self.manager)
         url = reverse("fitcheck:manage_fit_items", args=[self.fit.pk])
