@@ -37,6 +37,12 @@ version last got one.
 
 ## [Unreleased]
 
+### Added
+- The "Missing Modules" deficit list on the submission page is now available to the
+  submission's owner as a copy-to-clipboard multibuy button - a failed self-audit ends
+  with a paste-ready shopping list of just the gap between the fit and the standard.
+  Previously the list was reviewer-only.
+
 ## [1.11.0] - 2026-07-07
 
 **Upgrade notes:** run `python manage.py migrate` (adds migrations 0033–0037), then
