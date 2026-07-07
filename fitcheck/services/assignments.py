@@ -70,8 +70,12 @@ def attach_fit_to_doctrine(
     fit: DoctrineFit, doctrine: Doctrine, *, user=None
 ) -> FitAssignment:
     """Link a fit to a doctrine. Creates the FitAssignment + clones the fit's
-    current source policies + overrides into a fresh per-doctrine snapshot.
-    Idempotent: a second call returns the existing assignment unchanged."""
+    current source policies + overrides into a fresh per-doctrine snapshot,
+    then overlays the doctrine's standing policy preset (if any) on top - a
+    fresh attachment always reflects the doctrine's current preset, even when
+    the source fit was configured differently. No version bump: nothing has
+    graded against this brand-new assignment yet. Idempotent: a second call
+    returns the existing assignment unchanged (the preset is NOT re-applied)."""
     fit.doctrines.add(doctrine)  # back-compat M2M
     assignment, created = FitAssignment.objects.get_or_create(
         doctrine=doctrine,
@@ -85,6 +89,10 @@ def attach_fit_to_doctrine(
     if not created:
         return assignment
     _clone_source_items_into(assignment)
+    if doctrine.compliance_policy_id:
+        from .policies import apply_policy_to_assignment  # local import: avoid a cycle
+
+        apply_policy_to_assignment(assignment, doctrine.compliance_policy)
     return assignment
 
 
@@ -254,7 +262,9 @@ def differing_assignments(fit: DoctrineFit) -> set[int]:
 @transaction.atomic
 def resync_assignment_from_source(assignment: FitAssignment) -> None:
     """Discard this assignment's policy snapshot and re-clone it from the fit's
-    CURRENT source items (policy fields + overrides). The explicit,
+    CURRENT source items (policy fields + overrides), then re-overlay the
+    doctrine's standing policy preset (if any). A re-synced assignment means
+    "current source template + the doctrine's standing preset" - the explicit,
     per-combination counterpart to the automatic carry-forward in
     `rebuild_assignment_snapshots`: the manager chooses when a combination
     should re-adopt the fit template, so any per-combination customizations on
@@ -265,6 +275,10 @@ def resync_assignment_from_source(assignment: FitAssignment) -> None:
     assignment.charge_policy = assignment.fit.charge_policy
     assignment.charge_min_quantity_pct = assignment.fit.charge_min_quantity_pct
     assignment.save(update_fields=["charge_policy", "charge_min_quantity_pct"])
+    if assignment.doctrine.compliance_policy_id:
+        from .policies import apply_policy_to_assignment  # local import: avoid a cycle
+
+        apply_policy_to_assignment(assignment, assignment.doctrine.compliance_policy)
 
 
 @transaction.atomic

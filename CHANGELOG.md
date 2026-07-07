@@ -51,6 +51,10 @@ version last got one.
   same as an explicit cargo line.
 - Importing a fitting standard now applies a named compliance policy preset (built-in or
   custom) to its modules, instead of a plain per-module substitution default.
+- Doctrines can now hold a standing policy preset: applying it overwrites the per-module
+  policy settings on every fitting in the doctrine at once (with an impact confirmation
+  showing how many fittings are affected), and newly attached or re-synced fittings pick it
+  up automatically.
 
 ### Fixed
 - Bulk audits now surface a warning when the per-ship abyssal lookup cap truncated

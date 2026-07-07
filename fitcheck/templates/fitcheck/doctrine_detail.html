@@ -113,6 +113,34 @@
             </div>
         </div>
 
+        <div class="card mb-3">
+            <div class="card-header"><i class="fa-solid fa-scale-balanced me-2"></i>{% translate "Policy Preset" %}</div>
+            <div class="card-body">
+                <p class="small">
+                    {% if doctrine.compliance_policy %}
+                        {% blocktranslate with name=doctrine.compliance_policy.name %}Standing preset: <strong>{{ name }}</strong>{% endblocktranslate %}
+                    {% else %}
+                        {% translate "None - fittings keep their own policies." %}
+                    {% endif %}
+                </p>
+                {% if has_policies %}
+                    <form method="get" action="{% url 'fitcheck:doctrine_apply_policy' doctrine.pk %}" class="d-flex gap-2">
+                        {{ apply_policy_form.policy }}
+                        <button class="btn btn-primary" type="submit">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> {% translate "Apply to Doctrine" %}
+                        </button>
+                    </form>
+                    <div class="small text-muted mt-2">
+                        {% translate "Applying overwrites the per-module policy settings on every fitting in this doctrine (per-fitting override exceptions are kept) and sets the standing preset above. New fittings attached to this doctrine - and any re-synced from their source template - automatically receive it." %}
+                    </div>
+                {% else %}
+                    <p class="small text-muted mb-0">
+                        {% translate "No compliance policies exist yet. Plugin admins can create them on the Policies tab." %}
+                    </p>
+                {% endif %}
+            </div>
+        </div>
+
         <div class="card mb-3" id="fitting-picker">
             <div class="card-header d-flex align-items-center gap-2">
                 <i class="fa-solid fa-screwdriver-wrench"></i> {% translate "Manage Fittings in This Doctrine" %}

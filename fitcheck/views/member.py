@@ -95,9 +95,9 @@ def index(request):
 @permission_required("fitcheck.basic_access")
 def doctrine_detail(request, doctrine_pk: int):
     doctrine = get_object_or_404(
-        Doctrine.objects.visible_to(request.user).prefetch_related(
-            "categories", "fits__ship_type", "fits__doctrines"
-        ),
+        Doctrine.objects.visible_to(request.user)
+        .select_related("compliance_policy")
+        .prefetch_related("categories", "fits__ship_type", "fits__doctrines"),
         pk=doctrine_pk,
     )
     can_manage = request.user.has_perm("fitcheck.manage_doctrines")
@@ -107,9 +107,14 @@ def doctrine_detail(request, doctrine_pk: int):
         "page_title": doctrine.name,
     }
     if can_manage:
+        from ..forms import ApplyPolicyForm
+        from ..models import CompliancePolicy
+
         context["assign_form"] = AssignFittingForm(doctrine=doctrine)
         context["doctrine_form"] = DoctrineForm(instance=doctrine)
         context["category_form"] = DoctrineCategoryForm()
+        context["apply_policy_form"] = ApplyPolicyForm()
+        context["has_policies"] = CompliancePolicy.objects.exists()
     return render(request, "fitcheck/doctrine_detail.html", context)
 
 

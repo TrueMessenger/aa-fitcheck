@@ -1,0 +1,51 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="alert alert-warning d-flex align-items-start gap-2">
+        <i class="fa-solid fa-triangle-exclamation fa-lg mt-1"></i>
+        <div>
+            <strong>{% translate "Heads up:" %}</strong>
+            {% blocktranslate count counter=assignments|length %}
+                This will overwrite per-module policy settings on {{ counter }} fitting in this doctrine.
+            {% plural %}
+                This will overwrite per-module policy settings on {{ counter }} fitting(s) in this doctrine.
+            {% endblocktranslate %}
+            {% translate "Per-assignment exceptions (overrides) are kept. Pilots' existing results go stale and need re-audit." %}
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <i class="fa-solid fa-scale-balanced me-2"></i>
+            {% blocktranslate with policy=policy.name doctrine=doctrine.name %}Apply '{{ policy }}' to {{ doctrine }}{% endblocktranslate %}
+        </div>
+        <div class="card-body">
+            <p class="small text-muted mb-2">
+                {% blocktranslate count counter=assignments|length %}
+                    {{ counter }} fitting will be affected:
+                {% plural %}
+                    {{ counter }} fittings will be affected:
+                {% endblocktranslate %}
+            </p>
+            <ul class="mb-3">
+                {% for assignment in assignments %}
+                    <li>{{ assignment.fit.name }}</li>
+                {% empty %}
+                    <li class="text-muted">{% translate "No fittings in this doctrine yet." %}</li>
+                {% endfor %}
+            </ul>
+            <form method="post" class="d-flex gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="policy" value="{{ policy.pk }}">
+                <button class="btn btn-primary" type="submit" {% if not assignments %}disabled{% endif %}>
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> {% translate "Apply Policy" %}
+                </button>
+                <a class="btn btn-secondary" href="{% url 'fitcheck:doctrine_detail' doctrine.pk %}">
+                    {% translate "Cancel" %}
+                </a>
+            </form>
+        </div>
+    </div>
+{% endblock %}

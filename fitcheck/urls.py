@@ -21,6 +21,11 @@ urlpatterns = [
         manage.doctrine_assign_fits_bulk,
         name="doctrine_assign_fits_bulk",
     ),
+    path(
+        "doctrine/<int:doctrine_pk>/apply-policy/",
+        manage.doctrine_apply_policy,
+        name="doctrine_apply_policy",
+    ),
     path("fitting-search/", manage.fitting_search, name="fitting_search"),
     path("ship-group-list/", manage.ship_group_list, name="ship_group_list"),
     path(
