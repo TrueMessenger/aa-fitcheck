@@ -66,6 +66,10 @@ class _PilotUnit:
     # but excluded from the final EXTRA sweep when nothing claims it (the slot
     # already passed it as NO_ENFORCEMENT/OK).
     from_no_enforcement: bool = False
+    # Mirrors FitItem.mutation_capped: True when this abyssal module's roll
+    # lookup was skipped by the per-ship cap, so mutated_attributes is None
+    # for a reason other than "no rolls provided".
+    mutation_capped: bool = False
 
 
 @dataclass
@@ -180,7 +184,10 @@ def check_fit(
     for fit_item in parsed.items_in(Section.CARGO):
         for _ in range(fit_item.quantity):
             cargo_pool.setdefault(fit_item.type_id, []).append(
-                _PilotUnit(fit_item.type_id, fit_item.mutated_attributes)
+                _PilotUnit(
+                    fit_item.type_id, fit_item.mutated_attributes,
+                    mutation_capped=fit_item.mutation_capped,
+                )
             )
 
     # Fitted-extra pool: would-be-EXTRA slot units (no matching doctrine demand
@@ -300,7 +307,10 @@ def _offer_no_enforcement_refit(
     if fitted_extra_pool is None:
         return
     fitted_extra_pool.setdefault(unit.type_id, []).append(
-        _PilotUnit(unit.type_id, unit.mutated_attributes, from_no_enforcement=True)
+        _PilotUnit(
+            unit.type_id, unit.mutated_attributes, from_no_enforcement=True,
+            mutation_capped=unit.mutation_capped,
+        )
     )
     if extra_sections is not None and unit.type_id not in extra_sections:
         extra_sections[unit.type_id] = section
@@ -322,7 +332,10 @@ def _check_slot_section(
     for fit_item in parsed.items_in(section):
         for _ in range(fit_item.quantity):
             pilot_units.append(
-                _PilotUnit(fit_item.type_id, fit_item.mutated_attributes)
+                _PilotUnit(
+                    fit_item.type_id, fit_item.mutated_attributes,
+                    mutation_capped=fit_item.mutation_capped,
+                )
             )
 
     demands = [
@@ -558,7 +571,14 @@ def _check_slot_section(
                     type_id, units[0].mutated_attributes
                 )
                 attribute_results = [c.as_dict() for c in checks]
-                if units[0].mutated_attributes is None:
+                if units[0].mutated_attributes is None and units[0].mutation_capped:
+                    message = (
+                        f"{name_of(type_id)} is mutated and its rolled stats were not "
+                        "verified - the per-ship abyssal lookup cap was reached. Raise "
+                        "'Abyssal lookups per ship' under Settings -> Scan & Result "
+                        "Limits and re-check."
+                    )
+                elif units[0].mutated_attributes is None:
                     message = (
                         f"{name_of(type_id)} is mutated and no rolled stats were provided - "
                         "export the fit from Pyfa (with mutations) or enter the stats manually."

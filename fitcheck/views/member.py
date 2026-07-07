@@ -580,6 +580,8 @@ def ship_inventory(request):
             wanted.setdefault(character_id, []).append(ship_item_id)
 
         results = []
+        capped_ships = 0
+        capped_modules = 0
         tokens, _missing = user_tokens_by_character(request.user)
         for character_id, ship_item_ids in wanted.items():
             token = tokens.get(character_id)
@@ -609,6 +611,9 @@ def ship_inventory(request):
                         % {"id": ship_item_id},
                     )
                     continue
+                if parsed.abyssal_capped:
+                    capped_ships += 1
+                    capped_modules += parsed.abyssal_capped
                 submissions = validate_parsed_ship(
                     request.user,
                     parsed,
@@ -622,6 +627,17 @@ def ship_inventory(request):
                         "submissions": submissions,
                     }
                 )
+        if capped_ships:
+            messages.warning(
+                request,
+                _(
+                    "Abyssal module verification was capped on %(ships)d ship(s) - "
+                    "%(modules)d module(s) stayed unverified. Ask an auditor to raise "
+                    "'Abyssal lookups per ship' under Settings -> Scan & Result Limits, "
+                    "then re-check."
+                )
+                % {"ships": capped_ships, "modules": capped_modules},
+            )
         if results:
             from ..tasks import notify_reviewers_new_submission
 

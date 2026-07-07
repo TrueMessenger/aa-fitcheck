@@ -304,6 +304,43 @@ class TestMemberInventoryView(TestCase):
         build.assert_not_called()
         self.assertFalse(FitSubmission.objects.filter(doctrine_fit=fit).exists())
 
+    def test_post_surfaces_abyssal_cap_warning(self):
+        """#48: when a ship's abyssal roll verification was truncated by the
+        per-ship cap, the audit response carries an aggregate warning instead
+        of silently grading with unverified rolls."""
+        from ..services.fit_data import ParsedFit
+
+        user = create_user("alliance_capped")
+        _attach_main(user, alliance_id=99, corporation_id=2001)
+        user = _grant(user, "view_member_inventory")
+        _make_member(character_id=50010, alliance_id=99, corporation_id=2001)
+        fit = create_fit(None, T.HARBINGER, name="Capped Target")
+
+        _ship, inv = self._ship_and_inventory()
+        with mock.patch(
+            "fitcheck.services.esi_assets.get_inventory_for_characters",
+            return_value=inv,
+        ), mock.patch(
+            "fitcheck.services.esi_assets.resolve_contents",
+            return_value=[{"item_id": 70001, "type_id": T.HARBINGER}],
+        ), mock.patch(
+            "fitcheck.services.esi_assets.build_parsed_fit",
+            return_value=ParsedFit(
+                ship_type_id=T.HARBINGER, fit_name="Member's Harb",
+                items=[], source_ship_item_id=70001, abyssal_capped=3,
+            ),
+        ):
+            self.client.force_login(user)
+            response = self.client.post(
+                reverse("fitcheck:member_inventory_for_fit", args=[fit.pk]),
+                {"ships": ["50010:70001"]},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "capped on 1 ship(s)")
+        self.assertContains(response, "3 module(s) stayed unverified")
+        self.assertContains(response, "Scan &amp; Result Limits")
+
     def test_scan_is_not_capped_at_200_members(self):
         """Regression for the silent alphabetical 200-member cap (#50): every
         in-scope character reaches the inventory scan."""

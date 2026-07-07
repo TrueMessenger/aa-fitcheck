@@ -558,3 +558,42 @@ class TestMutatedRollEsiVerification(TestCase):
             all(w.mutation_source == SubmissionItem.MutationSource.ESI_VERIFIED
                 for w in webs)
         )
+
+
+class TestMutationCappedFinding(TestCase):
+    """#48: a mutated module whose roll lookup was skipped by the per-ship
+    abyssal cap must say so, distinct from "no rolled stats were provided"
+    (which would otherwise blame the pilot for a scan-side truncation)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+        cls.doctrine = create_doctrine()
+        cls.fit = create_fit(cls.doctrine, T.HARBINGER, name="Web Fit")
+        add_item(
+            cls.fit, Section.MED, T.WEB_II, 1,
+            policy=SubstitutionPolicy.MEET_OR_BEAT,
+            checked_attributes=[Attrs.WEB_STRENGTH, Attrs.WEB_RANGE],
+        )
+
+    def _check(self, mutation_capped):
+        item = FitItem(
+            section=Section.MED, type_id=T.WEB_ABYSSAL, quantity=1,
+            mutated_attributes=None, mutation_capped=mutation_capped,
+        )
+        result = check_fit(ParsedFit(ship_type_id=T.HARBINGER, items=[item]), self.fit)
+        return next(
+            f for f in result.findings
+            if f.actual_type_id == T.WEB_ABYSSAL
+        )
+
+    def test_capped_lookup_names_the_scan_limit(self):
+        finding = self._check(mutation_capped=True)
+        self.assertIn("per-ship abyssal lookup cap", finding.message)
+        self.assertIn("Scan & Result Limits", finding.message)
+        self.assertNotIn("no rolled stats were provided", finding.message)
+
+    def test_uncapped_missing_rolls_keeps_old_wording(self):
+        finding = self._check(mutation_capped=False)
+        self.assertIn("no rolled stats were provided", finding.message)
+        self.assertNotIn("per-ship abyssal lookup cap", finding.message)
