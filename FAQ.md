@@ -89,8 +89,10 @@ general policy says.
 ### How are abyssal/mutated modules evaluated?
 
 Per-attribute, against the doctrine baseline, honoring EVE's own "higher is better" or
-"lower is better" direction per attribute. Rolls come from (in order of trust) a Pyfa EFT
-export's mutation block, an ESI-verified read of the pilot's actual assets, or manual
+"lower is better" direction per attribute. Rolls can come from three sources: a paste
+that includes Pyfa's extended EFT mutation syntax (Fit Check's parser reads that text
+format directly — there's no Pyfa integration or dependency, just support for the fields
+Pyfa writes into its export), an ESI-verified read of the pilot's actual assets, or manual
 entry (flagged **Self-reported** to reviewers, since it can't be independently verified).
 Admins can require specific attributes meet a minimum via the abyssal-bounds modal.
 
