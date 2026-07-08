@@ -104,6 +104,9 @@
                                 {{ form.is_active }}
                                 <label class="form-check-label" for="{{ form.is_active.id_for_label }}">{% translate "Active" %}</label>
                             </div>
+                            <label class="form-label mt-3" for="{{ form.auto_approve.id_for_label }}">{% translate "Auto-approve inventory submissions" %}</label>
+                            {{ form.auto_approve }}
+                            <div class="form-text">{% translate "Applies only to ships validated from inventory (ESI); pasted fits never create submissions. You can change this later from the doctrine page." %}</div>
                         </div>
                     </div>
                 </div>

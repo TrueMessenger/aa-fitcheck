@@ -47,6 +47,33 @@ def _emit_compliance_changed(
     )
 
 
+def _maybe_auto_approve(submission: FitSubmission) -> None:
+    """Per-doctrine auto-approve: an inventory-validated (ESI) submission graded
+    against a doctrine that opted in, whose verdict meets the doctrine's tier, is
+    approved with no human reviewer. ``reviewed_by`` stays None - that, together
+    with ``status == APPROVED``, is the marker that reads as "Approved by rule"
+    everywhere; ``reviewed_at`` records when. Pasted fits (source EFT) are never
+    auto-approved: their text can't be tied to a real hull. Runs inside
+    ``submit_fit``'s transaction and before the compliance signal, so the emitted
+    state is already final."""
+    doctrine = submission.doctrine
+    if (
+        submission.source != FitSubmission.Source.ESI
+        or doctrine is None
+        or not doctrine.auto_approves(submission.verdict)
+    ):
+        return
+    submission.status = FitSubmission.Status.APPROVED
+    submission.reviewed_at = timezone.now()
+    submission.save(update_fields=["status", "reviewed_at"])
+    SubmissionActionLog.objects.create(
+        submission=submission,
+        actor=None,
+        action=SubmissionActionLog.Action.AUTO_APPROVED,
+        comment="",
+    )
+
+
 def _current_policy_version(doctrine_fit: DoctrineFit, doctrine: Doctrine | None) -> int:
     """The live policy-ladder value a new or re-checked submission snapshots:
     the (doctrine, fit) assignment's version when grading a doctrine snapshot,
@@ -115,6 +142,10 @@ def submit_fit(
         submission=submission, actor=user, action=SubmissionActionLog.Action.SUBMITTED
     )
     _run_and_store(submission, parsed, SubmissionActionLog.Action.AUTO_CHECKED)
+    # Flip to Approved-by-rule (if the doctrine opted in) BEFORE emitting the
+    # signal, so receivers see the final state once rather than PENDING then
+    # APPROVED.
+    _maybe_auto_approve(submission)
     _emit_compliance_changed(
         submission, old_verdict=None, old_status=None, actor=user
     )

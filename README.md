@@ -188,6 +188,13 @@ Inventory page, and the settings show the current budget limit.
 
 - Filterable review queue (by pilot, doctrine, verdict, status).
 - **Approve** (comment optional) or **reject** (comment required — pilot sees exactly what to fix).
+- **Auto-approve by rule** — a doctrine can approve qualifying submissions without a reviewer.
+  Set its Auto-approve tier to *Compliant only* or *Compliant or with substitutions* (default:
+  *Off*), and any submission graded against that doctrine whose verdict meets the tier is approved
+  the moment it's checked. Only **ESI/inventory-validated** submissions ever qualify — pasted fits
+  are a sandbox and can't be tied to a real hull, so they never auto-approve. Rule approvals show
+  as **Approved by rule** (kept distinct from a reviewer's approval), are written to the audit log,
+  skip the reviewer notification, and still notify the pilot that their fit passed.
 - Stale badges flag submissions graded against an outdated fit version.
 - Full audit log per submission with actor, action, and comment.
 - AA notifications on decision (immediate or periodic digest); Discord delivery is automatic via

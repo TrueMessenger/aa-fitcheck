@@ -74,6 +74,19 @@
         </div>
     {% endif %}
 
+    {% if submission.status == "A" and not submission.reviewed_by_id and submission.reviewed_at %}
+        <div class="alert alert-light d-flex align-items-center gap-2">
+            <i class="fa-solid fa-robot fa-lg"></i>
+            <div>
+                <strong>{% translate "Approved by rule" %}</strong>
+                <div class="small text-muted">
+                    {% translate "This inventory-validated fit met the doctrine's standard and was approved automatically - no reviewer was involved." %}
+                    &middot; {{ submission.reviewed_at|date:"SHORT_DATETIME_FORMAT" }}
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
     <div class="d-flex gap-2 mb-3 align-items-center">
         <button type="button" class="btn btn-secondary btn-sm" onclick="history.back()">
             <i class="fa-solid fa-arrow-left"></i> {% translate "Back" %}

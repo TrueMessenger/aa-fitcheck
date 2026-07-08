@@ -38,6 +38,16 @@ version last got one.
 ## [Unreleased]
 
 ### Added
+- Doctrines can auto-approve inventory-validated submissions. Each doctrine has an
+  Auto-approve setting (Off by default) that, when set to "Compliant only" or "Compliant
+  or with substitutions", approves a submission automatically the moment it is graded -
+  no reviewer needed - as long as it came from ESI inventory validation, was graded
+  against that doctrine, and its verdict meets the chosen tier. Pasted fits are never
+  auto-approved (their text can't be tied to a real hull). Auto-approvals show as
+  "Approved by rule" (distinct from a reviewer approval, which keeps the reviewer's
+  name), are recorded in the submission's history, never notify reviewers, and notify
+  the pilot that their fit passed automatically. Migration 0039 adds
+  `Doctrine.auto_approve` and an `Auto-approved` action to the submission log.
 - Reviewers can approve multiple selected submissions at once from the review queue's
   "Approve Selected" bulk action, alongside the existing "Delete Selected". Only pending
   rows with a Compliant or Compliant-with-substitutions verdict are approved; everything
