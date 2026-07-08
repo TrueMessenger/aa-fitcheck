@@ -74,6 +74,11 @@ version last got one.
   The only source of a reviewable submission is ESI/corptools inventory validation
   (My Ships).
 
+### Fixed
+- The Doctrines page filter chips, the category badges on each doctrine card, the
+  doctrine detail page, and the fit detail page no longer name a category the member
+  can't access, or a category with nothing currently visible in it.
+
 ## [1.11.0] - 2026-07-07
 
 **Upgrade notes:** run `python manage.py migrate` (adds migrations 0033–0037), then

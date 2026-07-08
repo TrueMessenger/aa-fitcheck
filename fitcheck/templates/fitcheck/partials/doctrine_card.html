@@ -16,9 +16,9 @@
                 </h5>
                 <span class="badge bg-secondary">{{ doctrine.fits.all|length }} {% translate "fits" %}</span>
             </div>
-            {% if doctrine.categories.all %}
+            {% if doctrine.visible_categories %}
                 <div class="mb-2">
-                    {% for category in doctrine.categories.all %}
+                    {% for category in doctrine.visible_categories %}
                         <span class="badge me-1" style="background:{{ category.color }};color:{{ category.text_color }}">{{ category.name }}</span>
                     {% endfor %}
                 </div>

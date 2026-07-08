@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 from allianceauth.eveonline.models import EveCharacter
 
 from ..forms import AssignFittingForm, DoctrineCategoryForm, DoctrineForm
-from ..models import Doctrine, DoctrineCategory, DoctrineFit, DoctrineFitItem, FitSubmission
+from ..managers import visible_categories_among, visible_categories_for
+from ..models import Doctrine, DoctrineFit, DoctrineFitItem, FitSubmission
 from ..services.check_runner import (
     build_deficit_multibuy,
     gradeable_doctrines_for,
@@ -74,6 +75,12 @@ def index(request):
     for doctrine in doctrines:
         for fit in doctrine.fits.all():
             fit.latest_submission = latest_by_fit.get(fit.pk)
+        # A doctrine can be visible via one category while carrying another
+        # the user isn't admitted to (OR across categories) - don't let the
+        # card's badge row name a category the chip bar itself would hide.
+        doctrine.visible_categories = visible_categories_among(
+            request.user, doctrine.categories.all()
+        )
 
     fittings_available = False
     if request.user.has_perm("fitcheck.manage_doctrines"):
@@ -86,7 +93,7 @@ def index(request):
         "fitcheck/index.html",
         {
             "doctrines": doctrines,
-            "all_categories": DoctrineCategory.objects.all(),
+            "all_categories": visible_categories_for(request.user),
             "active_category": category_pk,
             "fittings_available": fittings_available,
             "page_title": _("Doctrines"),
@@ -107,6 +114,11 @@ def doctrine_detail(request, doctrine_pk: int):
     context = {
         "doctrine": doctrine,
         "can_manage": can_manage,
+        # Same OR-across-categories exposure as the index cards: a doctrine
+        # visible via one category can carry another the user can't see.
+        "visible_categories": visible_categories_among(
+            request.user, doctrine.categories.all()
+        ),
         "page_title": doctrine.name,
     }
     if can_manage:
@@ -190,7 +202,12 @@ def fit_detail(request, fit_pk: int):
     for doctrine in doctrine_list:
         for category in doctrine.categories.all():
             categories_by_pk[category.pk] = category
-    fit_categories = sorted(categories_by_pk.values(), key=lambda c: c.name)
+    # A fit can be admitted via one category while carrying another (its own,
+    # or via a doctrine) the user isn't admitted to (OR across categories) -
+    # don't let the badge row name a category the user can't otherwise see.
+    fit_categories = visible_categories_among(
+        request.user, sorted(categories_by_pk.values(), key=lambda c: c.name)
+    )
     return render(
         request,
         "fitcheck/fit_detail.html",
