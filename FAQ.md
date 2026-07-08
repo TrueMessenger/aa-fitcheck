@@ -26,10 +26,13 @@ there in full.
 
 ### How do I check whether my ship matches a doctrine?
 
-Two ways: paste the fit as EFT text on the submit page, or — if you've granted ESI
-access — use **My Ships**, which reads your hangar directly and grades every ship you
-own that matches a doctrine hull, no pasting required. My Ships also verifies implants
-and abyssal/mutated rolls automatically since it reads your actual assets.
+Two ways. **My Ships** (grant ESI access once) reads your hangar directly and grades
+every ship you own that matches a doctrine hull — no pasting required, and implants
+and abyssal/mutated rolls are verified automatically from your actual assets. This is
+the path that creates a real submission reviewers can approve. Alternatively, open any
+fitting's **Test a Fit** page and paste a fit as EFT text for an instant **check-only**
+result: nothing is saved, reviewers aren't notified, and mutated-module stats are
+self-reported — ideal for checking a fit before you buy it.
 
 ### What do the verdicts mean?
 

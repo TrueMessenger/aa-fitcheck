@@ -90,12 +90,19 @@ class TestMemberViews(ViewTestCase):
         self.assertContains(response, "Heat Sink II")
         self.assertContains(response, "Imperial Navy Heat Sink")
 
-    def test_submit_eft_is_staff_only(self):
+    def test_submit_eft_save_mode_is_staff_only(self):
+        # Members get the check-only sandbox; a POST that would persist a
+        # submission (no mode field) stays staff-only.
         self.client.force_login(self.member)
         response = self.client.post(
             reverse("fitcheck:submit_eft", args=[self.fit.pk]), {"eft_text": EFT_GOOD}
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_fit_detail_offers_test_a_fit_to_member(self):
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("fitcheck:fit_detail", args=[self.fit.pk]))
+        self.assertContains(response, reverse("fitcheck:submit_eft", args=[self.fit.pk]))
 
     def test_submit_eft_flow_for_reviewer(self):
         self.client.force_login(self.reviewer)

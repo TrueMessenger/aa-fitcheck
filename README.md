@@ -203,8 +203,12 @@ Inventory page, and the settings show the current budget limit.
 - **Copy Buy All** — aggregated multibuy list (hull + all modules, charges, and bay contents,
   grouped and summed) ready to paste into EVE's Multibuy window.
 - **Save to EVE** — push the doctrine fit directly into the pilot's in-game Fittings panel via SSO.
-- **Missing Modules** — the review form generates a paste-ready deficit multibuy list of everything
-  a pilot still needs.
+- **Missing Modules** — the submission page generates a paste-ready deficit multibuy list of
+  everything a pilot still needs: pilots copy it straight to the clipboard, reviewers drop it
+  into the review comment.
+- **Test a Fit** — paste any fit as EFT text for an instant check-only grade against the
+  standard: nothing is saved, nothing reaches the review queue. Doctrine staff can also
+  create real submissions from a paste.
 
 ### Compliance Sections
 
