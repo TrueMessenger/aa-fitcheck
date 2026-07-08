@@ -54,11 +54,18 @@
         </div>
     </form>
 
-    <form method="post" action="{% url 'fitcheck:review_submissions_delete_bulk' %}"
-          onsubmit="return confirm('{% translate "Delete the selected submissions?" %}')">
+    <form method="post" action="{% url 'fitcheck:review_submissions_delete_bulk' %}">
         {% csrf_token %}
-        <div class="d-flex mb-2">
-            <button type="submit" class="btn btn-sm btn-danger ms-auto" id="bulk-delete-btn" disabled>
+        <div class="d-flex gap-2 mb-2">
+            <button type="submit" class="btn btn-sm btn-success ms-auto" id="bulk-approve-btn" disabled
+                    formaction="{% url 'fitcheck:review_submissions_approve_bulk' %}"
+                    onclick="return confirm('{% translate "Approve the selected submissions?" %}')">
+                <i class="fa-solid fa-check"></i>
+                <span id="bulk-approve-count">{% translate "Approve Selected" %}</span>
+            </button>
+            <button type="submit" class="btn btn-sm btn-danger" id="bulk-delete-btn" disabled
+                    formaction="{% url 'fitcheck:review_submissions_delete_bulk' %}"
+                    onclick="return confirm('{% translate "Delete the selected submissions?" %}')">
                 <i class="fa-solid fa-trash"></i>
                 <span id="bulk-delete-count">{% translate "Delete Selected" %}</span>
             </button>
@@ -147,14 +154,28 @@
         (function () {
             const all = document.getElementById("check-all");
             const boxes = document.querySelectorAll(".bulk-check");
-            const btn = document.getElementById("bulk-delete-btn");
-            const counter = document.getElementById("bulk-delete-count");
-            if (!btn) return;
-            const defaultLabel = counter.textContent;
+            const actions = [
+                {
+                    btn: document.getElementById("bulk-approve-btn"),
+                    counter: document.getElementById("bulk-approve-count"),
+                    label: "{% translate 'Approve' %}",
+                },
+                {
+                    btn: document.getElementById("bulk-delete-btn"),
+                    counter: document.getElementById("bulk-delete-count"),
+                    label: "{% translate 'Delete' %}",
+                },
+            ].filter(action => action.btn && action.counter);
+            if (!actions.length) return;
+            actions.forEach(action => {
+                action.defaultLabel = action.counter.textContent;
+            });
             function refresh() {
                 const n = Array.from(boxes).filter(b => b.checked).length;
-                btn.disabled = n === 0;
-                counter.textContent = n === 0 ? defaultLabel : "{% translate 'Delete' %} " + n;
+                actions.forEach(action => {
+                    action.btn.disabled = n === 0;
+                    action.counter.textContent = n === 0 ? action.defaultLabel : action.label + " " + n;
+                });
             }
             if (all) {
                 all.addEventListener("change", () => {

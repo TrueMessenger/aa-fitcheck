@@ -179,6 +179,11 @@ urlpatterns = [
         review.submissions_delete_bulk,
         name="review_submissions_delete_bulk",
     ),
+    path(
+        "review/approve/",
+        review.submissions_approve_bulk,
+        name="review_submissions_approve_bulk",
+    ),
     path("review/<int:submission_pk>/decide/", review.decide, name="review_decide"),
     # Reports tab (org-wide compliance, gated view_compliance_reports)
     path("reports/", reports.overview, name="reports_overview"),
