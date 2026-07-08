@@ -122,9 +122,28 @@ class DoctrineCategory(models.Model):
 
 
 class Doctrine(models.Model):
+    class AutoApprove(models.TextChoices):
+        """Per-doctrine auto-approve tier for inventory-validated (ESI)
+        submissions. Never applies to pasted fits (unverifiable text)."""
+
+        OFF = "OFF", _("Off")
+        COMPLIANT = "C", _("Compliant only")
+        COMPLIANT_SUBS = "CS", _("Compliant or with substitutions")
+
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    auto_approve = models.CharField(
+        max_length=3,
+        choices=AutoApprove.choices,
+        default=AutoApprove.OFF,
+        help_text=(
+            "Automatically approve inventory-validated (ESI) submissions graded "
+            "against this doctrine whose verdict meets the chosen tier. Never "
+            "applies to pasted fits, which can't be tied to a real hull. "
+            "Off = every submission waits for a human reviewer."
+        ),
+    )
     # A ship type used as the doctrine's poster image (rendered from EVE image server).
     image_type_id = models.PositiveIntegerField(
         null=True,
@@ -178,6 +197,22 @@ class Doctrine(models.Model):
         if self.image_type_id:
             return f"https://images.evetech.net/types/{self.image_type_id}/render?size={size}"
         return None
+
+    def auto_approves(self, verdict: str) -> bool:
+        """Whether this doctrine's auto-approve tier accepts ``verdict`` (a
+        ``FitSubmission.Verdict`` value). Compliant qualifies at the Compliant
+        tier and above; Compliant-with-substitutions only at the
+        Compliant-or-substitutions tier. Non-compliant and error verdicts never
+        qualify. This is purely the verdict-tier test - the source (ESI only)
+        and doctrine gating are enforced by the caller."""
+        from .submission import FitSubmission  # local: submission imports doctrine
+
+        Verdict = FitSubmission.Verdict
+        if self.auto_approve == self.AutoApprove.COMPLIANT:
+            return verdict == Verdict.COMPLIANT
+        if self.auto_approve == self.AutoApprove.COMPLIANT_SUBS:
+            return verdict in (Verdict.COMPLIANT, Verdict.COMPLIANT_SUBS)
+        return False
 
 
 class EnforcementMode(models.TextChoices):

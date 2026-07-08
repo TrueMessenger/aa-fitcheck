@@ -33,6 +33,18 @@ def _can_review(user) -> bool:
     )
 
 
+def _is_auto_approved(submission: FitSubmission) -> bool:
+    """True when a submission was approved by rule (no reviewer): status
+    Approved with no ``reviewed_by`` but a decision time set. Used to decide
+    whether the pilot still needs a decision notification after a submit or
+    re-check that went through the auto-approve path."""
+    return (
+        submission.status == FitSubmission.Status.APPROVED
+        and submission.reviewed_by_id is None
+        and submission.reviewed_at is not None
+    )
+
+
 def _visible_fit_or_404(request, fit_pk: int) -> DoctrineFit:
     fit = get_object_or_404(
         DoctrineFit.objects.select_related("ship_type").prefetch_related("doctrines__categories"),
@@ -709,11 +721,18 @@ def ship_inventory(request):
                 % {"ships": capped_ships, "modules": capped_modules},
             )
         if results:
-            from ..tasks import notify_reviewers_new_submission
+            from ..tasks import notify_member_decision, notify_reviewers_new_submission
 
             for result in results:
                 for submission in result["submissions"]:
                     notify_reviewers_new_submission.delay(submission.pk)
+                    # A submission the doctrine auto-approved gets no reviewer
+                    # ping (that task bails on non-pending), but the pilot still
+                    # hears the outcome. Enqueue here - after submit_fit's
+                    # transaction has committed - so the worker sees the row,
+                    # the same way the reviewer notify above is enqueued.
+                    if _is_auto_approved(submission):
+                        notify_member_decision.delay(submission.pk)
             return render(
                 request,
                 "fitcheck/inventory_results.html",
@@ -1002,8 +1021,12 @@ def submission_recheck(request, submission_pk: int):
     )
     submission.delete()  # replace: only the newest submission is kept
 
-    from ..tasks import notify_reviewers_new_submission
+    from ..tasks import notify_member_decision, notify_reviewers_new_submission
 
     notify_reviewers_new_submission.delay(new.pk)
+    # If the re-check's replacement was auto-approved by the doctrine, tell the
+    # pilot the outcome (the reviewer ping above is a no-op for it).
+    if _is_auto_approved(new):
+        notify_member_decision.delay(new.pk)
     messages.success(request, _("Re-check complete - the previous submission was replaced."))
     return redirect("fitcheck:submission_detail", submission_pk=new.pk)

@@ -1,5 +1,13 @@
+{% load i18n %}
 {% if submission.status == "A" %}
-    <span class="badge bg-success">{{ submission.get_status_display }}</span>
+    {% if not submission.reviewed_by_id and submission.reviewed_at %}
+        <span class="badge bg-success"
+              title="{% translate 'Automatically approved: this inventory-validated fit met the doctrine standard, so no reviewer was needed.' %}">
+            <i class="fa-solid fa-robot"></i> {% translate "Approved by rule" %}
+        </span>
+    {% else %}
+        <span class="badge bg-success">{{ submission.get_status_display }}</span>
+    {% endif %}
 {% elif submission.status == "R" %}
     <span class="badge bg-danger">{{ submission.get_status_display }}</span>
 {% else %}

@@ -60,14 +60,28 @@ class DoctrineForm(forms.ModelForm):
 
     class Meta:
         model = Doctrine
-        fields = ["name", "description", "image_type_id", "categories", "is_active"]
+        fields = [
+            "name", "description", "image_type_id", "categories", "is_active",
+            "auto_approve",
+        ]
         widgets = {
             "description": forms.Textarea(attrs={"rows": 3, "class": "form-control"}),
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "categories": CategoryPillSelect(
                 attrs={"class": "form-select", "data-category-picker": "1"}
             ),
+            "auto_approve": forms.Select(attrs={"class": "form-select"}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # The select always submits a value in the browser, but keep it optional
+        # so a partial POST (e.g. an existing form that predates the field) is
+        # still valid; a missing value falls back to the safe default below.
+        self.fields["auto_approve"].required = False
+
+    def clean_auto_approve(self):
+        return self.cleaned_data.get("auto_approve") or Doctrine.AutoApprove.OFF
 
     def clean_image_type_id(self):
         type_id = self.cleaned_data.get("image_type_id")

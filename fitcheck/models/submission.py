@@ -223,6 +223,7 @@ class SubmissionActionLog(models.Model):
         AUTO_CHECKED = "CHK", _("Auto-checked")
         RECHECKED = "RCK", _("Re-checked")
         APPROVED = "APP", _("Approved")
+        AUTO_APPROVED = "AAP", _("Auto-approved")
         REJECTED = "REJ", _("Rejected")
         COMMENTED = "COM", _("Commented")
 

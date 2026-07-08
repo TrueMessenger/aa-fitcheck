@@ -220,6 +220,11 @@ def notify_reviewers_new_submission(submission_id: int):
     )
     if submission is None:
         return
+    # Auto-approved (or otherwise already-decided) submissions never ping
+    # reviewers - there is nothing left in the queue for them to act on. Kept in
+    # the task, not the call sites, so every future caller inherits the guard.
+    if submission.status != FitSubmission.Status.PENDING:
+        return
     for reviewer in _reviewers():
         notify(
             reviewer,
@@ -297,10 +302,29 @@ def notify_member_decision(submission_id: int):
         .select_related("doctrine_fit", "user", "reviewed_by")
         .first()
     )
-    if submission is None or not submission.reviewed_by:
+    if submission is None:
         return
     approved = submission.status == FitSubmission.Status.APPROVED
-    if approved:
+    # Approved with no reviewer but a decision time = a rule auto-approval.
+    auto_approved = (
+        approved
+        and submission.reviewed_by is None
+        and submission.reviewed_at is not None
+    )
+    # A reviewer-less submission that is NOT a rule approval has no decision to
+    # report (e.g. still pending) - stay silent, as before.
+    if submission.reviewed_by is None and not auto_approved:
+        return
+    if auto_approved:
+        title = gettext("Fit Check: submission approved by rule")
+        body = gettext(
+            "Your submission #%(id)s for '%(fit)s' met the doctrine's standard "
+            "and was approved automatically - no reviewer was needed."
+        ) % {
+            "id": submission.pk,
+            "fit": submission.doctrine_fit,
+        }
+    elif approved:
         title = gettext("Fit Check: submission approved")
         body = gettext(
             "Your submission #%(id)s for '%(fit)s' was approved by %(reviewer)s."

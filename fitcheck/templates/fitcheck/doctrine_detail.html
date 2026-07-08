@@ -88,6 +88,11 @@
                                     {{ doctrine_form.is_active }}
                                     <label class="form-check-label" for="{{ doctrine_form.is_active.id_for_label }}">{% translate "Active" %}</label>
                                 </div>
+                                <label class="form-label mt-3" for="{{ doctrine_form.auto_approve.id_for_label }}">{% translate "Auto-approve inventory submissions" %}</label>
+                                {{ doctrine_form.auto_approve }}
+                                <div class="form-text">
+                                    {% translate "Applies only to ships validated from inventory (ESI). Pasted fits are a sandbox and never create submissions, so they are never auto-approved." %}
+                                </div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">{% translate "Doctrine Image (Ship)" %}</label>
