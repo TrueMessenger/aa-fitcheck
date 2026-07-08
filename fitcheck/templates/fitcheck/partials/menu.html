@@ -16,9 +16,15 @@
         </li>
     {% endif %}
     <li class="nav-item">
-        <a class="nav-link {% if request.resolver_match.url_name == 'pilot_fittings' or request.resolver_match.url_name == 'ship_inventory' %}active{% endif %}"
+        <a class="nav-link {% if request.resolver_match.url_name == 'pilot_fittings' %}active{% endif %}"
            href="{% url 'fitcheck:pilot_fittings' %}">
             <i class="fa-solid fa-user-astronaut me-1"></i>{% translate "Pilot Fittings" %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if request.resolver_match.url_name == 'ship_inventory' %}active{% endif %}"
+           href="{% url 'fitcheck:ship_inventory' %}">
+            <i class="fa-solid fa-rocket me-1"></i>{% translate "My Ships" %}
         </a>
     </li>
     {% if perms.fitcheck.review_submissions or perms.fitcheck.secure_group_management %}

@@ -93,6 +93,18 @@
         }
         a.fc-chip:hover { border-color: var(--bs-primary); }
         .fc-chip.active { background: var(--bs-primary); color: #fff; border-color: var(--bs-primary); }
+        /* Toggle-chip doctrine picker: a visually-hidden .btn-check drives a
+           .fc-chip label via the sibling selector, so the filled state and the
+           check icon both need no JS. The icon is a second signal alongside
+           colour (see .fc-chip-check). */
+        label.fc-chip-select { cursor: pointer; }
+        .fc-chip-select .fc-chip-check { display: none; }
+        .btn-check:checked + .fc-chip-select {
+            background: var(--bs-primary);
+            color: #fff;
+            border-color: var(--bs-primary);
+        }
+        .btn-check:checked + .fc-chip-select .fc-chip-check { display: inline; }
         .fc-toolbar {
             display: flex;
             flex-wrap: wrap;
