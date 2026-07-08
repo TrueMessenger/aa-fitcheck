@@ -28,6 +28,7 @@ from ..forms import (
     FitImportForm,
     FitItemPolicyFormSet,
     FitSettingsForm,
+    NotificationSettingsForm,
     OverrideAddForm,
     PolicySlotRuleForm,
     ScanParametersForm,
@@ -42,6 +43,7 @@ from ..models import (
     EnforcementSettings,
     FitItemOverride,
     FitSubmission,
+    NotificationSettings,
     PolicySlotRule,
     ScanParameters,
     SdeType,
@@ -2094,6 +2096,29 @@ def scan_parameters(request):
         request,
         "fitcheck/settings/parameters.html",
         {"form": form, "page_title": _("Scan & Result Limits")},
+    )
+
+
+@login_required
+@permission_required("fitcheck.manage_policies")
+def notification_settings(request):
+    """Per-type on/off switches for the Alliance Auth notifications Fit Check
+    emits (reviewer pings/digest, pilot decision + stale notices). Replaces
+    the need to touch the legacy FITCHECK_NOTIFY_*/FITCHECK_REVIEWER_DIGEST
+    Django settings, which now only seed this row's defaults on first use."""
+    settings_obj = NotificationSettings.current()
+    if request.method == "POST":
+        form = NotificationSettingsForm(request.POST, instance=settings_obj)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Notification settings saved."))
+            return redirect("fitcheck:notification_settings")
+    else:
+        form = NotificationSettingsForm(instance=settings_obj)
+    return render(
+        request,
+        "fitcheck/settings/notifications.html",
+        {"form": form, "page_title": _("Notification Settings")},
     )
 
 

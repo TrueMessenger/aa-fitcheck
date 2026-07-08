@@ -1,12 +1,10 @@
-from unittest.mock import patch
-
 from django.test import TestCase
 from django.urls import reverse
 
 from allianceauth.notifications.models import Notification
 
 from ..constants import Section
-from ..models import FitSubmission
+from ..models import FitSubmission, NotificationSettings
 from ..services.eft_parser import parse_eft
 from ..services.check_runner import submit_fit
 from ..tasks import send_review_digest
@@ -111,7 +109,13 @@ class TestReviewDigest(TestCase):
             self.member, self.fit, parse_eft("[Harbinger, X]\nHeat Sink II\n")
         )
 
+    def _enable_digest(self):
+        settings_obj = NotificationSettings.current()
+        settings_obj.reviewer_digest = True
+        settings_obj.save()
+
     def test_digest_summarizes_pending_queue(self):
+        self._enable_digest()
         self._submit()
         self._submit()
         Notification.objects.all().delete()
@@ -121,16 +125,23 @@ class TestReviewDigest(TestCase):
         self.assertIn(str(self.fit), notification.message)
 
     def test_digest_silent_when_queue_empty(self):
+        self._enable_digest()
+        send_review_digest()
+        self.assertFalse(Notification.objects.filter(user=self.reviewer).exists())
+
+    def test_digest_off_sends_nothing(self):
+        self._submit()
+        Notification.objects.all().delete()
         send_review_digest()
         self.assertFalse(Notification.objects.filter(user=self.reviewer).exists())
 
     def test_digest_mode_suppresses_immediate_notifications(self):
         from ..tasks import notify_reviewers_new_submission
 
+        self._enable_digest()
         submission = self._submit()
         Notification.objects.all().delete()
-        with patch("fitcheck.tasks.FITCHECK_REVIEWER_DIGEST", True):
-            notify_reviewers_new_submission(submission.pk)
+        notify_reviewers_new_submission(submission.pk)
         self.assertFalse(Notification.objects.filter(user=self.reviewer).exists())
 
 

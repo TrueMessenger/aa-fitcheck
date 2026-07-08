@@ -6,12 +6,7 @@ from django.utils.translation import gettext, ngettext
 
 from allianceauth.notifications import notify
 
-from .app_settings import (
-    FITCHECK_NOTIFY_PILOTS_STALE,
-    FITCHECK_NOTIFY_REVIEWERS,
-    FITCHECK_REVIEWER_DIGEST,
-)
-from .models import DoctrineFit, FitSubmission
+from .models import DoctrineFit, FitSubmission, NotificationSettings, UserNotificationPreference
 
 
 def _reviewers():
@@ -111,6 +106,8 @@ def _notify_approved_stale(fit: DoctrineFit) -> None:
         if not submission.is_stale or submission.user_id in seen_users:
             continue
         seen_users.add(submission.user_id)
+        if UserNotificationPreference.is_muted(submission.user):
+            continue
         # Keyed on every ladder the submission's currency depends on, so a
         # repeated Recheck Stale run stays silent but any NEW change (global
         # or this submission's own policy ladder) re-arms the notification.
@@ -156,13 +153,17 @@ def recheck_pending_submissions(fit_id: int):
     submissions and tell the affected pilots what happened (with an old->new
     module diff when the BOM changed). Holders of approved submissions that
     predate the change are warned once per fit version - their decision is
-    never re-graded."""
+    never re-graded. Every notification here (pending re-grade, plain
+    verdict-changed fallback, approved-holder warning) is one logical event -
+    "a fit/policy change touched your submission" - gated by the single
+    ``notify_pilots_stale`` toggle."""
     from .services.check_runner import recheck_submission
     from .services.fit_diff import diff_for_submission
 
     fit = DoctrineFit.objects.filter(pk=fit_id).first()
     if fit is None:
         return
+    notify_stale = NotificationSettings.current().notify_pilots_stale
     pending = (
         fit.submissions.pending().with_staleness().select_related("doctrine_fit", "user")
     )
@@ -172,7 +173,9 @@ def recheck_pending_submissions(fit_id: int):
         # Resolve the diff before the re-check resets fit_version to current.
         diff = diff_for_submission(submission) if was_stale else None
         recheck_submission(submission)
-        if was_stale and FITCHECK_NOTIFY_PILOTS_STALE:
+        if UserNotificationPreference.is_muted(submission.user):
+            continue
+        if was_stale and notify_stale:
             body = gettext(
                 "The fitting standard '%(fit)s' was updated and your pending "
                 "submission #%(id)s was re-graded against the new version. "
@@ -190,7 +193,7 @@ def recheck_pending_submissions(fit_id: int):
                 message=body,
                 level="warning",
             )
-        elif submission.verdict != old_verdict:
+        elif notify_stale and submission.verdict != old_verdict:
             notify(
                 submission.user,
                 title=gettext("Fit Check: verdict changed for %(fit)s") % {"fit": fit.name},
@@ -205,13 +208,14 @@ def recheck_pending_submissions(fit_id: int):
                 },
                 level="warning",
             )
-    if FITCHECK_NOTIFY_PILOTS_STALE:
+    if notify_stale:
         _notify_approved_stale(fit)
 
 
 @shared_task(time_limit=300)
 def notify_reviewers_new_submission(submission_id: int):
-    if not FITCHECK_NOTIFY_REVIEWERS or FITCHECK_REVIEWER_DIGEST:
+    settings = NotificationSettings.current()
+    if not settings.notify_reviewers_new_submission or settings.reviewer_digest:
         return
     submission = (
         FitSubmission.objects.filter(pk=submission_id)
@@ -226,6 +230,8 @@ def notify_reviewers_new_submission(submission_id: int):
     if submission.status != FitSubmission.Status.PENDING:
         return
     for reviewer in _reviewers():
+        if UserNotificationPreference.is_muted(reviewer):
+            continue
         notify(
             reviewer,
             title=gettext("Fit Check: new submission to review"),
@@ -242,7 +248,10 @@ def notify_reviewers_new_submission(submission_id: int):
 @shared_task(time_limit=300)
 def send_review_digest():
     """Periodic summary of the pending queue for reviewers. Schedule this via
-    CELERYBEAT_SCHEDULE when FITCHECK_REVIEWER_DIGEST is enabled."""
+    CELERYBEAT_SCHEDULE, and turn the "Reviewer digest" toggle on in Settings ->
+    Notifications - this task is a no-op while it's off, even if scheduled."""
+    if not NotificationSettings.current().reviewer_digest:
+        return
     pending = FitSubmission.objects.pending().select_related("doctrine_fit")
     total = pending.count()
     if not total:
@@ -253,6 +262,8 @@ def send_review_digest():
         by_fit[key] = by_fit.get(key, 0) + 1
     breakdown = "\n".join(f"- {name}: {count}" for name, count in sorted(by_fit.items()))
     for reviewer in _reviewers():
+        if UserNotificationPreference.is_muted(reviewer):
+            continue
         notify(
             reviewer,
             title=ngettext(
@@ -297,12 +308,19 @@ def take_compliance_snapshots():
 
 @shared_task(time_limit=300)
 def notify_member_decision(submission_id: int):
+    """Tell a pilot their submission was approved or rejected - covers both a
+    human reviewer's decision and a doctrine's automatic "approved by rule"
+    decision (one logical event, one `notify_member_decision` toggle)."""
+    if not NotificationSettings.current().notify_member_decision:
+        return
     submission = (
         FitSubmission.objects.filter(pk=submission_id)
         .select_related("doctrine_fit", "user", "reviewed_by")
         .first()
     )
     if submission is None:
+        return
+    if UserNotificationPreference.is_muted(submission.user):
         return
     approved = submission.status == FitSubmission.Status.APPROVED
     # Approved with no reviewer but a decision time = a rule auto-approval.

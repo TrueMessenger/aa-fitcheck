@@ -20,6 +20,11 @@ FITCHECK_SDE_LATEST_URL = clean_setting(
 # Optional URL for the mutaplasmid dataset (dynamicItemAttributes). Empty = use bundled default.
 FITCHECK_SDE_DYNAMIC_ITEMS_URL = clean_setting("FITCHECK_SDE_DYNAMIC_ITEMS_URL", "")
 
+# NOTE: the three FITCHECK_NOTIFY_*/FITCHECK_REVIEWER_DIGEST settings below are
+# now first-install defaults ONLY. They seed models.NotificationSettings the
+# first time it's read; after that, the in-app Settings -> Notifications page
+# is authoritative and editing these here has no further effect.
+
 # Notify users with review permission when a new submission arrives.
 FITCHECK_NOTIFY_REVIEWERS = clean_setting("FITCHECK_NOTIFY_REVIEWERS", True)
 

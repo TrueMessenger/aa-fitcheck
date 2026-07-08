@@ -68,6 +68,18 @@ version last got one.
   hidden from that view only, not deleted - reviewers and reports still see it, same as
   before. Pending submissions in the same "Remove selected" action are still deleted
   outright, as they always were. Migration 0038 adds `FitSubmission.hidden_at`.
+- Admins get a Notifications card on the Settings page with a per-type on/off switch for
+  every Alliance Auth notification Fit Check emits: reviewer pings on new submissions,
+  the reviewer digest, pilot approve/reject decisions (covers both a reviewer's decision
+  and a doctrine's "approved by rule" auto-approval), and pilot stale-fit notices.
+  Pilots can also mute every Fit Check notification for their own account from a toggle
+  on the Pilot Fittings page - a muted user simply never gets a Notification row created,
+  which also silences any Discord relay (e.g. aa-discordnotify) since those relay
+  existing Notification rows. The legacy `FITCHECK_NOTIFY_REVIEWERS`,
+  `FITCHECK_REVIEWER_DIGEST`, and `FITCHECK_NOTIFY_PILOTS_STALE` Django settings now only
+  seed the new toggles' defaults on an install's first upgrade; after that, the
+  Notifications page is authoritative. Migration 0040 adds `NotificationSettings` and
+  `UserNotificationPreference`.
 
 ### Changed
 - Fit detail: doctrine categories are now shown once, in a combined row below the

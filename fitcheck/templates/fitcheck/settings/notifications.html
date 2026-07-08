@@ -1,0 +1,58 @@
+{% extends "fitcheck/base.html" %}
+
+{% load i18n %}
+
+{% block fitcheck_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-9 col-xxl-7">
+            <div class="card">
+                <div class="card-header d-flex align-items-center">
+                    <i class="fa-solid fa-bell me-2"></i>
+                    {% translate "Notification Settings" %}
+                    <a class="btn btn-secondary btn-sm ms-auto" href="{% url 'fitcheck:settings_home' %}">
+                        <i class="fa-solid fa-arrow-left"></i> {% translate "Back" %}
+                    </a>
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        {% translate "Turn individual Alliance Auth notifications on or off. Turning a type off skips only the notification for it - the underlying grading/approval still happens as normal. A pilot can also mute every Fit Check notification for their own account from the Pilot Fittings page." %}
+                    </p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="form-check form-switch mb-3">
+                            {{ form.notify_reviewers_new_submission }}
+                            <label class="form-check-label" for="{{ form.notify_reviewers_new_submission.id_for_label }}">
+                                {{ form.notify_reviewers_new_submission.label }}
+                            </label>
+                            <div class="form-text">{{ form.notify_reviewers_new_submission.help_text }}</div>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            {{ form.reviewer_digest }}
+                            <label class="form-check-label" for="{{ form.reviewer_digest.id_for_label }}">
+                                {{ form.reviewer_digest.label }}
+                            </label>
+                            <div class="form-text">{{ form.reviewer_digest.help_text }}</div>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            {{ form.notify_member_decision }}
+                            <label class="form-check-label" for="{{ form.notify_member_decision.id_for_label }}">
+                                {{ form.notify_member_decision.label }}
+                            </label>
+                            <div class="form-text">{{ form.notify_member_decision.help_text }}</div>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            {{ form.notify_pilots_stale }}
+                            <label class="form-check-label" for="{{ form.notify_pilots_stale.id_for_label }}">
+                                {{ form.notify_pilots_stale.label }}
+                            </label>
+                            <div class="form-text">{{ form.notify_pilots_stale.help_text }}</div>
+                        </div>
+                        <button type="submit" class="btn btn-success mt-2">
+                            <i class="fa-solid fa-floppy-disk"></i> {% translate "Save Settings" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

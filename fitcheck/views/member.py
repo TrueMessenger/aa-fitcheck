@@ -17,7 +17,13 @@ from allianceauth.eveonline.models import EveCharacter
 
 from ..forms import AssignFittingForm, DoctrineCategoryForm, DoctrineForm
 from ..managers import visible_categories_among, visible_categories_for
-from ..models import Doctrine, DoctrineFit, DoctrineFitItem, FitSubmission
+from ..models import (
+    Doctrine,
+    DoctrineFit,
+    DoctrineFitItem,
+    FitSubmission,
+    UserNotificationPreference,
+)
 from ..services.check_runner import (
     build_deficit_multibuy,
     gradeable_doctrines_for,
@@ -464,6 +470,7 @@ def pilot_fittings(request):
             "verdicts": FitSubmission.Verdict,
             "main_character": getattr(request.user.profile, "main_character", None),
             "sde_loaded": ensure_sde_loading(),
+            "notifications_muted": UserNotificationPreference.is_muted(request.user),
             "page_title": _("Pilot Fittings"),
         },
     )
@@ -916,6 +923,26 @@ def submissions_delete_bulk(request):
                 "(already approved, or not yours)."
             ),
         )
+    return redirect("fitcheck:pilot_fittings")
+
+
+@login_required
+@permission_required("fitcheck.basic_access")
+@require_POST
+def toggle_notification_mute(request):
+    """Set the pilot's own Fit Check notification mute (own row only). Muting
+    suppresses every fitcheck notification - reviewer pings/digest, decision
+    notices, and stale notices alike - since a muted user simply never has a
+    Notification row created for them, which also silences any Discord relay
+    (e.g. aa-discordnotify) since those relay existing Notification rows."""
+    mute_all = request.POST.get("mute_all") == "on"
+    UserNotificationPreference.objects.update_or_create(
+        user=request.user, defaults={"mute_all": mute_all}
+    )
+    if mute_all:
+        messages.success(request, _("Fit Check notifications muted."))
+    else:
+        messages.success(request, _("Fit Check notifications unmuted."))
     return redirect("fitcheck:pilot_fittings")
 
 

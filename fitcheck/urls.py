@@ -61,6 +61,11 @@ urlpatterns = [
     # Pilot Fittings tab (own submissions + ESI ship validation)
     path("pilot/", member.pilot_fittings, name="pilot_fittings"),
     path("pilot/inventory/", member.ship_inventory, name="ship_inventory"),
+    path(
+        "pilot/notifications/mute/",
+        member.toggle_notification_mute,
+        name="toggle_notification_mute",
+    ),
     # One SSO consent for every pilot ESI scope (assets/structures/implants/
     # fittings-write), replacing the per-scope grant flows.
     path("pilot/connect-esi/", member.grant_all_esi, name="grant_all_esi"),
@@ -197,6 +202,11 @@ urlpatterns = [
     # Settings hub (fittings import + enforcement / global settings)
     path("settings/", manage.settings_home, name="settings_home"),
     path("settings/parameters/", manage.scan_parameters, name="scan_parameters"),
+    path(
+        "settings/notifications/",
+        manage.notification_settings,
+        name="notification_settings",
+    ),
     path("settings/diagnostics/", manage.diagnostics, name="diagnostics"),
     path(
         "settings/diagnostics/snapshots/run/",
