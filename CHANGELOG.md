@@ -49,6 +49,16 @@ version last got one.
   with a paste-ready shopping list of just the gap between the fit and the standard.
   Previously the list was reviewer-only.
 
+### Changed
+- Fit detail: doctrine categories are now shown once, in a combined row below the
+  doctrine chips, instead of being repeated after every doctrine chip that carries them.
+- Test a Fit: the doctrine picker is now a row of toggle chips (checked state shown by
+  fill colour and a check icon) instead of a checkbox list.
+- Pilot Fittings: the hub button that jumps to the ship-inventory audit is relabelled
+  "My Ships" and promoted to its own top-level tab; the redundant "Connect ESI access"
+  button is removed from the hub (the My Ships page still prompts per character when
+  access is missing).
+
 ## [1.11.0] - 2026-07-07
 
 **Upgrade notes:** run `python manage.py migrate` (adds migrations 0033–0037), then

@@ -41,9 +41,6 @@
                                 {% endif %}
                             {% endif %}
                         </span>
-                        {% for category in chip.doctrine.categories.all %}
-                            <span class="badge" style="background:{{ category.color }};color:{{ category.text_color }};font-size:.65rem">{{ category.name }}</span>
-                        {% endfor %}
                     {% empty %}
                         <span class="fc-chip"><i class="fa-solid fa-cube"></i> {% translate "Standalone standard" %}</span>
                     {% endfor %}
@@ -54,6 +51,14 @@
                         </button>
                     {% endif %}
                 </div>
+                {% if fit_categories %}
+                    <div class="mt-1 d-flex flex-wrap align-items-center gap-1">
+                        <span class="small text-muted">{% translate "Categories" %}</span>
+                        {% for category in fit_categories %}
+                            <span class="badge" style="background:{{ category.color }};color:{{ category.text_color }};font-size:.65rem">{{ category.name }}</span>
+                        {% endfor %}
+                    </div>
+                {% endif %}
             </div>
             <div class="ms-auto d-flex gap-2 flex-wrap justify-content-end">
                 <form method="post" action="{% url 'fitcheck:save_fit_to_eve' fit.pk %}" class="d-inline">

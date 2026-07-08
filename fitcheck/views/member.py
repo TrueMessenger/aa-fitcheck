@@ -169,14 +169,25 @@ def fit_detail(request, fit_pk: int):
         from ..services.assignments import differing_assignments
 
         drifted = differing_assignments(fit)
+    doctrine_list = list(fit.doctrines.all().prefetch_related("categories"))
     doctrine_chips = [
         {
             "doctrine": d,
             "assignment_pk": assignment_pk_by_doctrine.get(d.pk),
             "differs": assignment_pk_by_doctrine.get(d.pk) in drifted,
         }
-        for d in fit.doctrines.all().prefetch_related("categories")
+        for d in doctrine_list
     ]
+    # Categories shown once per fit, regardless of how many doctrines carry
+    # them: the fit's own directly-assigned categories plus every category of
+    # every doctrine it belongs to, de-duped by pk and ordered by name.
+    categories_by_pk = {}
+    for category in fit.categories.all():
+        categories_by_pk[category.pk] = category
+    for doctrine in doctrine_list:
+        for category in doctrine.categories.all():
+            categories_by_pk[category.pk] = category
+    fit_categories = sorted(categories_by_pk.values(), key=lambda c: c.name)
     return render(
         request,
         "fitcheck/fit_detail.html",
@@ -187,6 +198,7 @@ def fit_detail(request, fit_pk: int):
             "all_doctrines": all_doctrines,
             "assigned_doctrine_ids": assigned_ids,
             "doctrine_chips": doctrine_chips,
+            "fit_categories": fit_categories,
             # Everyone with visibility may open the test bench; the page itself
             # limits non-staff to the check-only sandbox.
             "can_test": True,
@@ -381,7 +393,6 @@ def submit_eft(request, fit_pk: int):
 @permission_required("fitcheck.basic_access")
 def pilot_fittings(request):
     """The member's own submissions - never anyone else's."""
-    from ..services.esi_assets import characters_missing_pilot_scopes
     from ..services.sde_loader import ensure_sde_loading
 
     submissions = (
@@ -400,7 +411,6 @@ def pilot_fittings(request):
             "querystring": querystring,
             "main_character": getattr(request.user.profile, "main_character", None),
             "sde_loaded": ensure_sde_loading(),
-            "characters_missing_esi": characters_missing_pilot_scopes(request.user),
             "page_title": _("Pilot Fittings"),
         },
     )

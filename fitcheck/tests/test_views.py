@@ -90,6 +90,27 @@ class TestMemberViews(ViewTestCase):
         self.assertContains(response, "Heat Sink II")
         self.assertContains(response, "Imperial Navy Heat Sink")
 
+    def test_fit_detail_categories_are_deduped_across_doctrines(self):
+        # Two doctrines share a category and the fit also carries one
+        # directly - the badge row must list each distinct category once,
+        # sorted by name, regardless of how many doctrine chips carry it.
+        second_doctrine = create_doctrine(name="Reserve Armor")
+        self.fit.doctrines.add(second_doctrine)
+
+        shared_cat = DoctrineCategory.objects.create(name="Zulu Fleet")
+        own_cat = DoctrineCategory.objects.create(name="Alpha Direct")
+        self.doctrine.categories.add(shared_cat)
+        second_doctrine.categories.add(shared_cat)
+        own_cat.fits.add(self.fit)
+
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("fitcheck:fit_detail", args=[self.fit.pk]))
+
+        categories = list(response.context["fit_categories"])
+        self.assertEqual([c.name for c in categories], ["Alpha Direct", "Zulu Fleet"])
+        self.assertContains(response, "Zulu Fleet", count=1)
+        self.assertContains(response, "Alpha Direct", count=1)
+
     def test_submit_eft_save_mode_is_staff_only(self):
         # Members get the check-only sandbox; a POST that would persist a
         # submission (no mode field) stays staff-only.
@@ -1034,9 +1055,9 @@ class TestEsiAccessConsolidation(ViewTestCase):
         # Save-to-EVE keeps its targeted write-token flow.
         self.assertTrue(reverse("fitcheck:add_fittings_write_token"))
 
-    def test_pilot_fittings_offers_connect_esi_not_saved_fittings(self):
-        # The connect button shows only for characters missing scopes, so the
-        # member needs an ownership (create_user only sets a main character).
+    def test_pilot_fittings_hub_has_no_connect_esi_or_saved_fittings(self):
+        # The hub itself no longer offers a connect-ESI shortcut - that prompt
+        # lives on the My Ships (inventory) page, which is per-character.
         from allianceauth.authentication.models import CharacterOwnership
 
         CharacterOwnership.objects.create(
@@ -1046,14 +1067,16 @@ class TestEsiAccessConsolidation(ViewTestCase):
         )
         self.client.force_login(self.member)
         response = self.client.get(reverse("fitcheck:pilot_fittings"))
-        self.assertContains(response, reverse("fitcheck:grant_all_esi"))
+        self.assertNotContains(response, reverse("fitcheck:grant_all_esi"))
         self.assertNotContains(response, "Import my saved fittings")
 
 
 class TestConnectEsiVisibility(ViewTestCase):
-    """The Connect ESI buttons and the 'one grant covers everything' banner
-    render only when an owned character is missing a PILOT_GRANT_SCOPES token;
-    fully-granted accounts (e.g. full-scope Auth logins) see neither."""
+    """The Connect ESI buttons and the 'one grant covers everything' banner,
+    surfaced on the My Ships (inventory) page, render only when an owned
+    character is missing a PILOT_GRANT_SCOPES token; fully-granted accounts
+    (e.g. full-scope Auth logins) see neither. The Pilot Fittings hub carries
+    no connect-ESI surface of its own."""
 
     def setUp(self):
         from allianceauth.authentication.models import CharacterOwnership
@@ -1117,9 +1140,6 @@ class TestConnectEsiVisibility(ViewTestCase):
         self.client.force_login(self.member)
         grant_url = reverse("fitcheck:grant_all_esi")
 
-        response = self.client.get(reverse("fitcheck:pilot_fittings"))
-        self.assertContains(response, grant_url)
-
         with self._empty_inventory():
             response = self.client.get(reverse("fitcheck:ship_inventory"))
         self.assertContains(response, grant_url)
@@ -1131,9 +1151,6 @@ class TestConnectEsiVisibility(ViewTestCase):
         self._grant(PILOT_GRANT_SCOPES)
         self.client.force_login(self.member)
         grant_url = reverse("fitcheck:grant_all_esi")
-
-        response = self.client.get(reverse("fitcheck:pilot_fittings"))
-        self.assertNotContains(response, grant_url)
 
         with self._empty_inventory():
             response = self.client.get(reverse("fitcheck:ship_inventory"))

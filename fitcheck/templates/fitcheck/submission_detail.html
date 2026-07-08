@@ -82,7 +82,7 @@
             <form method="post" action="{% url 'fitcheck:submission_recheck' submission.pk %}">
                 {% csrf_token %}
                 <button class="btn btn-primary btn-sm" type="submit"
-                        title="{% translate 'Pulls your latest fit for this ship from EVE via ESI, re-grades it, and replaces this submission. To validate a different ship, use Pilot Fittings -> Validate ships from my inventory.' %}">
+                        title="{% translate 'Pulls your latest fit for this ship from EVE via ESI, re-grades it, and replaces this submission. To validate a different ship, use the My Ships tab.' %}">
                     <i class="fa-solid fa-rotate"></i> {% translate "Re-Check" %}
                 </button>
             </form>
