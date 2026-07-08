@@ -1,4 +1,4 @@
 """Fit Check - doctrine ship-fit compliance for Alliance Auth."""
 
-__version__ = "1.11.0"
+__version__ = "1.12.0"
 __title__ = "Fit Check"
