@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext
 from django.views.decorators.http import require_POST
 
 from ..forms import ReviewDecisionForm
@@ -92,6 +93,61 @@ def submissions_delete_bulk(request):
         deleted, _details = FitSubmission.objects.filter(pk__in=pks).delete()
     if deleted:
         messages.success(request, _("Deleted %(n)s submission(s).") % {"n": len(pks)})
+    else:
+        messages.info(request, _("No submissions selected."))
+    return redirect("fitcheck:review_queue")
+
+
+@review_access_required
+@require_POST
+def submissions_approve_bulk(request):
+    """Reviewers clear out the easy cases in one shot: approve every selected
+    submission that is still pending and already came back Compliant (or
+    Compliant with substitutions). Anything else - non-compliant, errored,
+    already decided, or a stale pk - is skipped and left for individual
+    review rather than silently rejected."""
+    pks = [pk for pk in request.POST.getlist("submission_pks") if pk.isdigit()]
+    targets = list(
+        FitSubmission.objects.filter(
+            pk__in=pks,
+            status=FitSubmission.Status.PENDING,
+            verdict__in=(
+                FitSubmission.Verdict.COMPLIANT,
+                FitSubmission.Verdict.COMPLIANT_SUBS,
+            ),
+        )
+    )
+    from ..tasks import notify_member_decision
+
+    for submission in targets:
+        review_submission(submission, request.user, approve=True)
+        notify_member_decision.delay(submission.pk)
+
+    approved = len(targets)
+    skipped = len(pks) - approved
+    if approved:
+        message = ngettext(
+            "Approved %(n)s submission.",
+            "Approved %(n)s submissions.",
+            approved,
+        ) % {"n": approved}
+        if skipped:
+            message += " " + ngettext(
+                "Skipped %(n)s (not pending, or not a compliant verdict) - "
+                "review it individually.",
+                "Skipped %(n)s (not pending, or not a compliant verdict) - "
+                "review those individually.",
+                skipped,
+            ) % {"n": skipped}
+        messages.success(request, message)
+    elif skipped:
+        messages.info(
+            request,
+            _(
+                "None of the selected submissions were pending with a "
+                "compliant verdict - review them individually."
+            ),
+        )
     else:
         messages.info(request, _("No submissions selected."))
     return redirect("fitcheck:review_queue")

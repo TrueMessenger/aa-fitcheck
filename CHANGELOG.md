@@ -38,6 +38,10 @@ version last got one.
 ## [Unreleased]
 
 ### Added
+- Reviewers can approve multiple selected submissions at once from the review queue's
+  "Approve Selected" bulk action, alongside the existing "Delete Selected". Only pending
+  rows with a Compliant or Compliant-with-substitutions verdict are approved; everything
+  else in the selection is skipped and reported so it can be reviewed individually.
 - The Test a Fit page's check-only sandbox is now available to every member who can see
   the fitting (previously staff-only): paste any fit as EFT text for an instant graded
   result with nothing saved, no review-queue row, and no reviewer notification - useful
