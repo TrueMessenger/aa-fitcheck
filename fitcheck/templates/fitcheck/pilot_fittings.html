@@ -24,7 +24,16 @@
                     {% translate "Pick real ships from your hangars - across every character on this account - and validate them against the published standards. Only you can see your results here." %}
                 </div>
             </div>
-            <div class="ms-auto d-flex flex-wrap gap-2">
+            <div class="ms-auto d-flex flex-wrap align-items-center gap-3">
+                <form method="post" action="{% url 'fitcheck:toggle_notification_mute' %}"
+                      class="form-check form-switch mb-0" title="{% translate 'Suppresses every Fit Check notification for your account, including any Discord relay.' %}">
+                    {% csrf_token %}
+                    <input class="form-check-input" type="checkbox" role="switch" id="mute-notifications"
+                           name="mute_all" onchange="this.form.submit()" {% if notifications_muted %}checked{% endif %}>
+                    <label class="form-check-label small" for="mute-notifications">
+                        {% translate "Mute notifications" %}
+                    </label>
+                </form>
                 <a class="btn btn-primary" href="{% url 'fitcheck:ship_inventory' %}">
                     <i class="fa-solid fa-rocket"></i> {% translate "My Ships" %}
                 </a>

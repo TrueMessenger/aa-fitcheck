@@ -21,6 +21,7 @@ from .models import (
     DoctrineFit,
     DoctrineFitItem,
     EnforcementSettings,
+    NotificationSettings,
     ScanParameters,
     SdeType,
 )
@@ -600,5 +601,59 @@ class ScanParametersForm(forms.ModelForm):
                 "Page size for the review queue, pilot history, Fittings & "
                 "Standards, and Reports drill-down lists. Larger pages mean "
                 "fewer clicks but heavier queries and longer scrolls."
+            ),
+        }
+
+
+class NotificationSettingsForm(forms.ModelForm):
+    """Per-type on/off switches for the Alliance Auth notifications Fit Check
+    emits. Turning a type off skips only the notify() call for it - the
+    underlying action (grading, approval, etc.) still happens."""
+
+    class Meta:
+        model = NotificationSettings
+        fields = [
+            "notify_reviewers_new_submission",
+            "reviewer_digest",
+            "notify_member_decision",
+            "notify_pilots_stale",
+        ]
+        widgets = {
+            name: forms.CheckboxInput(attrs={"class": "form-check-input"})
+            for name in (
+                "notify_reviewers_new_submission",
+                "reviewer_digest",
+                "notify_member_decision",
+                "notify_pilots_stale",
+            )
+        }
+        labels = {
+            "notify_reviewers_new_submission": _("Notify reviewers of new submissions"),
+            "reviewer_digest": _("Reviewer digest (periodic summary instead)"),
+            "notify_member_decision": _("Notify pilots of approve/reject decisions"),
+            "notify_pilots_stale": _("Notify pilots when a fitting standard changes"),
+        }
+        help_texts = {
+            "notify_reviewers_new_submission": _(
+                "Ping everyone with review authority as soon as a member "
+                "submits a fit for review. Has no effect while the digest "
+                "below is on."
+            ),
+            "reviewer_digest": _(
+                "Send reviewers a periodic summary of the pending queue "
+                "instead of a ping per submission. Needs "
+                "fitcheck.tasks.send_review_digest scheduled via "
+                "CELERYBEAT_SCHEDULE to actually run."
+            ),
+            "notify_member_decision": _(
+                "Tell a pilot when their submission is approved or rejected - "
+                "by a reviewer, or automatically when a doctrine auto-approves "
+                "it."
+            ),
+            "notify_pilots_stale": _(
+                "Tell a pilot when a fitting-standard change re-grades their "
+                "pending submission (with a module diff when the BOM "
+                "changed), and warn holders of an already-approved submission "
+                "that the fit has moved on."
             ),
         }

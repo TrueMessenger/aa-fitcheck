@@ -92,6 +92,19 @@
                     </div>
                 </div>
             </div>
+            <div class="col">
+                <div class="fc-card">
+                    <div class="card-body">
+                        <h6 class="mb-2"><i class="fa-solid fa-bell me-2"></i>{% translate "Notifications" %}</h6>
+                        <p class="small text-muted">
+                            {% translate "Per-type on/off switches for reviewer pings/digest and pilot decision/stale notices - replaces the old FITCHECK_NOTIFY_* Django settings." %}
+                        </p>
+                        <a class="btn btn-warning btn-sm" href="{% url 'fitcheck:notification_settings' %}">
+                            <i class="fa-solid fa-sliders"></i> {% translate "Edit notifications" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
     {% endif %}
 

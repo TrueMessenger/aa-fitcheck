@@ -15,7 +15,9 @@ from .general import General  # noqa: F401
 from .reporting import ComplianceSnapshot  # noqa: F401
 from .settings import (  # noqa: F401
     EnforcementSettings,
+    NotificationSettings,
     ScanParameters,
+    UserNotificationPreference,
     VerificationMode,
 )
 from .sde import (  # noqa: F401

@@ -390,9 +390,9 @@ works normally without it — the filter simply isn't offered.
 | Setting | Default | Purpose |
 |---|---|---|
 | `FITCHECK_SDE_SOURCE_URL` | Official CCP JSONL bundle | Static-data archive URL |
-| `FITCHECK_NOTIFY_REVIEWERS` | `True` | Notify reviewers on new submissions |
-| `FITCHECK_REVIEWER_DIGEST` | `False` | Periodic digest instead of per-submission pings (schedule `fitcheck.tasks.send_review_digest`) |
-| `FITCHECK_NOTIFY_PILOTS_STALE` | `True` | When "Recheck Stale" re-grades stale submissions, notify the affected pilots (with an old-to-new module diff when the fit's BOM changed) and warn approved-submission holders that the fit moved on |
+| `FITCHECK_NOTIFY_REVIEWERS` | `True` | **First-install default only** (see below) — notify reviewers on new submissions |
+| `FITCHECK_REVIEWER_DIGEST` | `False` | **First-install default only** (see below) — periodic digest instead of per-submission pings (schedule `fitcheck.tasks.send_review_digest`) |
+| `FITCHECK_NOTIFY_PILOTS_STALE` | `True` | **First-install default only** (see below) — when a fit/policy change re-grades a pending submission, notify the pilot (with an old-to-new module diff when the BOM changed) and warn approved-submission holders that the fit moved on |
 | `FITCHECK_ESI_CONTACT` | `ESI_USER_CONTACT_EMAIL` | Contact email in the ESI User-Agent header |
 | `FITCHECK_ASSET_SOURCE` | `auto` | Where pilot/member ship inventory comes from: `auto` (corptools cache when available, else live ESI), `esi`, or `corptools` |
 | `FITCHECK_STRUCTURE_CACHE_TTL` | `86400` | Seconds before a cached player-structure (Citadel) name is re-resolved by `fitcheck.tasks.refresh_structure_names` (default 24h). The Member Inventory scan reads these names locally and never calls ESI for them. |
@@ -413,6 +413,20 @@ abyssal-verification lookups per ship, and the page size of the paginated lists.
 corptools is absent or the asset source is forced to `esi`, the live-ESI operation is limited
 to the configured budget, and an upfront notice is shown on the Member Inventory page. Each
 field explains the impact of raising it.
+
+Notifications are likewise managed in-app, on the **Notification Settings** page (Settings
+tab, admin-only, `manage_policies`): one on/off switch per notification type — reviewer
+pings on new submissions, the reviewer digest, pilot approve/reject decisions (covers both
+a reviewer's decision and a doctrine's "approved by rule" auto-approval), and pilot
+stale-fit notices. **The three `FITCHECK_NOTIFY_*`/`FITCHECK_REVIEWER_DIGEST` Django
+settings above only seed these toggles' defaults the first time the settings page (or any
+notification) is touched after upgrading** — an admin who edits them in `local.py` on an
+already-running install will see no effect; use the Notification Settings page instead.
+Independently, any pilot can mute every Fit Check notification for their own account from a
+toggle on the Pilot Fittings page. Muting is fitcheck-wide: a muted user's notifications are
+never created at all (not just hidden), which also suppresses any Discord relay of them
+(e.g. via aa-discordnotify), since those relay existing Notification rows rather than
+intercepting the event.
 
 ---
 

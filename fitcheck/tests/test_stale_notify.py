@@ -12,7 +12,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from ..constants import Section
-from ..models import ArchivedFitVersion, FitSubmission, SdeType
+from ..models import ArchivedFitVersion, FitSubmission, NotificationSettings, SdeType
 from ..services.check_runner import submit_fit
 from ..services.eft_parser import parse_eft
 from ..services.fit_diff import archive_for_version, bom_diff, diff_for_submission
@@ -252,9 +252,11 @@ class RecheckTaskNotificationCase(TestCase):
 
         notify_mock.assert_not_called()
 
-    @patch("fitcheck.tasks.FITCHECK_NOTIFY_PILOTS_STALE", False)
     @patch("fitcheck.tasks.notify")
     def test_notify_disabled_suppresses_stale_notifications(self, notify_mock):
+        settings_obj = NotificationSettings.current()
+        settings_obj.notify_pilots_stale = False
+        settings_obj.save()
         submission = self._submit()
         self._archive_current_bom_and_change_it()
 
@@ -263,14 +265,11 @@ class RecheckTaskNotificationCase(TestCase):
         # Pending re-grade still happens (fit_version catches up)...
         submission.refresh_from_db()
         self.assertEqual(submission.fit_version, self.fit.version)
-        # ...but no stale-style notify (with its "re-checked"/diff wording) fires.
-        # The BOM change here also flips the verdict, so the old verdict-changed
-        # branch legitimately still notifies once - it uses different copy and
-        # carries no diff appendix, so we assert on that instead of call count.
-        for call in notify_mock.call_args_list:
-            message = call.kwargs.get("message", "")
-            self.assertNotIn("What changed:", message)
-            self.assertNotIn("policy rules changed", message)
+        # ...but no notification of any kind fires - the rich stale-diff
+        # notify and the plain verdict-changed fallback are one logical event
+        # ("a fit change touched your submission"), both gated by the single
+        # notify_pilots_stale toggle.
+        notify_mock.assert_not_called()
 
     @patch("fitcheck.tasks.notify")
     def test_non_stale_pending_with_unchanged_verdict_not_notified(self, notify_mock):
