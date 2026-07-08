@@ -184,7 +184,16 @@ def fit_detail(request, fit_pk: int):
         from ..services.assignments import differing_assignments
 
         drifted = differing_assignments(fit)
-    doctrine_list = list(fit.doctrines.all().prefetch_related("categories"))
+    # Only doctrines the viewer can see produce chips - a fit shared between
+    # a visible doctrine and a restricted one must not name the restricted
+    # one (its chip would 404 anyway, doctrine_detail is visibility-gated).
+    # Managers keep everything via visible_to's _is_manager bypass, so the
+    # Edit Doctrines UI is unaffected. When NO assigned doctrine is visible
+    # the chip row falls back to the "Standalone standard" empty state.
+    visible_doctrines = Doctrine.objects.visible_to(request.user)
+    doctrine_list = list(
+        fit.doctrines.filter(pk__in=visible_doctrines).prefetch_related("categories")
+    )
     doctrine_chips = [
         {
             "doctrine": d,
@@ -195,7 +204,7 @@ def fit_detail(request, fit_pk: int):
     ]
     # Categories shown once per fit, regardless of how many doctrines carry
     # them: the fit's own directly-assigned categories plus every category of
-    # every doctrine it belongs to, de-duped by pk and ordered by name.
+    # every visible doctrine it belongs to, de-duped by pk and ordered by name.
     categories_by_pk = {}
     for category in fit.categories.all():
         categories_by_pk[category.pk] = category

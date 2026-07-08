@@ -347,3 +347,60 @@ class CategoryBadgeLeakTests(TestCase):
             response = self.client.get(url)
             self.assertContains(response, "Badge Admitted Cat")
             self.assertContains(response, "Badge Restricted Cat")
+
+
+class FitDetailDoctrineChipTests(TestCase):
+    """The fit detail page's doctrine chips: a fit shared between a visible
+    doctrine and a restricted one must not name the restricted doctrine (its
+    chip would 404 anyway - doctrine_detail is visibility-gated)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        create_sde_testdata()
+
+    def setUp(self):
+        self.ops_group = Group.objects.create(name="ChipOpsGroup")
+
+        open_cat = DoctrineCategory.objects.create(name="Chip Open Cat")
+        self.visible_doctrine = create_doctrine(name="Fleet Doctrine Alpha")
+        self.visible_doctrine.categories.add(open_cat)
+
+        ops_cat = DoctrineCategory.objects.create(name="Chip Ops Cat")
+        ops_cat.selected_groups.add(self.ops_group)
+        self.restricted_doctrine = create_doctrine(name="Blackops Doctrine Bravo")
+        self.restricted_doctrine.categories.add(ops_cat)
+
+        # Visible to members via the open category on the visible doctrine.
+        self.fit = create_fit(self.visible_doctrine, T.ORACLE, name="Shared Chip Fit")
+        self.fit.doctrines.add(self.restricted_doctrine)
+
+        self.member = create_user("fitchipmem")
+        self.manager = create_user(
+            "fitchipmgr", permissions=("basic_access", "manage_doctrines")
+        )
+
+    def test_member_sees_only_visible_doctrine_chip(self):
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("fitcheck:fit_detail", args=[self.fit.pk]))
+        self.assertContains(response, "Fleet Doctrine Alpha")
+        self.assertNotContains(response, "Blackops Doctrine Bravo")
+
+    def test_manager_sees_both_doctrine_chips(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("fitcheck:fit_detail", args=[self.fit.pk]))
+        self.assertContains(response, "Fleet Doctrine Alpha")
+        self.assertContains(response, "Blackops Doctrine Bravo")
+
+    def test_all_doctrines_restricted_falls_back_to_standalone_empty_state(self):
+        # The fit stays visible through its own public category, but its only
+        # doctrine is restricted: the member gets the existing "Standalone
+        # standard" empty state instead of a chip - the desired opsec
+        # behavior, since even the doctrine's existence is withheld.
+        own_cat = DoctrineCategory.objects.create(name="Chip Own Public Cat")
+        solo_fit = create_fit(self.restricted_doctrine, T.ORACLE, name="Solo Chip Fit")
+        own_cat.fits.add(solo_fit)
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("fitcheck:fit_detail", args=[solo_fit.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Standalone standard")
+        self.assertNotContains(response, "Blackops Doctrine Bravo")
