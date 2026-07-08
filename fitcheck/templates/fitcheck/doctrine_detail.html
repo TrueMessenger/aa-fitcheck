@@ -28,7 +28,7 @@
                             </div>
                             <h4 class="mb-1">{{ doctrine.name }}</h4>
                             <div>
-                                {% for category in doctrine.categories.all %}
+                                {% for category in visible_categories %}
                                     <span class="badge me-1" style="background:{{ category.color }};color:{{ category.text_color }}">{{ category.name }}</span>
                                 {% endfor %}
                                 {% if not doctrine.is_active %}
@@ -212,7 +212,7 @@
                                 {% endif %}
                             </div>
                             <div class="mt-1">
-                                {% for category in doctrine.categories.all %}
+                                {% for category in visible_categories %}
                                     <span class="badge me-1" style="background:{{ category.color }};color:{{ category.text_color }};font-size:.65rem">{{ category.name }}</span>
                                 {% endfor %}
                             </div>

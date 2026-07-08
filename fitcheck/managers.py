@@ -39,6 +39,38 @@ def visible_category_ids(user) -> list[int]:
     return out
 
 
+def visible_categories_for(user):
+    """DoctrineCategory rows to offer on the Doctrines page filter chips: for
+    a manager (routed through `_is_manager`, so a later narrowing there
+    applies here too) every category; for everyone else, only categories
+    that admit the user AND carry at least one doctrine the user can
+    currently see - this hides both restricted categories and
+    admitted-but-empty ones. Ordered by name, matching the chip bar's
+    display order."""
+    from .models import Doctrine, DoctrineCategory
+
+    if _is_manager(user):
+        return DoctrineCategory.objects.order_by("name")
+    vis_ids = visible_category_ids(user)
+    visible_doctrines = Doctrine.objects.visible_to(user).active()
+    return (
+        DoctrineCategory.objects.filter(pk__in=vis_ids, doctrines__in=visible_doctrines)
+        .distinct()
+        .order_by("name")
+    )
+
+
+def visible_categories_among(user, categories):
+    """Filter an already-fetched collection of DoctrineCategory rows (e.g. a
+    doctrine's or fit's own `.categories.all()`) down to the ones that admit
+    `user`, preserving input order. Managers see every category (routed
+    through `_is_manager`, so a later narrowing there applies here too)."""
+    if _is_manager(user):
+        return list(categories)
+    vis_ids = set(visible_category_ids(user))
+    return [c for c in categories if c.pk in vis_ids]
+
+
 class DoctrineQuerySet(models.QuerySet):
     def active(self):
         return self.filter(is_active=True)
