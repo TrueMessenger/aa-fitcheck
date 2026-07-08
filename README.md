@@ -132,10 +132,36 @@ Fleet leadership can scan hangars before a fleet forms rather than waiting for p
 - **Selected-OR** groups: pilot qualifies if they hold any one of the selected groups.
 - **Required-AND** groups: pilot must hold every required group simultaneously.
 - Both conditions combine with OR; items with no categories are public.
-- Managers and reviewers bypass all category gates.
+- Doctrine managers (`manage_doctrines`) and superusers bypass all category gates.
+- Reviewers see member-visible content plus the categories they are scoped to review (see
+  **Per-category review scoping** below) — a review permission is no longer a
+  see-everything bypass.
 
 Categories carry a custom color for visual identification and appear as filterable chips on the
 Doctrines tab.
+
+### Per-category review scoping
+
+Each category also has a **Reviewer groups** list that scopes *review authority* for its
+doctrines, independently of who can *see* them:
+
+- A reviewer may decide a submission only if they hold a review permission **and** the
+  submission is in their scope: its doctrine is uncategorised, or has a category with an
+  empty Reviewer groups list (unscoped — any reviewer), or has a category whose Reviewer
+  groups include one of the reviewer's Auth groups.
+- **Empty Reviewer groups = any reviewer.** An install that configures nothing keeps the
+  original behaviour: every reviewer sees and decides every submission.
+- **Membership is not authority.** The Selected/Required groups above decide who can *see*
+  a category; Reviewer groups decide who can *review* it. The two lists are set separately
+  — e.g. a titan doctrine can be visible to titan pilots yet reviewable only by a "Super
+  Capital Admin" group.
+- Being scoped to review a category also grants *sight* of it: a reviewer in a category's
+  Reviewer groups can open its doctrines and fits even without the visibility groups.
+- Doctrine managers and superusers review everything regardless of Reviewer groups.
+
+The scope applies across the whole review path: the queue, individual and bulk approve/
+reject actions, new-submission reviewer pings, and the reviewer digest all show and act on
+only the submissions in each reviewer's scope.
 
 ### colcrunch `fittings` Integration
 
@@ -186,7 +212,8 @@ Inventory page, and the settings show the current budget limit.
 
 ### Review Workflow
 
-- Filterable review queue (by pilot, doctrine, verdict, status).
+- Filterable review queue (by pilot, doctrine, verdict, status), scoped to each reviewer's
+  authority (see **Per-category review scoping** above).
 - **Approve** (comment optional) or **reject** (comment required — pilot sees exactly what to fix).
 - **Auto-approve by rule** — a doctrine can approve qualifying submissions without a reviewer.
   Set its Auto-approve tier to *Compliant only* or *Compliant or with substitutions* (default:
@@ -376,8 +403,8 @@ works normally without it — the filter simply isn't offered.
 |---|---|
 | `fitcheck.basic_access` | See the app, visible doctrines, submit own fits, validate own ships, Save-to-EVE |
 | `fitcheck.manage_doctrines` | Create/edit doctrines, import fits, set policies, assign fits to doctrines |
-| `fitcheck.review_submissions` | Review queue, approve/reject any submission |
-| `fitcheck.secure_group_management` | Review and approve submissions only — cannot edit doctrines or standards |
+| `fitcheck.review_submissions` | Review queue, approve/reject submissions within scope (see Per-category review scoping) |
+| `fitcheck.secure_group_management` | Review and approve submissions only (same scoping) — cannot edit doctrines or standards |
 | `fitcheck.manage_policies` | Create/edit named compliance policies |
 | `fitcheck.view_compliance_reports` | The Reports tab: org-wide compliance overview, per-doctrine readiness drill-down, failure analytics, CSV exports |
 | `fitcheck.view_member_inventory` | Browse alliance-wide members' ships and run proactive fit checks |
@@ -507,9 +534,9 @@ priority, not pinned to specific version numbers (those are assigned at release)
 
 | Milestone | Scope |
 |-----------|-------|
-| **Shipped** | Full substitution engine with bipartite matching; abyssal/mutated modules; per-doctrine policy snapshots; pre-built and custom named compliance policies (with disable/enable); ESI inventory validation; ESI saved-fittings intake (check fits saved in EVE's Fittings panel without an EFT paste); implant, booster, fuel bay, and Frigate Escape Bay verification (implants/boosters carried as cargo or fleet-hangar refit pass); category-driven visibility with group gating; proactive alliance/corp member checks; colcrunch `fittings` import and re-sync; pilot QoL tools (Save-to-EVE, Copy Buy All, Copy as EFT); submission-detail review with a per-section captured-loadout panel; review workflow with audit log and notifications; cross-plugin compliance Python API; optional Secure Groups smart filter; optional corptools asset read-through; colcrunch category sync; GitHub Actions CI (py3.10–3.12); compliance snapshot collection with diagnostics controls; Reports tab (readiness overview + drill-down, trend charts, failure analytics, CSV export) |
+| **Shipped** | Full substitution engine with bipartite matching; abyssal/mutated modules; per-doctrine policy snapshots; pre-built and custom named compliance policies (with disable/enable); ESI inventory validation; ESI saved-fittings intake (check fits saved in EVE's Fittings panel without an EFT paste); implant, booster, fuel bay, and Frigate Escape Bay verification (implants/boosters carried as cargo or fleet-hangar refit pass); category-driven visibility with group gating; proactive alliance/corp member checks; colcrunch `fittings` import and re-sync; pilot QoL tools (Save-to-EVE, Copy Buy All, Copy as EFT); submission-detail review with a per-section captured-loadout panel; review workflow with per-category reviewer scoping, audit log and notifications; cross-plugin compliance Python API; optional Secure Groups smart filter; optional corptools asset read-through; colcrunch category sync; GitHub Actions CI (py3.10–3.12); compliance snapshot collection with diagnostics controls; Reports tab (readiness overview + drill-down, trend charts, failure analytics, CSV export) |
 | **Next** | i18n pass |
-| **Later** | Corporation-role internal audits (corp members with the right EVE roles audit ships in corp hangars against doctrines, no approval flow); [aa-srp](https://apps.allianceauth.org/apps/detail/aa-srp) integration (compare a loss's killmail fit to doctrines/fits/substitutions during SRP review); bulk "audit all my fits" for pilots; per-doctrine reviewer scoping; override-chip allow/forbid toggle |
+| **Later** | Corporation-role internal audits (corp members with the right EVE roles audit ships in corp hangars against doctrines, no approval flow); [aa-srp](https://apps.allianceauth.org/apps/detail/aa-srp) integration (compare a loss's killmail fit to doctrines/fits/substitutions during SRP review); bulk "audit all my fits" for pilots; override-chip allow/forbid toggle |
 
 This table is the high-level summary; the **itemized backlog** (features, bugs, cosmetic
 nits) lives in [GitHub Issues](https://github.com/TrueMessenger/aa-fitcheck/issues),

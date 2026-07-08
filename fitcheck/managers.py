@@ -3,11 +3,22 @@ from django.db.models import Q
 
 
 def _is_manager(user) -> bool:
-    """Managers / reviewers / secure-group managers see everything."""
-    return (
-        user.has_perm("fitcheck.manage_doctrines")
-        or user.has_perm("fitcheck.review_submissions")
-        or user.has_perm("fitcheck.secure_group_management")
+    """Full-authority bypass: doctrine managers and superusers see and act on
+    everything. NOT plain reviewers - a review permission grants scoped
+    authority (see ``can_review_submission``) and scoped visibility (folded
+    into ``visible_category_ids``), not a blanket see-everything bypass.
+    A superuser satisfies ``has_perm`` for every permission, so this covers
+    them without a separate check."""
+    return user.has_perm("fitcheck.manage_doctrines")
+
+
+def _has_review_perm(user) -> bool:
+    """Whether the user holds a Fit Check review permission - the two review
+    roles are treated identically. This is the single source of truth for
+    "is a reviewer"; it grants *access* to the review queue but not authority
+    over any given submission (see ``can_review_submission``)."""
+    return user.has_perm("fitcheck.review_submissions") or user.has_perm(
+        "fitcheck.secure_group_management"
     )
 
 
@@ -22,10 +33,38 @@ def category_admits(selected_ids: set, required_ids: set, user_group_ids: set) -
     )
 
 
+def reviewable_category_ids(user) -> list[int]:
+    """Ids of DoctrineCategory rows whose ``reviewer_groups`` the user can act
+    on. Managers/superusers get every category. A plain reviewer gets the
+    categories whose ``reviewer_groups`` intersect their Auth groups - i.e. the
+    categories they have been *scoped* to review. Categories with EMPTY
+    reviewer_groups are deliberately NOT listed here: an unscoped category
+    narrows nobody's authority, so it never needs to widen a reviewer's scope
+    or visibility (any reviewer may act on it via ``can_review_submission``'s
+    empty-reviewer_groups branch, but it does not grant sight of otherwise
+    visibility-gated content)."""
+    from .models import DoctrineCategory
+
+    if _is_manager(user):
+        return list(DoctrineCategory.objects.values_list("pk", flat=True))
+    group_ids = set(user.groups.values_list("id", flat=True))
+    if not group_ids:
+        return []
+    return list(
+        DoctrineCategory.objects.filter(reviewer_groups__id__in=group_ids)
+        .values_list("pk", flat=True)
+        .distinct()
+    )
+
+
 def visible_category_ids(user) -> list[int]:
-    """Ids of DoctrineCategory rows that admit `user` by the Selected (OR) /
-    Required (AND) group rules. Computed in Python - the category set is small
-    and the "has ALL required groups" test is awkward to express in SQL."""
+    """Ids of DoctrineCategory rows `user` may see. Membership admits by the
+    Selected (OR) / Required (AND) group rules (computed in Python - the
+    category set is small and the "has ALL required groups" test is awkward to
+    express in SQL). A user holding a review permission ALSO sees every
+    category they are scoped to review, even one their groups don't otherwise
+    admit - authority grants sight. Managers never reach here (their callers
+    short-circuit on ``_is_manager``)."""
     from .models import DoctrineCategory
 
     group_ids = set(user.groups.values_list("id", flat=True))
@@ -36,6 +75,10 @@ def visible_category_ids(user) -> list[int]:
         req = {g.id for g in cat.required_groups.all()}
         if category_admits(sel, req, group_ids):
             out.append(cat.pk)
+    if _has_review_perm(user):
+        # Union in the categories this reviewer is scoped to review, without
+        # duplicating ids already admitted by membership.
+        out = list(dict.fromkeys(out + reviewable_category_ids(user)))
     return out
 
 
@@ -58,6 +101,35 @@ def visible_categories_for(user):
         .distinct()
         .order_by("name")
     )
+
+
+def can_review_submission(user, submission) -> bool:
+    """Whether `user` may decide `submission` under per-category review scoping.
+
+    Managers/superusers may decide anything. Otherwise the user must hold a
+    review permission AND the submission must fall in their review scope: a
+    submission is in scope if its doctrine is None, its doctrine has no
+    categories, at least one of its doctrine's categories has EMPTY
+    reviewer_groups (unscoped - any reviewer may act), or the user is in the
+    reviewer_groups of at least one of its doctrine's categories. With no
+    reviewer_groups configured anywhere this is byte-for-byte the old
+    "any reviewer may act on any submission" behaviour."""
+    if _is_manager(user):
+        return True
+    if not _has_review_perm(user):
+        return False
+    doctrine = submission.doctrine
+    if doctrine is None:
+        return True
+    categories = list(doctrine.categories.all())
+    if not categories:
+        return True
+    group_ids = set(user.groups.values_list("id", flat=True))
+    for category in categories:
+        reviewer_group_ids = set(category.reviewer_groups.values_list("id", flat=True))
+        if not reviewer_group_ids or (reviewer_group_ids & group_ids):
+            return True
+    return False
 
 
 def visible_categories_among(user, categories):
@@ -114,6 +186,26 @@ class FitSubmissionQuerySet(models.QuerySet):
 
     def for_user(self, user):
         return self.filter(user=user)
+
+    def reviewable_by(self, user):
+        """Submissions `user` is scoped to review. Managers/superusers see the
+        whole queue; a non-reviewer sees nothing. A plain reviewer sees a
+        submission if its doctrine is None, its doctrine has no categories, its
+        doctrine has a category with EMPTY reviewer_groups (unscoped), or a
+        category whose reviewer_groups include one of the user's groups. This
+        is the queryset form of ``can_review_submission``; with no
+        reviewer_groups configured anywhere it returns the full queue (the old
+        behaviour)."""
+        if _is_manager(user):
+            return self
+        if not _has_review_perm(user):
+            return self.none()
+        group_ids = list(user.groups.values_list("id", flat=True))
+        return self.filter(
+            Q(doctrine__isnull=True)
+            | Q(doctrine__categories__reviewer_groups__isnull=True)
+            | Q(doctrine__categories__reviewer_groups__id__in=group_ids)
+        ).distinct()
 
     def with_staleness(self):
         """Annotate each row's (doctrine, fit) assignment ladder so

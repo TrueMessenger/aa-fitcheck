@@ -24,7 +24,7 @@ if SECUREGROUPS_INSTALLED:
 class DoctrineCategoryAdmin(admin.ModelAdmin):
     list_display = ("name", "color")
     search_fields = ("name",)
-    filter_horizontal = ("selected_groups", "required_groups", "fits")
+    filter_horizontal = ("selected_groups", "required_groups", "reviewer_groups", "fits")
 
 
 @admin.register(Doctrine)

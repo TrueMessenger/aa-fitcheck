@@ -16,7 +16,11 @@ logger = logging.getLogger(__name__)
 from allianceauth.eveonline.models import EveCharacter
 
 from ..forms import AssignFittingForm, DoctrineCategoryForm, DoctrineForm
-from ..managers import visible_categories_among, visible_categories_for
+from ..managers import (
+    can_review_submission,
+    visible_categories_among,
+    visible_categories_for,
+)
 from ..models import (
     Doctrine,
     DoctrineFit,
@@ -31,12 +35,6 @@ from ..services.check_runner import (
 )
 from ..services.eft_parser import parse_eft, render_eft
 from .common import paginate as _paginate
-
-
-def _can_review(user) -> bool:
-    return user.has_perm("fitcheck.review_submissions") or user.has_perm(
-        "fitcheck.secure_group_management"
-    )
 
 
 def _is_auto_approved(submission: FitSubmission) -> bool:
@@ -56,10 +54,11 @@ def _visible_fit_or_404(request, fit_pk: int) -> DoctrineFit:
         DoctrineFit.objects.select_related("ship_type").prefetch_related("doctrines__categories"),
         pk=fit_pk,
     )
-    if request.user.has_perm("fitcheck.manage_doctrines") or _can_review(request.user):
-        return fit
     # Category-driven visibility: a fit with no effective categories is public;
     # otherwise an admitting category (its own or via a doctrine) is required.
+    # `visible_to` already bypasses for managers/superusers and now folds in a
+    # reviewer's scoped categories, so no separate review-role bypass is needed
+    # here - a plain reviewer sees only fits in categories they review.
     if DoctrineFit.objects.visible_to(request.user).filter(pk=fit.pk).exists():
         return fit
     raise PermissionDenied
@@ -783,7 +782,11 @@ def submission_detail(request, submission_pk: int):
         ),
         pk=submission_pk,
     )
-    if submission.user != request.user and not _can_review(request.user):
+    # A non-owner may only open a submission they are scoped to review; queue
+    # access alone does not grant sight of an out-of-scope submission.
+    if submission.user != request.user and not can_review_submission(
+        request.user, submission
+    ):
         raise PermissionDenied
     findings = submission.findings.select_related("expected_type", "actual_type")
     mutated_items = submission.items.exclude(mutation_source="").select_related("eve_type")
@@ -793,7 +796,10 @@ def submission_detail(request, submission_pk: int):
     submitted_items = submission.items.select_related("eve_type").order_by(
         "section", "eve_type__name"
     )
-    can_review = _can_review(request.user) and submission.status == FitSubmission.Status.PENDING
+    can_review = (
+        can_review_submission(request.user, submission)
+        and submission.status == FitSubmission.Status.PENDING
+    )
     is_owner = submission.user == request.user
     # Frigate Escape Bay is informational only and only meaningful for the
     # hull classes that actually have one. Detect via the ship_type's eve_group
