@@ -47,6 +47,13 @@ version last got one.
   submission's owner as a copy-to-clipboard multibuy button - a failed self-audit ends
   with a paste-ready shopping list of just the gap between the fit and the standard.
   Previously the list was reviewer-only.
+- Pilot Fittings gains a filter bar over the pilot's own validation history: status,
+  verdict, doctrine (scoped to doctrines the pilot has actually submitted against, plus
+  a "Source defaults" option), character, and ship name.
+- Pilots can remove a rejected submission from their own Pilot Fittings history. It's
+  hidden from that view only, not deleted - reviewers and reports still see it, same as
+  before. Pending submissions in the same "Remove selected" action are still deleted
+  outright, as they always were. Migration 0038 adds `FitSubmission.hidden_at`.
 
 ### Changed
 - Fit detail: doctrine categories are now shown once, in a combined row below the

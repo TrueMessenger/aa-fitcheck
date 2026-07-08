@@ -32,15 +32,70 @@
         </div>
     </div>
 
+    <form method="get" class="card mb-3">
+        <div class="card-body d-flex flex-wrap gap-2 align-items-end">
+            <div>
+                <label class="form-label small mb-1">{% translate "Status" %}</label>
+                <select class="form-select form-select-sm" name="status" onchange="this.form.submit()">
+                    <option value="">{% translate "All statuses" %}</option>
+                    {% for value, label in statuses.choices %}
+                        <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="form-label small mb-1">{% translate "Verdict" %}</label>
+                <select class="form-select form-select-sm" name="verdict" onchange="this.form.submit()">
+                    <option value="">{% translate "All verdicts" %}</option>
+                    {% for value, label in verdicts.choices %}
+                        <option value="{{ value }}" {% if verdict_filter == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="form-label small mb-1">{% translate "Doctrine" %}</label>
+                <select class="form-select form-select-sm" name="doctrine" onchange="this.form.submit()">
+                    <option value="">{% translate "All doctrines" %}</option>
+                    {% if has_source_default_submissions %}
+                        <option value="{{ no_doctrine_filter_value }}" {% if doctrine_filter == no_doctrine_filter_value %}selected{% endif %}>
+                            {% translate "Source defaults" %}
+                        </option>
+                    {% endif %}
+                    {% for doctrine in doctrines %}
+                        <option value="{{ doctrine.pk }}" {% if doctrine_filter == doctrine.pk|stringformat:'s' %}selected{% endif %}>{{ doctrine.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="form-label small mb-1">{% translate "Character" %}</label>
+                <select class="form-select form-select-sm" name="character" onchange="this.form.submit()">
+                    <option value="">{% translate "All characters" %}</option>
+                    {% for character in characters %}
+                        <option value="{{ character.pk }}" {% if character_filter == character.pk|stringformat:'s' %}selected{% endif %}>{{ character.character_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="max-width: 11rem">
+                <label class="form-label small mb-1">{% translate "Ship Type" %}</label>
+                <input class="form-control form-control-sm" type="search" name="ship"
+                       value="{{ ship_filter }}" placeholder="{% translate 'e.g. Hel' %}">
+            </div>
+            <button class="btn btn-sm btn-primary" type="submit">
+                <i class="fa-solid fa-filter"></i> {% translate "Filter" %}
+            </button>
+            <a class="btn btn-sm btn-secondary" href="{% url 'fitcheck:pilot_fittings' %}">{% translate "Clear" %}</a>
+        </div>
+    </form>
+
     <form method="post" action="{% url 'fitcheck:submissions_delete_bulk' %}"
-          onsubmit="return confirm('{% translate "Delete the selected submissions?" %}')">
+          onsubmit="return confirm('{% translate "Remove the selected submissions? Pending ones are deleted; rejected ones are hidden from your history only." %}')">
         {% csrf_token %}
         <div class="fc-section-head d-flex align-items-center gap-2">
             <i class="fa-solid fa-clock-rotate-left"></i>
             <span>{% translate "My validation history" %}</span>
             <button type="submit" class="btn btn-sm btn-danger ms-auto" id="bulk-delete-btn" disabled>
                 <i class="fa-solid fa-trash"></i>
-                <span id="bulk-delete-count">{% translate "Delete Selected" %}</span>
+                <span id="bulk-delete-count">{% translate "Remove selected" %}</span>
             </button>
         </div>
         <div class="card">
@@ -49,8 +104,8 @@
                     <thead>
                         <tr>
                             <th style="width: 2.5rem">
-                                <input class="form-check-input" type="checkbox" id="check-all-pending"
-                                       title="{% translate 'Select/deselect all pending submissions' %}">
+                                <input class="form-check-input" type="checkbox" id="check-all"
+                                       title="{% translate 'Select/deselect all removable submissions' %}">
                             </th>
                             <th>#</th>
                             <th>{% translate "Character" %}</th>
@@ -65,7 +120,7 @@
                         {% for submission in submissions %}
                             <tr>
                                 <td>
-                                    {% if submission.status == "P" %}
+                                    {% if submission.status == "P" or submission.status == "R" %}
                                         <input class="form-check-input bulk-delete-check" type="checkbox"
                                                name="submission_pks" value="{{ submission.pk }}">
                                     {% endif %}
@@ -117,7 +172,7 @@
 {% block extra_javascript %}
     <script>
         (function () {
-            const all = document.getElementById("check-all-pending");
+            const all = document.getElementById("check-all");
             const boxes = document.querySelectorAll(".bulk-delete-check");
             const btn = document.getElementById("bulk-delete-btn");
             const counter = document.getElementById("bulk-delete-count");
@@ -128,7 +183,7 @@
                 btn.disabled = n === 0;
                 counter.textContent = n === 0
                     ? defaultLabel
-                    : "{% translate 'Delete' %} " + n;
+                    : "{% translate 'Remove' %} " + n;
             }
             if (all) {
                 all.addEventListener("change", () => {

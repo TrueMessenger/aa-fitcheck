@@ -6,10 +6,14 @@ from django.core.exceptions import PermissionDenied
 from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext
 from django.views.decorators.http import require_POST
 
 logger = logging.getLogger(__name__)
+
+from allianceauth.eveonline.models import EveCharacter
 
 from ..forms import AssignFittingForm, DoctrineCategoryForm, DoctrineForm
 from ..models import Doctrine, DoctrineCategory, DoctrineFit, DoctrineFitItem, FitSubmission
@@ -342,18 +346,65 @@ def submit_eft(request, fit_pk: int):
     )
 
 
+# Sentinel GET value for "graded against source defaults" (doctrine IS NULL) -
+# distinct from "" (no filter applied), which can't itself be a pk.
+_NO_DOCTRINE_FILTER = "none"
+
+
 @login_required
 @permission_required("fitcheck.basic_access")
 def pilot_fittings(request):
-    """The member's own submissions - never anyone else's."""
+    """The member's own submissions - never anyone else's. Hidden (soft-removed)
+    rows never appear here, but stay visible to reviewers, reports, and Secure
+    Groups compliance, which query FitSubmission directly rather than through
+    this view."""
     from ..services.sde_loader import ensure_sde_loading
 
-    submissions = (
-        FitSubmission.objects.for_user(request.user)
-        .select_related("doctrine_fit", "doctrine", "ship_type", "character")
-        .order_by("-created_at")
+    own_submissions = FitSubmission.objects.for_user(request.user).filter(
+        hidden_at__isnull=True
     )
-    page_obj, elided_range, querystring = _paginate(request, submissions)
+
+    submissions = own_submissions.select_related(
+        "doctrine_fit", "doctrine", "ship_type", "character"
+    )
+    status = request.GET.get("status", "")
+    if status:
+        submissions = submissions.filter(status=status)
+    verdict = request.GET.get("verdict", "")
+    if verdict:
+        submissions = submissions.filter(verdict=verdict)
+    doctrine = request.GET.get("doctrine", "")
+    if doctrine == _NO_DOCTRINE_FILTER:
+        submissions = submissions.filter(doctrine__isnull=True)
+    elif doctrine.isdigit():
+        submissions = submissions.filter(doctrine_id=doctrine)
+    character = request.GET.get("character", "")
+    if character.isdigit():
+        submissions = submissions.filter(character_id=character)
+    ship = request.GET.get("ship", "").strip()
+    if ship:
+        submissions = submissions.filter(ship_type__name__icontains=ship)
+
+    # Filter option lists are scoped to the user's own (visible) submissions -
+    # never every doctrine/character in the install - so a pilot never sees the
+    # name of a doctrine they otherwise can't reach.
+    doctrines = Doctrine.objects.filter(
+        pk__in=own_submissions.exclude(doctrine__isnull=True).values_list(
+            "doctrine_id", flat=True
+        )
+    ).order_by("name")
+    has_source_default_submissions = own_submissions.filter(
+        doctrine__isnull=True
+    ).exists()
+    characters = EveCharacter.objects.filter(
+        pk__in=own_submissions.exclude(character__isnull=True).values_list(
+            "character_id", flat=True
+        )
+    ).order_by("character_name")
+
+    page_obj, elided_range, querystring = _paginate(
+        request, submissions.order_by("-created_at")
+    )
     return render(
         request,
         "fitcheck/pilot_fittings.html",
@@ -362,6 +413,17 @@ def pilot_fittings(request):
             "page_obj": page_obj,
             "elided_range": elided_range,
             "querystring": querystring,
+            "status_filter": status,
+            "verdict_filter": verdict,
+            "doctrine_filter": doctrine,
+            "character_filter": character,
+            "ship_filter": ship,
+            "doctrines": doctrines,
+            "has_source_default_submissions": has_source_default_submissions,
+            "no_doctrine_filter_value": _NO_DOCTRINE_FILTER,
+            "characters": characters,
+            "statuses": FitSubmission.Status,
+            "verdicts": FitSubmission.Verdict,
             "main_character": getattr(request.user.profile, "main_character", None),
             "sde_loaded": ensure_sde_loading(),
             "page_title": _("Pilot Fittings"),
@@ -755,9 +817,10 @@ _RECHECK_COOLDOWN_SECONDS = 30
 @permission_required("fitcheck.basic_access")
 @require_POST
 def submissions_delete_bulk(request):
-    """Pilot multi-delete from the Pilot Fittings table. Same gating rules as
-    the single-row delete: own pending only, approved/rejected stay (reviewer
-    decisions are immutable from the pilot side)."""
+    """Pilot multi-remove from the Pilot Fittings table. Own pending submissions
+    are hard-deleted (unchanged); own rejected submissions are soft-hidden from
+    this history view only - reviewer decisions stay on the record for
+    reviewers/reports. Approved submissions are never touched from here."""
     raw_pks = request.POST.getlist("submission_pks")
     pks: list[int] = []
     for raw in raw_pks:
@@ -766,23 +829,47 @@ def submissions_delete_bulk(request):
         except (TypeError, ValueError):
             continue
     if not pks:
-        messages.info(request, _("Pick at least one submission to delete."))
+        messages.info(request, _("Pick at least one submission to remove."))
         return redirect("fitcheck:pilot_fittings")
     targets = FitSubmission.objects.filter(
-        pk__in=pks, user=request.user, status=FitSubmission.Status.PENDING
+        pk__in=pks,
+        user=request.user,
+        status__in=(FitSubmission.Status.PENDING, FitSubmission.Status.REJECTED),
     )
-    deleted_count, _detail = targets.delete()
-    # `_detail` counts every cascaded row; we only want the submission count.
-    submission_count = _detail.get("fitcheck.FitSubmission", 0)
-    if submission_count:
+    pending_pks = list(
+        targets.filter(status=FitSubmission.Status.PENDING).values_list("pk", flat=True)
+    )
+    rejected_pks = list(
+        targets.filter(status=FitSubmission.Status.REJECTED).values_list("pk", flat=True)
+    )
+    deleted_count = 0
+    if pending_pks:
+        _deleted, detail = FitSubmission.objects.filter(pk__in=pending_pks).delete()
+        # `detail` counts every cascaded row; we only want the submission count.
+        deleted_count = detail.get("fitcheck.FitSubmission", 0)
+    hidden_count = 0
+    if rejected_pks:
+        hidden_count = FitSubmission.objects.filter(pk__in=rejected_pks).update(
+            hidden_at=timezone.now()
+        )
+    total = deleted_count + hidden_count
+    if total:
         messages.success(
             request,
-            _("Removed %(n)s submission(s).") % {"n": submission_count},
+            ngettext(
+                "Removed %(n)s submission from your history.",
+                "Removed %(n)s submissions from your history.",
+                total,
+            )
+            % {"n": total},
         )
     else:
         messages.warning(
             request,
-            _("No matching pending submissions were removed (already reviewed, or not yours)."),
+            _(
+                "No matching pending or rejected submissions were removed "
+                "(already approved, or not yours)."
+            ),
         )
     return redirect("fitcheck:pilot_fittings")
 
@@ -791,20 +878,28 @@ def submissions_delete_bulk(request):
 @permission_required("fitcheck.basic_access")
 @require_POST
 def submission_delete(request, submission_pk: int):
-    """Pilot deletes their own PENDING submission. Approved/rejected are immutable -
-    reviewer decisions matter and shouldn't disappear from the audit trail."""
+    """Pilot removes their own submission from history. A PENDING submission is
+    hard-deleted (unreviewed, nothing to preserve). A REJECTED submission is
+    soft-hidden instead - it disappears from the pilot's own Pilot Fittings
+    list but reviewers/reports still see it, since the reviewer's decision
+    stays on the audit trail. Approved submissions can't be removed at all."""
     submission = get_object_or_404(FitSubmission, pk=submission_pk)
     if submission.user != request.user:
         raise PermissionDenied
-    if submission.status != FitSubmission.Status.PENDING:
-        messages.error(
-            request,
-            _("This submission has already been reviewed and can't be removed."),
-        )
-        return redirect("fitcheck:submission_detail", submission_pk=submission.pk)
-    submission.delete()
-    messages.success(request, _("Submission removed."))
-    return redirect("fitcheck:pilot_fittings")
+    if submission.status == FitSubmission.Status.PENDING:
+        submission.delete()
+        messages.success(request, _("Submission removed."))
+        return redirect("fitcheck:pilot_fittings")
+    if submission.status == FitSubmission.Status.REJECTED:
+        submission.hidden_at = timezone.now()
+        submission.save(update_fields=["hidden_at"])
+        messages.success(request, _("Submission removed from your history."))
+        return redirect("fitcheck:pilot_fittings")
+    messages.error(
+        request,
+        _("This submission has already been reviewed and can't be removed."),
+    )
+    return redirect("fitcheck:submission_detail", submission_pk=submission.pk)
 
 
 @login_required
