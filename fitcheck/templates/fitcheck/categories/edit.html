@@ -55,6 +55,18 @@
                                 </label>
                                 {{ form.required_groups }}
                             </div>
+                            <div class="col-12">
+                                <label class="form-label">
+                                    {% translate "Reviewer Groups" %}
+                                    <i class="fa-solid fa-circle-question text-muted ms-1" tabindex="0"
+                                       data-bs-toggle="tooltip"
+                                       title="{% translate 'Members of these groups who ALSO hold a Fit Check review permission may review submissions for doctrines in this category. Empty = any reviewer may review. This is REVIEW AUTHORITY, distinct from the visibility groups above (which control who can SEE the category).' %}"></i>
+                                </label>
+                                {{ form.reviewer_groups }}
+                                <div class="form-text">
+                                    {% translate "Members of these groups who also hold a Fit Check review permission may review submissions for doctrines in this category; empty = any reviewer. Distinct from the visibility groups above." %}
+                                </div>
+                            </div>
                             <div class="col-md-6">
                                 <label class="form-label">{% translate "Doctrines in This Category" %}</label>
                                 {{ form.doctrines }}

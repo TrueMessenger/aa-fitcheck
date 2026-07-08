@@ -38,6 +38,17 @@ version last got one.
 ## [Unreleased]
 
 ### Added
+- Per-category review scoping. Each doctrine category gains a **Reviewer groups** list:
+  members of those groups who also hold a Fit Check review permission may review
+  submissions for that category's doctrines (e.g. a "Super Capital Admin" group reviews
+  titan-doctrine submissions while a blackops reviewer cannot see or decide them). The
+  scope covers the whole review path - the queue, individual and bulk decisions,
+  new-submission reviewer pings, and the reviewer digest all respect it. A category with
+  an empty Reviewer groups list is unscoped: any reviewer may act on it, so an install
+  that configures nothing keeps today's behaviour exactly. Reviewer groups are distinct
+  from a category's visibility (Selected/Required) groups: authority to review is not the
+  same as membership. Migration 0041 adds `DoctrineCategory.reviewer_groups`.
+
 - Doctrines can auto-approve inventory-validated submissions. Each doctrine has an
   Auto-approve setting (Off by default) that, when set to "Compliant only" or "Compliant
   or with substitutions", approves a submission automatically the moment it is graded -
@@ -82,6 +93,14 @@ version last got one.
   `UserNotificationPreference`.
 
 ### Changed
+- Reviewers without doctrine-management rights now see only member-visible content plus
+  the categories they are scoped to review, rather than everything. Previously any review
+  permission revealed every doctrine, fit, and category regardless of group gating; a
+  plain reviewer now sees a group-gated doctrine/fit only if they are admitted to it as a
+  member or their groups appear in one of its categories' Reviewer groups (authority
+  grants sight). Doctrine managers and superusers still see everything. This does not
+  change which submissions a reviewer can act on - an unscoped category still lets any
+  reviewer decide its submissions even if they cannot open the doctrine page.
 - Fit detail: doctrine categories are now shown once, in a combined row below the
   doctrine chips, instead of being repeated after every doctrine chip that carries them.
 - Test a Fit: the doctrine picker is now a row of toggle chips (checked state shown by

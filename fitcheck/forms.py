@@ -115,8 +115,9 @@ class DoctrineCategoryForm(forms.ModelForm):
 
 class DoctrineCategoryEditForm(forms.ModelForm):
     """Full category management: colour + the two group-visibility lists + the
-    fits and doctrines this category gates. `doctrines` is the reverse side of
-    Doctrine.categories, so it's a manual field saved in the view."""
+    reviewer-authority group list + the fits and doctrines this category gates.
+    `doctrines` is the reverse side of Doctrine.categories, so it's a manual
+    field saved in the view."""
 
     doctrines = forms.ModelMultipleChoiceField(
         queryset=Doctrine.objects.order_by("name"),
@@ -127,7 +128,14 @@ class DoctrineCategoryEditForm(forms.ModelForm):
 
     class Meta:
         model = DoctrineCategory
-        fields = ["name", "color", "selected_groups", "required_groups", "fits"]
+        fields = [
+            "name",
+            "color",
+            "selected_groups",
+            "required_groups",
+            "reviewer_groups",
+            "fits",
+        ]
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "color": forms.TextInput(
@@ -135,6 +143,7 @@ class DoctrineCategoryEditForm(forms.ModelForm):
             ),
             "selected_groups": forms.SelectMultiple(attrs={"size": 8, "class": "form-select"}),
             "required_groups": forms.SelectMultiple(attrs={"size": 8, "class": "form-select"}),
+            "reviewer_groups": forms.SelectMultiple(attrs={"size": 8, "class": "form-select"}),
             "fits": forms.SelectMultiple(attrs={"size": 8, "class": "form-select"}),
         }
 
@@ -142,6 +151,8 @@ class DoctrineCategoryEditForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["selected_groups"].queryset = Group.objects.order_by("name")
         self.fields["required_groups"].queryset = Group.objects.order_by("name")
+        self.fields["reviewer_groups"].queryset = Group.objects.order_by("name")
+        self.fields["reviewer_groups"].label = _("Reviewer groups")
         self.fields["fits"].queryset = DoctrineFit.objects.order_by("name")
         if self.instance.pk:
             self.fields["doctrines"].initial = self.instance.doctrines.all()

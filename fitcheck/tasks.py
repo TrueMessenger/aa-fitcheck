@@ -219,7 +219,7 @@ def notify_reviewers_new_submission(submission_id: int):
         return
     submission = (
         FitSubmission.objects.filter(pk=submission_id)
-        .select_related("doctrine_fit", "user")
+        .select_related("doctrine_fit", "doctrine", "user")
         .first()
     )
     if submission is None:
@@ -229,8 +229,14 @@ def notify_reviewers_new_submission(submission_id: int):
     # the task, not the call sites, so every future caller inherits the guard.
     if submission.status != FitSubmission.Status.PENDING:
         return
+    from .managers import can_review_submission
+
     for reviewer in _reviewers():
         if UserNotificationPreference.is_muted(reviewer):
+            continue
+        # Ping only reviewers scoped to this submission's category (an unscoped
+        # category or no category means every reviewer, as before).
+        if not can_review_submission(reviewer, submission):
             continue
         notify(
             reviewer,
@@ -252,18 +258,27 @@ def send_review_digest():
     Notifications - this task is a no-op while it's off, even if scheduled."""
     if not NotificationSettings.current().reviewer_digest:
         return
-    pending = FitSubmission.objects.pending().select_related("doctrine_fit")
-    total = pending.count()
-    if not total:
+    all_pending = FitSubmission.objects.pending().select_related(
+        "doctrine_fit", "doctrine"
+    )
+    if not all_pending.exists():
         return
-    by_fit: dict[str, int] = {}
-    for submission in pending:
-        key = str(submission.doctrine_fit)
-        by_fit[key] = by_fit.get(key, 0) + 1
-    breakdown = "\n".join(f"- {name}: {count}" for name, count in sorted(by_fit.items()))
+    # Each reviewer's digest counts only the pending submissions within their
+    # own review scope; a reviewer with an empty scoped queue is skipped.
     for reviewer in _reviewers():
         if UserNotificationPreference.is_muted(reviewer):
             continue
+        pending = all_pending.reviewable_by(reviewer)
+        total = pending.count()
+        if not total:
+            continue
+        by_fit: dict[str, int] = {}
+        for submission in pending:
+            key = str(submission.doctrine_fit)
+            by_fit[key] = by_fit.get(key, 0) + 1
+        breakdown = "\n".join(
+            f"- {name}: {count}" for name, count in sorted(by_fit.items())
+        )
         notify(
             reviewer,
             title=ngettext(

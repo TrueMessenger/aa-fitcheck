@@ -44,6 +44,11 @@ class DoctrineCategory(models.Model):
     A category with neither set is public. The two are combined with OR, so a
     pilot is admitted if they satisfy the Selected set OR the Required set.
 
+    Visibility (the two group sets above) is deliberately DISTINCT from review
+    authority: `reviewer_groups` names the groups whose members (if they also
+    hold a review permission) may decide submissions for this category's
+    doctrines. Empty reviewer_groups means any reviewer may act.
+
     The background is an arbitrary hex colour; `text_color` picks black or white
     for readable contrast."""
 
@@ -64,6 +69,18 @@ class DoctrineCategory(models.Model):
         blank=True,
         related_name="+",
         help_text="Pilots must have ALL of these Auth groups to see this category's fits/doctrines.",
+    )
+    reviewer_groups = models.ManyToManyField(
+        Group,
+        blank=True,
+        related_name="+",
+        help_text=(
+            "Members of these Auth groups who ALSO hold a Fit Check review "
+            "permission may review submissions for doctrines in this category. "
+            "Empty = any reviewer may review it. This grants REVIEW AUTHORITY "
+            "and is distinct from the visibility groups above (which control "
+            "who may SEE the category)."
+        ),
     )
     fits = models.ManyToManyField(
         "DoctrineFit",
