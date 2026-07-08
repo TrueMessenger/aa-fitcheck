@@ -24,9 +24,7 @@ at release/tag time, to the **highest level** the accumulated batch requires:
 A bump resets the lower fields (a minor bump sets patch to 0; a major bump sets
 minor and patch to 0). At release: scan everything under Unreleased, pick the
 single highest applicable level, bump once, move the Unreleased entries under
-the new version heading with the date, and tag the commit to match. (The current
-Unreleased set contains fixes and the removal of a non-functional setting, so
-the next release will be a patch bump.)
+the new version heading with the date, and tag the commit to match.
 
 Pushing the `vX.Y.Z` tag triggers `publish.yml`, which builds and uploads to
 PyPI — it does **not** create a GitHub Release. After the tag lands, also run
@@ -36,6 +34,21 @@ tags — stays in sync with PyPI instead of silently freezing at whichever
 version last got one.
 
 ## [Unreleased]
+
+## [1.12.0] - 2026-07-08
+
+**Upgrade notes:** run `python manage.py migrate` (adds migrations 0038–0041), then
+`collectstatic` and restart the web workers as usual. No new beat task or permission is
+required. Three behaviour changes to be aware of: (1) pasted EFT fits can no longer be
+submitted for review — the Test a Fit page is always a check-only sandbox and reviewable
+submissions come only from ESI/corptools inventory validation; (2) the legacy
+`FITCHECK_NOTIFY_REVIEWERS`, `FITCHECK_REVIEWER_DIGEST`, and
+`FITCHECK_NOTIFY_PILOTS_STALE` settings now only seed the new **Settings →
+Notifications** toggles on first access after upgrading — manage notifications in that
+page from then on; (3) reviewers without doctrine-management rights no longer see
+group-gated doctrines outside their scope — add groups to a category's new **Reviewer
+groups** field to scope review authority, or leave it empty to keep the previous
+any-reviewer behaviour.
 
 ### Added
 - Per-category review scoping. Each doctrine category gains a **Reviewer groups** list:
