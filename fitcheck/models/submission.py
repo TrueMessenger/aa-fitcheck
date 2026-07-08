@@ -82,6 +82,14 @@ class FitSubmission(models.Model):
     # ESI didn't surface it. Not consulted by the compliance engine.
     frigate_escape_bay_type_id = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    hidden_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Set when the pilot removes this submission from their own history view. "
+        "Hides the row from the owner's Pilot Fittings list only - reviewers, reports, and "
+        "Secure Groups compliance still see it.",
+    )
 
     objects = FitSubmissionQuerySet.as_manager()
 

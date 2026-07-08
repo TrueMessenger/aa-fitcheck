@@ -1,13 +1,19 @@
 """Pilot-side actions on their own submissions (requirement 1):
 
-- Delete a pending submission they own.
+- Delete a pending submission they own; soft-hide a rejected one instead.
 - Re-check a submission to re-grade against the current doctrine version.
 - Spam-prevention: 30-second cooldown per (user, doctrine_fit) on re-check.
+- Filter the pilot's own validation history (status, verdict, doctrine,
+  character, ship).
 """
 
 from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
+from eveuniverse.models import EveType
+
+from allianceauth.eveonline.models import EveCharacter
 
 from ..constants import Section
 from ..models import FitSubmission
@@ -33,12 +39,13 @@ class PilotActionsCase(TestCase):
     def setUp(self):
         cache.clear()
 
-    def _submit(self, user=None, source=None):
+    def _submit(self, user=None, source=None, doctrine=None):
         return submit_fit(
             user or self.member,
             self.fit,
             parse_eft("[Harbinger, X]\nHeat Sink II\nHeat Sink II\nHeat Sink II\n"),
             source=source or FitSubmission.Source.ESI,
+            doctrine=doctrine,
         )
 
 
@@ -69,16 +76,19 @@ class TestSubmissionDelete(PilotActionsCase):
         # Row survives.
         self.assertTrue(FitSubmission.objects.filter(pk=submission.pk).exists())
 
-    def test_pilot_cannot_delete_rejected_submission(self):
+    def test_pilot_removing_rejected_submission_hides_it_instead_of_deleting(self):
         submission = self._submit()
         submission.status = FitSubmission.Status.REJECTED
         submission.save(update_fields=["status"])
         self.client.force_login(self.member)
-        self.client.post(
+        response = self.client.post(
             reverse("fitcheck:submission_delete", args=[submission.pk]),
             follow=True,
         )
-        self.assertTrue(FitSubmission.objects.filter(pk=submission.pk).exists())
+        self.assertEqual(response.status_code, 200)
+        submission.refresh_from_db()
+        # Still in the database - only hidden from the owner's history view.
+        self.assertIsNotNone(submission.hidden_at)
 
     def test_pilot_cannot_delete_other_users_submission(self):
         submission = self._submit()
@@ -164,8 +174,11 @@ class TestSubmissionsDeleteBulk(PilotActionsCase):
         response = self.client.get(reverse("fitcheck:submissions_delete_bulk"))
         self.assertEqual(response.status_code, 405)
 
-    def test_pilot_fittings_renders_checkboxes_only_for_pending(self):
+    def test_pilot_fittings_renders_checkboxes_for_pending_and_rejected_only(self):
         pending = self._submit()
+        rejected = self._submit()
+        rejected.status = FitSubmission.Status.REJECTED
+        rejected.save(update_fields=["status"])
         approved = self._submit()
         approved.status = FitSubmission.Status.APPROVED
         approved.save(update_fields=["status"])
@@ -173,10 +186,144 @@ class TestSubmissionsDeleteBulk(PilotActionsCase):
         self.client.force_login(self.member)
         response = self.client.get(reverse("fitcheck:pilot_fittings"))
         body = response.content.decode()
-        # The pending submission's pk appears as a checkbox value.
+        # Pending and rejected submissions are removable (checkbox present)...
         self.assertIn(f'value="{pending.pk}"', body)
-        # The approved submission does NOT - approved/rejected rows are uncheckable.
+        self.assertIn(f'value="{rejected.pk}"', body)
+        # ...approved rows are not - reviewer decisions to approve are immutable.
         self.assertNotIn(f'value="{approved.pk}"', body)
+
+
+class TestSoftHideRejected(PilotActionsCase):
+    """Removing a rejected submission from the pilot's own history hides it
+    (hidden_at set) rather than deleting it - the reviewer's decision stays on
+    the audit trail for reviewers/reports, but disappears from Pilot Fittings."""
+
+    def test_bulk_remove_hides_own_rejected_row_but_keeps_it_in_the_database(self):
+        rejected = self._submit()
+        rejected.status = FitSubmission.Status.REJECTED
+        rejected.save(update_fields=["status"])
+
+        self.client.force_login(self.member)
+        self.client.post(
+            reverse("fitcheck:submissions_delete_bulk"),
+            {"submission_pks": [str(rejected.pk)]},
+            follow=True,
+        )
+        rejected.refresh_from_db()
+        self.assertIsNotNone(rejected.hidden_at)
+        # Still present for an unfiltered ("reviewer-style") queryset.
+        self.assertTrue(FitSubmission.objects.filter(pk=rejected.pk).exists())
+
+        # And absent from the pilot's own history page.
+        response = self.client.get(reverse("fitcheck:pilot_fittings"))
+        self.assertNotIn(rejected, response.context["submissions"])
+
+    def test_bulk_remove_leaves_approved_rows_completely_untouched(self):
+        approved = self._submit()
+        approved.status = FitSubmission.Status.APPROVED
+        approved.save(update_fields=["status"])
+
+        self.client.force_login(self.member)
+        self.client.post(
+            reverse("fitcheck:submissions_delete_bulk"),
+            {"submission_pks": [str(approved.pk)]},
+            follow=True,
+        )
+        approved.refresh_from_db()
+        self.assertIsNone(approved.hidden_at)
+        self.assertEqual(approved.status, FitSubmission.Status.APPROVED)
+
+    def test_bulk_remove_still_hard_deletes_pending_rows(self):
+        pending = self._submit()
+        self.client.force_login(self.member)
+        self.client.post(
+            reverse("fitcheck:submissions_delete_bulk"),
+            {"submission_pks": [str(pending.pk)]},
+            follow=True,
+        )
+        self.assertFalse(FitSubmission.objects.filter(pk=pending.pk).exists())
+
+    def test_bulk_remove_does_not_touch_another_users_rejected_row(self):
+        other_rejected = self._submit(user=self.other_member)
+        other_rejected.status = FitSubmission.Status.REJECTED
+        other_rejected.save(update_fields=["status"])
+
+        self.client.force_login(self.member)
+        self.client.post(
+            reverse("fitcheck:submissions_delete_bulk"),
+            {"submission_pks": [str(other_rejected.pk)]},
+            follow=True,
+        )
+        other_rejected.refresh_from_db()
+        self.assertIsNone(other_rejected.hidden_at)
+
+    def test_bulk_remove_reports_combined_count_in_message(self):
+        pending = self._submit()
+        rejected = self._submit()
+        rejected.status = FitSubmission.Status.REJECTED
+        rejected.save(update_fields=["status"])
+
+        self.client.force_login(self.member)
+        response = self.client.post(
+            reverse("fitcheck:submissions_delete_bulk"),
+            {"submission_pks": [str(pending.pk), str(rejected.pk)]},
+            follow=True,
+        )
+        self.assertContains(response, "Removed 2 submissions from your history.")
+
+    def test_single_delete_hides_own_rejected_submission(self):
+        rejected = self._submit()
+        rejected.status = FitSubmission.Status.REJECTED
+        rejected.save(update_fields=["status"])
+
+        self.client.force_login(self.member)
+        response = self.client.post(
+            reverse("fitcheck:submission_delete", args=[rejected.pk]),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        rejected.refresh_from_db()
+        self.assertIsNotNone(rejected.hidden_at)
+        self.assertTrue(FitSubmission.objects.filter(pk=rejected.pk).exists())
+
+    def test_single_delete_still_blocks_approved_submission(self):
+        approved = self._submit()
+        approved.status = FitSubmission.Status.APPROVED
+        approved.save(update_fields=["status"])
+
+        self.client.force_login(self.member)
+        self.client.post(
+            reverse("fitcheck:submission_delete", args=[approved.pk]),
+            follow=True,
+        )
+        approved.refresh_from_db()
+        self.assertIsNone(approved.hidden_at)
+        self.assertEqual(approved.status, FitSubmission.Status.APPROVED)
+
+    def test_single_delete_cannot_hide_another_users_rejected_row(self):
+        other_rejected = self._submit(user=self.other_member)
+        other_rejected.status = FitSubmission.Status.REJECTED
+        other_rejected.save(update_fields=["status"])
+
+        self.client.force_login(self.member)
+        response = self.client.post(
+            reverse("fitcheck:submission_delete", args=[other_rejected.pk])
+        )
+        self.assertEqual(response.status_code, 403)
+        other_rejected.refresh_from_db()
+        self.assertIsNone(other_rejected.hidden_at)
+
+    def test_hidden_submission_never_appears_in_pilot_fittings_regardless_of_filters(self):
+        rejected = self._submit()
+        rejected.status = FitSubmission.Status.REJECTED
+        rejected.hidden_at = timezone.now()
+        rejected.save(update_fields=["status", "hidden_at"])
+
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:pilot_fittings"), {"status": FitSubmission.Status.REJECTED}
+        )
+        self.assertNotIn(rejected, response.context["submissions"])
 
 
 class TestFrigateEscapeBayPersistence(PilotActionsCase):
@@ -332,3 +479,162 @@ class TestSubmissionRecheck(PilotActionsCase):
         self.assertContains(response, "can no longer be re-checked")
         self.assertTrue(FitSubmission.objects.filter(pk=original.pk).exists())
         self.assertEqual(FitSubmission.objects.count(), 1)
+
+
+class TestPilotFittingsFilters(PilotActionsCase):
+    """GET filters on the pilot's own validation history (status, verdict,
+    doctrine, character, ship). Rows are built directly rather than through
+    submit_fit so each one can carry exactly the field combination a filter
+    test needs."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.second_doctrine = create_doctrine(name="Second Doctrine")
+        cls.oracle_fit = create_fit(cls.second_doctrine, T.ORACLE, name="Sniper Oracle")
+        cls.alt_character = EveCharacter.objects.create(
+            character_id=95_000_001,
+            character_name="Alt Toon",
+            corporation_id=2001,
+            corporation_name="Test Corp",
+            corporation_ticker="TEST",
+            security_status=0,
+        )
+
+        def make(**overrides):
+            defaults = dict(
+                user=cls.member,
+                character=cls.member.profile.main_character,
+                doctrine_fit=cls.fit,
+                fit_version=cls.fit.version,
+                doctrine=None,
+                source=FitSubmission.Source.ESI,
+                verdict=FitSubmission.Verdict.COMPLIANT,
+                status=FitSubmission.Status.PENDING,
+                ship_type=EveType.objects.get(id=T.HARBINGER),
+            )
+            defaults.update(overrides)
+            return FitSubmission.objects.create(**defaults)
+
+        # Source-defaults grading, own main character, pending, Harbinger.
+        cls.pending_source_default = make()
+        # Graded against a doctrine, approved, "compliant with substitutions".
+        cls.approved_graded = make(
+            doctrine=cls.doctrine,
+            status=FitSubmission.Status.APPROVED,
+            verdict=FitSubmission.Verdict.COMPLIANT_SUBS,
+        )
+        # Different doctrine + fit + hull, rejected, non-compliant.
+        cls.rejected_other_doctrine = make(
+            doctrine=cls.second_doctrine,
+            doctrine_fit=cls.oracle_fit,
+            fit_version=cls.oracle_fit.version,
+            status=FitSubmission.Status.REJECTED,
+            verdict=FitSubmission.Verdict.NON_COMPLIANT,
+            ship_type=EveType.objects.get(id=T.ORACLE),
+        )
+        # Same as the source-default row, but flown on an alt character.
+        cls.alt_character_submission = make(character=cls.alt_character)
+
+    def _pks(self, response):
+        return {s.pk for s in response.context["submissions"]}
+
+    def test_status_filter_narrows_to_selected_status(self):
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:pilot_fittings"),
+            {"status": FitSubmission.Status.APPROVED},
+        )
+        self.assertEqual(self._pks(response), {self.approved_graded.pk})
+
+    def test_verdict_filter_narrows_to_selected_verdict(self):
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:pilot_fittings"),
+            {"verdict": FitSubmission.Verdict.NON_COMPLIANT},
+        )
+        self.assertEqual(self._pks(response), {self.rejected_other_doctrine.pk})
+
+    def test_doctrine_filter_by_pk_narrows_to_that_doctrine(self):
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:pilot_fittings"), {"doctrine": self.second_doctrine.pk}
+        )
+        self.assertEqual(self._pks(response), {self.rejected_other_doctrine.pk})
+
+    def test_doctrine_filter_source_defaults_sentinel_matches_null_doctrine(self):
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:pilot_fittings"), {"doctrine": "none"}
+        )
+        self.assertEqual(
+            self._pks(response),
+            {self.pending_source_default.pk, self.alt_character_submission.pk},
+        )
+
+    def test_doctrine_filter_options_scoped_to_users_own_submissions(self):
+        unrelated_doctrine = create_doctrine(name="Never Submitted Doctrine")
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("fitcheck:pilot_fittings"))
+        self.assertContains(response, self.doctrine.name)
+        self.assertContains(response, self.second_doctrine.name)
+        self.assertContains(response, "Source defaults")
+        self.assertNotContains(response, unrelated_doctrine.name)
+
+    def test_character_filter_narrows_to_selected_character(self):
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:pilot_fittings"), {"character": self.alt_character.pk}
+        )
+        self.assertEqual(self._pks(response), {self.alt_character_submission.pk})
+
+    def test_ship_filter_matches_partial_name_case_insensitively(self):
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:pilot_fittings"), {"ship": "orac"}
+        )
+        self.assertEqual(self._pks(response), {self.rejected_other_doctrine.pk})
+
+    def test_filters_compose_with_and_semantics(self):
+        self.client.force_login(self.member)
+        url = reverse("fitcheck:pilot_fittings")
+        response = self.client.get(
+            url,
+            {"status": FitSubmission.Status.REJECTED, "doctrine": self.second_doctrine.pk},
+        )
+        self.assertEqual(self._pks(response), {self.rejected_other_doctrine.pk})
+
+        # A contradictory combination yields no rows.
+        response = self.client.get(
+            url,
+            {"status": FitSubmission.Status.APPROVED, "doctrine": self.second_doctrine.pk},
+        )
+        self.assertEqual(self._pks(response), set())
+
+    def test_unknown_doctrine_and_character_values_are_ignored_not_errors(self):
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:pilot_fittings"),
+            {"doctrine": "not-a-number", "character": "not-a-number"},
+        )
+        self.assertEqual(response.status_code, 200)
+        # No filtering applied for either field - every own, visible submission shows.
+        self.assertEqual(
+            self._pks(response),
+            {
+                self.pending_source_default.pk,
+                self.approved_graded.pk,
+                self.rejected_other_doctrine.pk,
+                self.alt_character_submission.pk,
+            },
+        )
+
+    def test_filter_querystring_preserved_in_pagination_context(self):
+        self.client.force_login(self.member)
+        response = self.client.get(
+            reverse("fitcheck:pilot_fittings"),
+            {"status": FitSubmission.Status.PENDING, "ship": "Harb"},
+        )
+        self.assertIn("ship=Harb", response.context["querystring"])
+        self.assertIn("status=P", response.context["querystring"])
+        self.assertNotIn("page=", response.context["querystring"])
