@@ -16,7 +16,6 @@ from ..models import Doctrine, DoctrineCategory, DoctrineFit, DoctrineFitItem, F
 from ..services.check_runner import (
     build_deficit_multibuy,
     gradeable_doctrines_for,
-    submit_fit,
     validate_parsed_ship,
 )
 from ..services.eft_parser import parse_eft, render_eft
@@ -251,22 +250,14 @@ def _apply_manual_stats(parsed, specs, post_data):
 @login_required
 @permission_required("fitcheck.basic_access")
 def submit_eft(request, fit_pk: int):
-    """EFT-paste test bench. Staff (doctrine managers / reviewers) can create
-    real submissions from a paste; any member who can see the fit gets the
-    check-only sandbox - graded by the engine, nothing persisted, no reviewer
-    involvement. Member submissions that count still come from ESI inventory
+    """EFT-paste test bench. This is a pure sandbox: any member who can see
+    the fit can grade a pasted fit against the engine, but nothing is ever
+    persisted - no FitSubmission row, no review-queue entry, no reviewer
+    notification. Pasted text can't be tied to what a pilot actually has
+    fitted, so it can never stand in for a real submission. Submissions that
+    count toward compliance come only from ESI/corptools inventory
     validation (Pilot Fittings tab)."""
     fit = _visible_fit_or_404(request, fit_pk)
-    can_submit_paste = request.user.has_perm(
-        "fitcheck.manage_doctrines"
-    ) or _can_review(request.user)
-    # Sandbox mode: run the engine and show the findings without creating
-    # a submission - no review-queue row, no audit log.
-    check_only = (
-        request.method == "POST" and request.POST.get("mode") == "check_only"
-    )
-    if request.method == "POST" and not check_only and not can_submit_paste:
-        raise PermissionDenied
     gradeable = gradeable_doctrines_for(fit, request.user)
     if request.method == "POST":
         eft_text = request.POST.get("eft_text", "").strip()
@@ -291,7 +282,6 @@ def submit_eft(request, fit_pk: int):
                     "specs": specs,
                     "eft_text": eft_text,
                     "selected_doctrines": chosen,
-                    "check_only": check_only,
                     "page_title": _("Mutated Module Stats"),
                 }
                 if request.POST.get("stats_step") == "1":
@@ -309,72 +299,36 @@ def submit_eft(request, fit_pk: int):
                     return render(
                         request, "fitcheck/submit_mutated.html", mutated_context
                     )
-            from ..tasks import notify_reviewers_new_submission
+            # Pure-engine pass: nothing is persisted, nothing reaches the
+            # review queue. The unsaved ComplianceFinding rows carry the
+            # same display surface the findings partial already renders.
+            from ..services.check_runner import build_finding_rows
+            from ..services.compliance import check_fit, check_fit_for_doctrine
 
             doctrines = chosen or [None]
-            if check_only:
-                # Pure-engine pass: nothing is persisted, nothing reaches the
-                # review queue. The unsaved ComplianceFinding rows carry the
-                # same display surface the findings partial already renders.
-                from ..services.check_runner import build_finding_rows
-                from ..services.compliance import check_fit, check_fit_for_doctrine
-
-                results = []
-                for doctrine in doctrines:
-                    result = (
-                        check_fit_for_doctrine(parsed, fit, doctrine)
-                        if doctrine is not None
-                        else check_fit(parsed, fit)
-                    )
-                    results.append(
-                        {
-                            "doctrine": doctrine,
-                            "verdict": result.verdict,
-                            "verdict_display": FitSubmission.Verdict(result.verdict).label,
-                            "findings": build_finding_rows(result),
-                        }
-                    )
-                return render(
-                    request,
-                    "fitcheck/sandbox_results.html",
+            results = []
+            for doctrine in doctrines:
+                result = (
+                    check_fit_for_doctrine(parsed, fit, doctrine)
+                    if doctrine is not None
+                    else check_fit(parsed, fit)
+                )
+                results.append(
                     {
-                        "fit": fit,
-                        "parsed": parsed,
-                        "results": results,
-                        "page_title": _("Sandbox Check"),
-                    },
+                        "doctrine": doctrine,
+                        "verdict": result.verdict,
+                        "verdict_display": FitSubmission.Verdict(result.verdict).label,
+                        "findings": build_finding_rows(result),
+                    }
                 )
-            submissions = [
-                submit_fit(
-                    request.user,
-                    fit,
-                    parsed,
-                    source=FitSubmission.Source.EFT,
-                    eft_text=eft_text,
-                    doctrine=doctrine,
-                )
-                for doctrine in doctrines
-            ]
-            for submission in submissions:
-                notify_reviewers_new_submission.delay(submission.pk)
-            if len(submissions) == 1:
-                return redirect(
-                    "fitcheck:submission_detail", submission_pk=submissions[0].pk
-                )
-            # Multiple doctrines chosen - show the per-doctrine verdicts side by
-            # side (reusing the inventory results layout).
             return render(
                 request,
-                "fitcheck/inventory_results.html",
+                "fitcheck/sandbox_results.html",
                 {
-                    "results": [
-                        {
-                            "parsed": parsed,
-                            "ship_type_id": parsed.ship_type_id,
-                            "submissions": submissions,
-                        }
-                    ],
-                    "page_title": _("Validation Results"),
+                    "fit": fit,
+                    "parsed": parsed,
+                    "results": results,
+                    "page_title": _("Sandbox Check"),
                 },
             )
     return render(
@@ -383,7 +337,6 @@ def submit_eft(request, fit_pk: int):
         {
             "fit": fit,
             "gradeable_doctrines": gradeable,
-            "can_submit_paste": can_submit_paste,
             "page_title": _("Test a Fit"),
         },
     )
@@ -783,7 +736,7 @@ def submission_detail(request, submission_pk: int):
             "can_review": can_review,
             "is_owner": is_owner,
             "can_delete": is_owner and submission.status == FitSubmission.Status.PENDING,
-            "can_recheck": is_owner,
+            "can_recheck": is_owner and submission.source != FitSubmission.Source.EFT,
             "show_feb_panel": show_feb_panel,
             "feb_type": feb_type,
             "log_entries": submission.log.select_related("actor"),
@@ -858,10 +811,12 @@ def submission_delete(request, submission_pk: int):
 @permission_required("fitcheck.basic_access")
 @require_POST
 def submission_recheck(request, submission_pk: int):
-    """Re-check this fit and keep only the newest result. For ESI-sourced
-    submissions this re-pulls the ship's latest fit from EVE; EFT pastes (or a
-    failed/absent ESI pull) re-grade the stored items. Either way the previous
-    submission is replaced."""
+    """Re-check this fit and keep only the newest result. Only ESI-sourced
+    submissions can be re-checked - this re-pulls the ship's latest fit from
+    EVE (falling back to re-grading the stored copy if the live pull fails).
+    Legacy EFT-paste submissions predate the sandbox-only paste flow and
+    can't be re-verified against anything, so they stay visible as read-only
+    history instead. Either way the previous submission is replaced."""
     from django.core.cache import cache
 
     from ..services.check_runner import parsed_fit_from_submission, submit_fit
@@ -872,6 +827,16 @@ def submission_recheck(request, submission_pk: int):
     )
     if submission.user != request.user:
         raise PermissionDenied
+    if submission.source == FitSubmission.Source.EFT:
+        messages.error(
+            request,
+            _(
+                "This submission came from a pasted fit and is a legacy record - "
+                "pasted fits can no longer be re-checked. Re-checking now "
+                "re-validates against your EVE inventory."
+            ),
+        )
+        return redirect("fitcheck:submission_detail", submission_pk=submission.pk)
 
     key = f"fitcheck:revalidate:{request.user.pk}:{submission.doctrine_fit_id}"
     if not cache.add(key, True, timeout=_RECHECK_COOLDOWN_SECONDS):

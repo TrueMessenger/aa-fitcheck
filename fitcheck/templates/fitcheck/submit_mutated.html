@@ -9,14 +9,12 @@
         </div>
         <div class="card-body">
             <p class="text-muted">
-                {% translate "The in-game fit copy does not include mutation rolls, so enter the values from each module's attributes (show info in game, or export from Pyfa with mutations to skip this step). Entered values are marked self-reported for the reviewer." %}
+                {% translate "The in-game fit copy does not include mutation rolls, so enter the values from each module's attributes (show info in game, or export from Pyfa with mutations to skip this step)." %}
             </p>
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="stats_step" value="1">
-                {% if check_only %}
-                    <input type="hidden" name="mode" value="check_only">
-                {% endif %}
+                <input type="hidden" name="mode" value="check_only">
                 <textarea name="eft_text" class="d-none">{{ eft_text }}</textarea>
                 {% for doctrine in selected_doctrines %}
                     <input type="hidden" name="doctrines" value="{{ doctrine.pk }}">

@@ -111,14 +111,20 @@ class TestMemberViews(ViewTestCase):
         self.assertContains(response, "Zulu Fleet", count=1)
         self.assertContains(response, "Alpha Direct", count=1)
 
-    def test_submit_eft_save_mode_is_staff_only(self):
-        # Members get the check-only sandbox; a POST that would persist a
-        # submission (no mode field) stays staff-only.
-        self.client.force_login(self.member)
-        response = self.client.post(
-            reverse("fitcheck:submit_eft", args=[self.fit.pk]), {"eft_text": EFT_GOOD}
-        )
-        self.assertEqual(response.status_code, 403)
+    def test_submit_eft_never_persists_a_submission(self):
+        # The paste flow is a pure sandbox: no combination of user role or
+        # `mode` field ever creates a FitSubmission.
+        for user in (self.member, self.manager, self.reviewer):
+            for data in (
+                {"eft_text": EFT_GOOD},
+                {"eft_text": EFT_GOOD, "mode": "check_only"},
+            ):
+                self.client.force_login(user)
+                response = self.client.post(
+                    reverse("fitcheck:submit_eft", args=[self.fit.pk]), data
+                )
+                self.assertEqual(response.status_code, 200)
+        self.assertEqual(FitSubmission.objects.count(), 0)
 
     def test_fit_detail_offers_test_a_fit_to_member(self):
         self.client.force_login(self.member)
@@ -130,11 +136,9 @@ class TestMemberViews(ViewTestCase):
         response = self.client.post(
             reverse("fitcheck:submit_eft", args=[self.fit.pk]),
             {"eft_text": EFT_GOOD},
-            follow=True,
         )
         self.assertEqual(response.status_code, 200)
-        submission = FitSubmission.objects.get(user=self.reviewer)
-        self.assertEqual(submission.verdict, FitSubmission.Verdict.COMPLIANT_SUBS)
+        self.assertEqual(FitSubmission.objects.count(), 0)
         self.assertContains(response, "Compliant with substitutions")
         self.assertContains(response, "Imperial Navy Heat Sink")
 
@@ -606,8 +610,8 @@ class TestSubmissionPagination(ViewTestCase):
 
 class TestSubmitEftDoctrineSelector(ViewTestCase):
     """The submit/test-bench page offers a doctrine selector; choosing one or
-    more doctrines fans out into one submission per (fit, doctrine), each
-    graded against that doctrine's policy snapshot."""
+    more doctrines fans out into one sandbox result per (fit, doctrine), each
+    graded against that doctrine's policy snapshot. Nothing is ever persisted."""
 
     def setUp(self):
         super().setUp()
@@ -633,21 +637,19 @@ class TestSubmitEftDoctrineSelector(ViewTestCase):
             },
         )
         self.assertEqual(response.status_code, 200)  # per-doctrine results table
-        subs = FitSubmission.objects.filter(user=self.manager, doctrine_fit=self.fit)
-        self.assertEqual(subs.count(), 2)
-        self.assertEqual(
-            {s.doctrine_id for s in subs}, {self.doctrine.pk, self.second.pk}
-        )
+        self.assertContains(response, self.doctrine.name)
+        self.assertContains(response, self.second.name)
+        self.assertEqual(FitSubmission.objects.count(), 0)
 
-    def test_single_doctrine_redirects_to_detail(self):
+    def test_single_doctrine_stays_in_sandbox(self):
         self.client.force_login(self.manager)
         response = self.client.post(
             reverse("fitcheck:submit_eft", args=[self.fit.pk]),
             {"eft_text": EFT_GOOD, "doctrines": [str(self.doctrine.pk)]},
         )
-        self.assertEqual(response.status_code, 302)
-        sub = FitSubmission.objects.filter(user=self.manager).latest("created_at")
-        self.assertEqual(sub.doctrine_id, self.doctrine.pk)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.doctrine.name)
+        self.assertEqual(FitSubmission.objects.count(), 0)
 
     def test_no_doctrine_grades_source_defaults(self):
         self.client.force_login(self.manager)
@@ -655,9 +657,8 @@ class TestSubmitEftDoctrineSelector(ViewTestCase):
             reverse("fitcheck:submit_eft", args=[self.fit.pk]),
             {"eft_text": EFT_GOOD},
         )
-        self.assertEqual(response.status_code, 302)
-        sub = FitSubmission.objects.filter(user=self.manager).latest("created_at")
-        self.assertIsNone(sub.doctrine)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(FitSubmission.objects.count(), 0)
 
 
 class TestPageRenderSmoke(ViewTestCase):

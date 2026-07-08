@@ -42,25 +42,18 @@
                         {% translate "This fit is standalone (in no doctrine you can see); it will be graded against its source-level defaults." %}
                     </div>
                 {% endif %}
-                {% if can_submit_paste %}
-                    <button type="submit" class="btn btn-primary" id="submit-save-btn">
-                        <i class="fa-solid fa-clipboard-check"></i> {% translate "Check fit" %}
-                    </button>
-                {% endif %}
                 <button type="submit" id="check-only-btn"
-                        class="btn {% if can_submit_paste %}btn-info{% else %}btn-primary{% endif %}"
+                        class="btn btn-primary"
                         name="mode" value="check_only"
                         title="{% translate 'Grade the paste and show the findings without creating a submission - nothing lands in the review queue.' %}">
-                    <i class="fa-solid fa-flask"></i> {% translate "Check only (don't save)" %}
+                    <i class="fa-solid fa-flask"></i> {% translate "Check fit" %}
                 </button>
                 <a class="btn btn-secondary" href="{% url 'fitcheck:fit_detail' fit.pk %}">
                     {% translate "Cancel" %}
                 </a>
-                {% if not can_submit_paste %}
-                    <div class="form-text mt-2">
-                        {% translate "Results are informational only - nothing is saved and reviewers are not notified. Submissions that count toward compliance come from My Ships (Pilot Fittings), which validates the ships you actually own." %}
-                    </div>
-                {% endif %}
+                <div class="form-text mt-2">
+                    {% translate "Results are informational only - nothing is saved and reviewers are not notified. Submissions that count toward compliance come from My Ships (Pilot Fittings), which validates the ships you actually own." %}
+                </div>
             </form>
         </div>
     </div>

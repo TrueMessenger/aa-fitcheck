@@ -206,9 +206,10 @@ Inventory page, and the settings show the current budget limit.
 - **Missing Modules** — the submission page generates a paste-ready deficit multibuy list of
   everything a pilot still needs: pilots copy it straight to the clipboard, reviewers drop it
   into the review comment.
-- **Test a Fit** — paste any fit as EFT text for an instant check-only grade against the
-  standard: nothing is saved, nothing reaches the review queue. Doctrine staff can also
-  create real submissions from a paste.
+- **Test a Fit** — paste any fit as EFT text for an instant grade against the standard.
+  This is a pure sandbox: nothing is ever saved and nothing reaches the review queue,
+  for any user. Reviewable submissions come only from ESI/corptools inventory
+  validation (My Ships).
 
 ### Compliance Sections
 

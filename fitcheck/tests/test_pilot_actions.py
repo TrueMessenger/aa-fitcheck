@@ -33,11 +33,12 @@ class PilotActionsCase(TestCase):
     def setUp(self):
         cache.clear()
 
-    def _submit(self, user=None):
+    def _submit(self, user=None, source=None):
         return submit_fit(
             user or self.member,
             self.fit,
             parse_eft("[Harbinger, X]\nHeat Sink II\nHeat Sink II\nHeat Sink II\n"),
+            source=source or FitSubmission.Source.ESI,
         )
 
 
@@ -315,3 +316,19 @@ class TestSubmissionRecheck(PilotActionsCase):
         )
         self.assertEqual(FitSubmission.objects.count(), before)
         self.assertFalse(FitSubmission.objects.filter(pk=new.pk).exists())
+
+    def test_recheck_blocked_for_legacy_eft_submission(self):
+        """EFT-paste submissions predate the sandbox-only paste flow and can't
+        be re-verified against anything - the row stays as read-only history."""
+        original = self._submit(source=FitSubmission.Source.EFT)
+        self.client.force_login(self.member)
+        response = self.client.post(
+            reverse("fitcheck:submission_recheck", args=[original.pk]),
+            follow=True,
+        )
+        self.assertRedirects(
+            response, reverse("fitcheck:submission_detail", args=[original.pk])
+        )
+        self.assertContains(response, "can no longer be re-checked")
+        self.assertTrue(FitSubmission.objects.filter(pk=original.pk).exists())
+        self.assertEqual(FitSubmission.objects.count(), 1)
