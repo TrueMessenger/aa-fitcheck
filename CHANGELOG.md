@@ -93,6 +93,10 @@ version last got one.
   `UserNotificationPreference`.
 
 ### Changed
+- My Ships: the ESI prompts now say "Grant access" (with the affected character count on
+  the blocked-characters warning) and explain that the grant is separate from the
+  character's Auth registration - the old "Connect ESI access" wording read as if the
+  character needed to be re-registered with Auth.
 - Reviewers without doctrine-management rights now see only member-visible content plus
   the categories they are scoped to review, rather than everything. Previously any review
   permission revealed every doctrine, fit, and category regardless of group gating; a

@@ -16,13 +16,18 @@
         <div class="alert alert-warning d-flex align-items-center gap-2">
             <i class="fa-solid fa-key"></i>
             <div>
-                {% translate "These characters need ESI access before their ships show here:" %}
+                {% translate "Fit Check needs an extra ESI grant to read these characters' ship hangars - separate from their Auth registration, which is fine and stays untouched:" %}
                 {% for character in inventory.characters_without_token %}
                     <strong>{{ character.character_name }}</strong>{% if not forloop.last %}, {% endif %}
                 {% endfor %}
             </div>
             <a class="btn btn-sm btn-warning ms-auto text-nowrap" href="{% url 'fitcheck:grant_all_esi' %}?next=inventory">
-                <i class="fa-solid fa-key"></i> {% translate "Connect ESI access" %}
+                <i class="fa-solid fa-key"></i>
+                {% blocktranslate count counter=inventory.characters_without_token|length %}
+                    Grant access for {{ counter }} character
+                {% plural %}
+                    Grant access for {{ counter }} characters
+                {% endblocktranslate %}
             </a>
         </div>
     {% endif %}
@@ -33,7 +38,7 @@
                 {% translate "One grant covers everything: your ship inventory, private-structure (Citadel) names with system/region, the implants in your active clone, and saving fits to EVE. Scopes you've already granted to another Auth app - or that corptools provides - are reused, so you're only asked for what's missing." %}
             </div>
             <a class="btn btn-sm btn-secondary ms-auto text-nowrap" href="{% url 'fitcheck:grant_all_esi' %}?next=inventory">
-                <i class="fa-solid fa-key"></i> {% translate "Connect / refresh ESI access" %}
+                <i class="fa-solid fa-key"></i> {% translate "Grant / refresh ESI access" %}
             </a>
         </div>
     {% endif %}
@@ -109,7 +114,7 @@
             {% if characters_missing_esi %}
                 <a class="btn btn-sm btn-primary ms-auto" href="{% url 'fitcheck:grant_all_esi' %}?next=inventory"
                    title="{% translate 'Grant all pilot ESI access for another character via EVE SSO' %}">
-                    <i class="fa-solid fa-key"></i> {% translate "Connect ESI access" %}
+                    <i class="fa-solid fa-key"></i> {% translate "Grant ESI access" %}
                 </a>
             {% endif %}
         </div>
