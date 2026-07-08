@@ -67,31 +67,22 @@ class TestSandboxCheckOnly(SandboxCheckTestCase):
         self.assertEqual(ComplianceFinding.objects.count(), 0)
         self.assertEqual(SubmissionActionLog.objects.count(), 0)
 
-    def test_normal_submit_unchanged(self):
-        expected_findings = len(check_fit(parse_eft(EFT_GOOD), self.fit).findings)
-
+    def test_missing_mode_field_still_sandboxes(self):
+        # The `mode` field is vestigial now - a POST without it grades the
+        # same as an explicit `mode=check_only` and persists nothing.
         self.client.force_login(self.manager)
         response = self.client.post(
             reverse("fitcheck:submit_eft", args=[self.fit.pk]),
             {"eft_text": EFT_GOOD},
-            follow=True,
         )
         self.assertEqual(response.status_code, 200)
-        submission = FitSubmission.objects.get(user=self.manager)
-        self.assertEqual(submission.verdict, FitSubmission.Verdict.COMPLIANT_SUBS)
-        self.assertEqual(
-            ComplianceFinding.objects.filter(submission=submission).count(),
-            expected_findings,
-        )
-        self.assertEqual(
-            SubmissionActionLog.objects.filter(submission=submission).count(), 2
-        )
-        self.assertRedirects(
-            response,
-            reverse("fitcheck:submission_detail", args=[submission.pk]),
-        )
+        self.assertTemplateUsed(response, "fitcheck/sandbox_results.html")
+        self.assertContains(response, "Compliant with substitutions")
+        self.assertEqual(FitSubmission.objects.count(), 0)
+        self.assertEqual(ComplianceFinding.objects.count(), 0)
+        self.assertEqual(SubmissionActionLog.objects.count(), 0)
 
-    def test_reviewer_notification_not_queued_in_sandbox(self):
+    def test_reviewer_notification_never_queued(self):
         self.client.force_login(self.manager)
         with patch(
             "fitcheck.tasks.notify_reviewers_new_submission.delay"
@@ -107,12 +98,12 @@ class TestSandboxCheckOnly(SandboxCheckTestCase):
                 reverse("fitcheck:submit_eft", args=[self.fit.pk]),
                 {"eft_text": EFT_GOOD},
             )
-            mock_delay.assert_called_once()
+            mock_delay.assert_not_called()
 
 
 class TestMemberSandbox(SandboxCheckTestCase):
-    """Any basic_access member who can see the fit gets check-only mode;
-    the persisting save path stays staff-only."""
+    """Any basic_access member who can see the fit gets the check-only
+    sandbox. There is no persisting path - not for members, not for staff."""
 
     def test_member_get_shows_check_only_form(self):
         self.client.force_login(self.member)
@@ -121,11 +112,11 @@ class TestMemberSandbox(SandboxCheckTestCase):
         self.assertContains(response, "check-only-btn")
         self.assertNotContains(response, "submit-save-btn")
 
-    def test_manager_keeps_save_button(self):
+    def test_manager_also_only_sees_check_only_button(self):
         self.client.force_login(self.manager)
         response = self.client.get(reverse("fitcheck:submit_eft", args=[self.fit.pk]))
-        self.assertContains(response, "submit-save-btn")
         self.assertContains(response, "check-only-btn")
+        self.assertNotContains(response, "submit-save-btn")
 
     def test_member_check_only_grades_and_persists_nothing(self):
         self.client.force_login(self.member)
@@ -144,13 +135,14 @@ class TestMemberSandbox(SandboxCheckTestCase):
         self.assertEqual(SubmissionActionLog.objects.count(), 0)
         mock_delay.assert_not_called()
 
-    def test_member_save_post_still_denied(self):
+    def test_member_post_without_mode_field_also_sandboxes(self):
         self.client.force_login(self.member)
         response = self.client.post(
             reverse("fitcheck:submit_eft", args=[self.fit.pk]),
             {"eft_text": EFT_GOOD},
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "fitcheck/sandbox_results.html")
         self.assertEqual(FitSubmission.objects.count(), 0)
 
     def test_member_mutated_detour_carries_check_only(self):

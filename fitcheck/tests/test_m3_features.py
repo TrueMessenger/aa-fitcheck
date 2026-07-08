@@ -6,7 +6,7 @@ from django.urls import reverse
 from allianceauth.notifications.models import Notification
 
 from ..constants import Section
-from ..models import FitSubmission, SubmissionItem
+from ..models import FitSubmission
 from ..services.eft_parser import parse_eft
 from ..services.check_runner import submit_fit
 from ..tasks import send_review_digest
@@ -38,8 +38,6 @@ class MutatedFlowTestCase(TestCase):
             policy=SubstitutionPolicy.MEET_OR_BEAT,
             checked_attributes=[Attrs.WEB_STRENGTH, Attrs.WEB_RANGE],
         )
-        # Reviewer perms so this flow exercises the PERSISTING submit path
-        # (plain members only get check-only mode on the test bench).
         cls.member = create_user("member", permissions=["basic_access", "review_submissions"])
         cls.url = reverse("fitcheck:submit_eft", args=[cls.fit.pk])
 
@@ -63,23 +61,20 @@ class TestManualMutatedStats(MutatedFlowTestCase):
         response = self.client.post(
             self.url,
             {"eft_text": ABYSSAL_EFT, "stats_step": "1", **self._stat_fields("-62.5", "15000")},
-            follow=True,
         )
         self.assertEqual(response.status_code, 200)
-        submission = FitSubmission.objects.get()
-        self.assertEqual(submission.verdict, FitSubmission.Verdict.COMPLIANT_SUBS)
-        item = submission.items.get(eve_type_id=T.WEB_ABYSSAL)
-        self.assertEqual(item.mutation_source, SubmissionItem.MutationSource.MANUAL)
-        self.assertContains(response, "Self-reported")
+        self.assertTemplateUsed(response, "fitcheck/sandbox_results.html")
+        self.assertContains(response, "Compliant with substitutions")
+        self.assertFalse(FitSubmission.objects.exists())
 
     def test_stats_step_with_losing_roll_fails(self):
         self.client.force_login(self.member)
-        self.client.post(
+        response = self.client.post(
             self.url,
             {"eft_text": ABYSSAL_EFT, "stats_step": "1", **self._stat_fields("-55", "15000")},
         )
-        submission = FitSubmission.objects.get()
-        self.assertEqual(submission.verdict, FitSubmission.Verdict.NON_COMPLIANT)
+        self.assertContains(response, "Non-compliant")
+        self.assertFalse(FitSubmission.objects.exists())
 
     def test_invalid_value_rerenders_form_without_submission(self):
         self.client.force_login(self.member)
@@ -92,12 +87,11 @@ class TestManualMutatedStats(MutatedFlowTestCase):
 
     def test_pyfa_export_skips_the_stats_step(self):
         self.client.force_login(self.member)
-        response = self.client.post(self.url, {"eft_text": PYFA_ABYSSAL_EFT}, follow=True)
+        response = self.client.post(self.url, {"eft_text": PYFA_ABYSSAL_EFT})
         self.assertEqual(response.status_code, 200)
-        submission = FitSubmission.objects.get()
-        self.assertEqual(submission.verdict, FitSubmission.Verdict.COMPLIANT_SUBS)
-        item = submission.items.get(eve_type_id=T.WEB_ABYSSAL)
-        self.assertEqual(item.mutation_source, SubmissionItem.MutationSource.EFT_PYFA)
+        self.assertTemplateUsed(response, "fitcheck/sandbox_results.html")
+        self.assertContains(response, "Compliant with substitutions")
+        self.assertFalse(FitSubmission.objects.exists())
 
 
 class TestReviewDigest(TestCase):

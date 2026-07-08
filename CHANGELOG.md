@@ -41,9 +41,8 @@ version last got one.
 - The Test a Fit page's check-only sandbox is now available to every member who can see
   the fitting (previously staff-only): paste any fit as EFT text for an instant graded
   result with nothing saved, no review-queue row, and no reviewer notification - useful
-  for checking a fit before buying it. Creating a real submission from a paste remains
-  restricted to doctrine managers and reviewers; member submissions that count still
-  come from ESI inventory validation.
+  for checking a fit before buying it. Submissions that count toward compliance come
+  from ESI inventory validation, not from a paste.
 - The "Missing Modules" deficit list on the submission page is now available to the
   submission's owner as a copy-to-clipboard multibuy button - a failed self-audit ends
   with a paste-ready shopping list of just the gap between the fit and the standard.
@@ -58,6 +57,15 @@ version last got one.
   "My Ships" and promoted to its own top-level tab; the redundant "Connect ESI access"
   button is removed from the hub (the My Ships page still prompts per character when
   access is missing).
+- Legacy submissions created from a pasted fit remain visible in submission history but
+  can no longer be re-checked - re-checking now always re-validates against ESI
+  inventory, which a pasted fit was never tied to.
+
+### Removed
+- Pasted EFT fits can no longer be submitted for review - the Test a Fit page is now
+  always a check-only sandbox, for every user including doctrine managers and reviewers.
+  The only source of a reviewable submission is ESI/corptools inventory validation
+  (My Ships).
 
 ## [1.11.0] - 2026-07-07
 
